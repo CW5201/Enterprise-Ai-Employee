@@ -78,3 +78,6 @@ data/*.csv
 
 # --- Local overrides -------------------------------------------------------
 config/local.*.yaml
+
+# --- Local working notes ---------------------------------------------------
+.project_memory.md
