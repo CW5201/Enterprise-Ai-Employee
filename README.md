@@ -4,9 +4,11 @@
 
 企业 AI 数字员工是一个面向企业数据分析与任务执行的知识增强型 AI Agent 系统，通过任务理解、动态路由、RAG、Text-to-SQL、知识图谱、工具调用和结果验证，将自然语言任务转化为可执行的数据查询、知识检索、分析推理和报告生成流程。
 
-> **项目状态：Phase 0 — 项目初始化。**
-> 当前仓库只包含目录骨架、研究叙事、配置结构与接口占位。
-> **尚未实现任何业务逻辑，尚无任何实验结果。** 本文件与 `docs/` 中的所有指标数值均为待实验填充（TBD）。
+> **项目状态：Phase 1 — 最小 Agent 闭环（进行中）。**
+> Phase 0 完成骨架与文档；Phase 1 已实现 `Intent → Router → RAG/SQL → Answer` 的最小闭环，
+> 并导入 WideWorldImporters 到 DuckDB、跑通 SQL 与 RAG 两条端到端测试。
+> 尚未实现 Neo4j 知识图谱、Claim-Evidence 验证、评估框架与前端。
+> 本文件与 `docs/` 中的所有指标数值仍为待实验填充（TBD）。
 
 ---
 
@@ -259,8 +261,8 @@ enterprise-ai-employee/
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
-| Phase 0 | 项目初始化：骨架、文档、配置、边界 | ✅ 进行中 |
-| Phase 1 | 最小 Agent 闭环：Intent → Router → RAG/SQL → Answer | ⬜ 未开始 |
+| Phase 0 | 项目初始化：骨架、文档、配置、边界 | ✅ 已完成 |
+| Phase 1 | 最小 Agent 闭环：Intent → Router → RAG/SQL → Answer | ✅ 已完成 |
 | Phase 2 | Milvus RAG / DuckDB Text-to-SQL / Neo4j KG | ⬜ 未开始 |
 | Phase 3 | Task-Adaptive Routing | ⬜ 未开始 |
 | Phase 4 | Claim-Evidence Verification | ⬜ 未开始 |
