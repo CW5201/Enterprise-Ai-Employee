@@ -1,0 +1,118 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "enterprise-ai-employee"
+version = "0.0.1"
+description = "A knowledge-augmented AI digital employee for enterprise data analysis and task execution."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Enterprise AI Employee Project" }]
+keywords = [
+    "llm-agent",
+    "langgraph",
+    "retrieval-augmented-generation",
+    "text-to-sql",
+    "knowledge-graph",
+    "claim-verification",
+]
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Intended Audience :: Science/Research",
+]
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/CW5201/enterprise-ai-employee"
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3", "pytest-asyncio>=0.24", "coverage>=7.6", "ruff>=0.7", "mypy>=1.13"]
+
+[tool.setuptools]
+packages = ["src"]
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+addopts = "-ra --strict-markers --strict-config"
+markers = [
+    "unit: unit tests",
+    "integration: end-to-end pipeline tests",
+    "evaluation: evaluation framework tests",
+    "slow: tests that load local models or databases",
+]
+
+# ---------------------------------------------------------------------------
+# ruff
+# ---------------------------------------------------------------------------
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src", "tests", "scripts"]
+extend-exclude = ["data", "src/frontend", ".venv"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+    "PTH", # flake8-use-pathlib
+]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+
+# ---------------------------------------------------------------------------
+# mypy
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.11"
+mypy_path = "."
+namespace_packages = true
+explicit_package_bases = true
+files = ["src", "tests", "scripts"]
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+check_untyped_defs = true
+disallow_untyped_defs = false   # tightened per-module once a module is implemented
+show_error_codes = true
+exclude = ["^src/frontend/", "^data/"]
+
+[[tool.mypy.overrides]]
+module = ["pymilvus.*", "rank_bm25.*", "sentence_transformers.*", "duckdb.*", "neo4j.*", "langgraph.*"]
+ignore_missing_imports = true
+
+# ---------------------------------------------------------------------------
+# coverage
+# ---------------------------------------------------------------------------
+[tool.coverage.run]
+source = ["src"]
+branch = true
+omit = ["src/frontend/*", "src/api/main.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+exclude_lines = ["pragma: no cover", "raise NotImplementedError", "if TYPE_CHECKING:"]

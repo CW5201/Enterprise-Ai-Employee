@@ -1,0 +1,101 @@
+# ---------------------------------------------------------------------------
+# Task-Adaptive Routing rules (Innovation 1).
+#
+# This file declares the routing policy that src/nodes/supervisor_router.py
+# will consume in Phase 3. It contains POLICY ONLY - no executable code.
+#
+# Design intent: routing is driven by (a) the detected intent, (b) the tools
+# that intent may use, and (c) a priority order used when several tools are
+# eligible. The research question is whether this dynamic policy beats a fixed
+# pipeline (see docs/RESEARCH.md, ablation A).
+# ---------------------------------------------------------------------------
+
+version: v0.1
+
+route:
+  # Fallback when no rule matches: never guess silently, ask the user.
+  default_strategy: clarify
+  max_tools_per_task: 4
+  allow_multi_tool: true
+  # If the router confidence is below this value, route to the clarification node.
+  min_confidence: 0.6
+  # Number of hops allowed before the graph must terminate.
+  max_iterations: 8
+
+# --- Intent taxonomy -------------------------------------------------------
+# Each intent maps to the tool set that is eligible for it, in priority order.
+intent:
+  - name: information_query
+    description: Look up a fact from structured business data (single table or join).
+    tools: [sql]
+  - name: knowledge_qa
+    description: Answer from enterprise policy / manual / procedure documents.
+    tools: [rag]
+  - name: text_to_sql
+    description: Aggregate or filter business data expressed in natural language.
+    tools: [sql, analysis]
+  - name: data_analysis
+    description: Trend, comparison, distribution or correlation analysis.
+    tools: [sql, analysis, chart]
+  - name: relation_query
+    description: Entity relationships, paths and organisational structure.
+    tools: [kg, sql]
+  - name: multi_source_reasoning
+    description: Requires combining documents, data and relations.
+    tools: [rag, sql, kg, analysis]
+  - name: complex_agent_task
+    description: Multi-step task with intermediate results and a final report.
+    tools: [rag, sql, kg, analysis, chart, report]
+  - name: chitchat_or_out_of_scope
+    description: Not an enterprise task; refuse politely and explain scope.
+    tools: []
+
+# --- Tools available to the router ----------------------------------------
+tools:
+  rag:
+    enabled: true
+    cost: medium
+    latency_class: medium
+  sql:
+    enabled: true
+    cost: low
+    latency_class: low
+  kg:
+    enabled: true
+    cost: medium
+    latency_class: medium
+  analysis:
+    enabled: true
+    cost: low
+    latency_class: low
+  chart:
+    enabled: true
+    cost: low
+    latency_class: low
+  report:
+    enabled: true
+    cost: medium
+    latency_class: medium
+
+# --- Priority policy -------------------------------------------------------
+# Higher number wins when two eligible tools could answer the same sub-goal.
+priority:
+  order: [sql, kg, rag, analysis, chart, report]
+  tie_breaker: cheapest_first
+  # Structured data beats documents for numeric questions, and vice versa.
+  numeric_question_prefers: sql
+  definitional_question_prefers: rag
+  relationship_question_prefers: kg
+
+# --- Escalation / fallback -------------------------------------------------
+fallback:
+  on_empty_result: try_next_tool
+  on_tool_error: record_and_continue
+  on_low_evidence: escalate_to_multi_tool
+
+# --- Guardrails ------------------------------------------------------------
+guardrails:
+  forbidden_tools: []
+  require_verification_for: [text_to_sql, data_analysis, multi_source_reasoning, complex_agent_task]
+  max_sql_rows: 1000
+  max_retrieved_chunks: 20

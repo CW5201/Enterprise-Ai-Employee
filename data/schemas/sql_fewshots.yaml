@@ -1,0 +1,102 @@
+# ---------------------------------------------------------------------------
+# Text-to-SQL few-shot examples.
+#
+# These examples are written against data/schemas/database_schema.yaml and must
+# stay consistent with data/schemas/data_dictionary.yaml.
+#
+# IMPORTANT: every example listed as `status: verified` must have been executed
+# against the real DuckDB database and have produced a result. Until Phase 2
+# runs, all examples are marked `status: unverified` - do not remove that
+# marker without actually running the SQL.
+#
+# Evaluation discipline: examples used as few-shot prompts must NOT also appear
+# in the evaluation set (see docs/EVALUATION.md, data leakage risk).
+# ---------------------------------------------------------------------------
+
+version: v0.1
+dialect: duckdb
+target_database: WideWorldImporters
+
+few_shots:
+
+  - id: fs-001
+    question: 上个月的订单总金额是多少？
+    sql: |
+      SELECT SUM(total_amount) AS total_revenue
+      FROM sales_orders
+      WHERE status <> 'cancelled'
+        AND order_date >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL 1 MONTH)
+        AND order_date <  DATE_TRUNC('month', CURRENT_DATE);
+    notes: 使用 data_dictionary 中 total_revenue 的口径，排除已取消订单
+    difficulty: easy
+    status: unverified
+
+  - id: fs-002
+    question: 每个区域有多少活跃客户？
+    sql: |
+      SELECT c.region, COUNT(DISTINCT c.customer_id) AS active_customers
+      FROM customers c
+      JOIN sales_orders o ON o.customer_id = c.customer_id
+      WHERE o.status <> 'cancelled'
+      GROUP BY c.region
+      ORDER BY active_customers DESC;
+    notes: active_customer 口径来自 data_dictionary
+    difficulty: medium
+    status: unverified
+
+  - id: fs-003
+    question: 哪个产品类别的营收最高？
+    sql: |
+      SELECT p.category, SUM(o.total_amount) AS revenue
+      FROM sales_orders o
+      JOIN products p ON p.product_id = o.product_id
+      WHERE o.status <> 'cancelled'
+      GROUP BY p.category
+      ORDER BY revenue DESC
+      LIMIT 1;
+    notes: 需要 join 产品维表
+    difficulty: medium
+    status: unverified
+
+  - id: fs-004
+    question: 各部门已审批的报销金额合计
+    sql: |
+      SELECT d.department_name, SUM(e.amount) AS reimbursement_amount
+      FROM finance_expenses e
+      JOIN departments d ON d.department_id = e.department_id
+      WHERE e.approved = true
+      GROUP BY d.department_name
+      ORDER BY reimbursement_amount DESC;
+    notes: 对应 data_dictionary 中 reimbursement_amount 口径
+    difficulty: medium
+    status: unverified
+
+  - id: fs-005
+    question: 近 12 个月每月营收的环比变化
+    sql: |
+      WITH monthly AS (
+        SELECT DATE_TRUNC('month', order_date) AS month,
+               SUM(total_amount) AS revenue
+        FROM sales_orders
+        WHERE status <> 'cancelled'
+          AND order_date >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL 12 MONTH)
+        GROUP BY 1
+      )
+      SELECT month,
+             revenue,
+             revenue - LAG(revenue) OVER (ORDER BY month) AS mom_change
+      FROM monthly
+      ORDER BY month;
+    notes: 环比计算，属于 data_analysis 类任务
+    difficulty: hard
+    status: unverified
+
+# --- Style constraints (applied to every generated statement) --------------
+constraints:
+  - statement_must_be_read_only: true
+  - allowed_statements: [SELECT, WITH]
+  - must_alias_aggregates: true
+  - must_qualify_ambiguous_columns: true
+  - must_not_use_select_star_in_final_answer: true
+  - prefer_explicit_join: true
+  - max_joins: 4

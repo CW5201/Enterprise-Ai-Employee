@@ -1,0 +1,54 @@
+# ---------------------------------------------------------------------------
+# Enterprise AI Employee - local full-stack runtime (PLACEHOLDER).
+#
+# Phase 0 deliberately contains NO deployment logic. The service definitions
+# below are kept commented out on purpose so that nobody mistakes this file for
+# a working deployment. They are enabled in Phase 7 (see docs/ROADMAP.md).
+#
+# Planned services:
+#   milvus        - vector retrieval
+#   neo4j         - knowledge graph
+#   (duckdb is an embedded file database - no service needed)
+#   api           - FastAPI backend (SSE)
+#   frontend      - Vue3 workbench
+#
+# Usage after Phase 7:
+#   docker compose -f docker/docker-compose.yml up -d
+# ---------------------------------------------------------------------------
+
+name: enterprise-ai-employee
+
+services: {}
+
+# --- Planned definitions (do not enable before Phase 7) --------------------
+#
+#  milvus:
+#    image: milvusdb/milvus:<pinned-version>
+#    command: ["milvus", "run", "standalone"]
+#    ports: ["19530:19530", "9091:9091"]
+#    volumes: ["../data/milvus:/var/lib/milvus"]
+#    environment:
+#      ETCD_USE_EMBED: "true"
+#      COMMON_STORAGETYPE: local
+#
+#  neo4j:
+#    image: neo4j:<pinned-version>
+#    ports: ["7474:7474", "7687:7687"]
+#    volumes: ["../data/neo4j:/data"]
+#    environment:
+#      NEO4J_AUTH: "neo4j/${NEO4J_PASSWORD}"
+#
+#  api:
+#    build:
+#      context: ..
+#      dockerfile: docker/Dockerfile.api
+#    ports: ["8000:8000"]
+#    env_file: ["../.env"]
+#    depends_on: [milvus, neo4j]
+#
+#  frontend:
+#    build:
+#      context: ../src/frontend/Vue3
+#      dockerfile: Dockerfile
+#    ports: ["5173:80"]
+#    depends_on: [api]

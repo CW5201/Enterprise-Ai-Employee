@@ -1,0 +1,96 @@
+# ---------------------------------------------------------------------------
+# Business database schema declaration (DuckDB).
+#
+# Declarative only: this file describes tables and columns so that
+#   - Text-to-SQL has a structural prior,
+#   - the SQL guard knows which identifiers are legal,
+#   - the knowledge graph build (Phase 2) knows which entities to extract.
+#
+# NOTHING here is loaded yet. The authoritative schema is whatever the real
+# WideWorldImporters / AdventureWorks import produces - this declaration is
+# verified against it in Phase 2 and corrected if it disagrees.
+#
+# Source databases (see docs/DATASET.md, THIRD_PARTY_LICENSES.md):
+#   - WideWorldImporters (primary)
+#   - AdventureWorks   (secondary)
+# ---------------------------------------------------------------------------
+
+version: v0.1
+dialect: duckdb
+source_database: WideWorldImporters
+status: declared_not_verified
+
+tables:
+  - name: sales_orders
+    comment: 销售订单主表（由 WideWorldImporters 导入）
+    primary_key: order_id
+    columns:
+      - { name: order_id, type: integer, comment: 订单唯一标识 }
+      - { name: customer_id, type: integer, comment: 客户标识 }
+      - { name: order_date, type: date, comment: 下单日期 }
+      - { name: quantity, type: integer, comment: 数量 }
+      - { name: unit_price, type: decimal, comment: 单价 }
+      - { name: total_amount, type: decimal, comment: 订单金额 }
+      - { name: status, type: varchar, comment: 订单状态 }
+    relationships:
+      - { column: customer_id, references: customers.customer_id }
+
+  - name: customers
+    comment: 客户维表
+    primary_key: customer_id
+    columns:
+      - { name: customer_id, type: integer, comment: 客户标识 }
+      - { name: customer_name, type: varchar, comment: 客户名称 }
+      - { name: region, type: varchar, comment: 所属区域 }
+      - { name: category, type: varchar, comment: 客户分类 }
+      - { name: created_at, type: date, comment: 建档日期 }
+
+  - name: products
+    comment: 产品维表
+    primary_key: product_id
+    columns:
+      - { name: product_id, type: integer, comment: 产品标识 }
+      - { name: product_name, type: varchar, comment: 产品名称 }
+      - { name: category, type: varchar, comment: 产品类别 }
+      - { name: unit_price, type: decimal, comment: 标准单价 }
+      - { name: is_active, type: boolean, comment: 是否在售 }
+
+  - name: employees
+    comment: 员工维表（同时是知识图谱的人员实体来源）
+    primary_key: employee_id
+    columns:
+      - { name: employee_id, type: integer, comment: 员工标识 }
+      - { name: employee_name, type: varchar, comment: 姓名 }
+      - { name: department_id, type: integer, comment: 所属部门 }
+      - { name: title, type: varchar, comment: 职位 }
+      - { name: hire_date, type: date, comment: 入职日期 }
+      - { name: manager_id, type: integer, comment: 直属上级 }
+
+  - name: departments
+    comment: 部门维表
+    primary_key: department_id
+    columns:
+      - { name: department_id, type: integer, comment: 部门标识 }
+      - { name: department_name, type: varchar, comment: 部门名称 }
+      - { name: cost_center, type: varchar, comment: 成本中心 }
+      - { name: parent_department_id, type: integer, comment: 上级部门 }
+
+  - name: finance_expenses
+    comment: 费用与报销事实表
+    primary_key: expense_id
+    columns:
+      - { name: expense_id, type: integer, comment: 费用记录标识 }
+      - { name: employee_id, type: integer, comment: 报销人 }
+      - { name: department_id, type: integer, comment: 归属部门 }
+      - { name: expense_date, type: date, comment: 发生日期 }
+      - { name: expense_type, type: varchar, comment: 费用类型 }
+      - { name: amount, type: decimal, comment: 金额 }
+      - { name: approved, type: boolean, comment: 是否已审批 }
+
+# --- Access policy (enforced by src/core/sql_executor.py) ------------------
+access:
+  read_only: true
+  allowed_statements: [SELECT, WITH]
+  forbidden_statements: [INSERT, UPDATE, DELETE, DROP, CREATE, ALTER, ATTACH, DETACH, COPY, PRAGMA, CALL, EXPORT, INSTALL, LOAD]
+  max_rows: 1000
+  timeout_seconds: 30

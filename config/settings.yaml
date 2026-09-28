@@ -1,0 +1,133 @@
+# ---------------------------------------------------------------------------
+# Global system settings.
+#
+# This file controls BEHAVIOUR only. It must never contain business logic and
+# must never contain secrets - secrets come from environment variables
+# (.env / .env.example) and are referenced here by ${VAR} placeholders.
+#
+# Loading is implemented in Phase 1 by src/core/config_loader.py.
+# ---------------------------------------------------------------------------
+
+app:
+  name: enterprise-ai-employee
+  env: ${APP_ENV:-local}
+  log_level: ${APP_LOG_LEVEL:-INFO}
+  language: zh-CN
+  timezone: Asia/Shanghai
+
+# --- LLM -------------------------------------------------------------------
+# Single primary model family (Qwen). All access goes through
+# src/core/llm_client.py; business code must not import a model SDK directly.
+llm:
+  provider: ${LLM_PROVIDER:-qwen}
+  base_url: ${LLM_BASE_URL:-}
+  api_key: ${LLM_API_KEY:-}
+  model: ${LLM_MODEL:-}
+  temperature: 0.2
+  top_p: 0.9
+  max_tokens: 2048
+  timeout_seconds: ${LLM_TIMEOUT_SECONDS:-60}
+  max_retries: ${LLM_MAX_RETRIES:-2}
+  stream: true
+
+# --- Embedding (BGE-M3) ----------------------------------------------------
+embedding:
+  model_name: ${EMBEDDING_MODEL:-BAAI/bge-m3}
+  device: ${EMBEDDING_DEVICE:-cpu}
+  dimension: 1024
+  batch_size: 16
+  normalize: true
+  max_length: 8192
+
+# --- Reranker (BGE-Reranker-v2-M3) ----------------------------------------
+reranker:
+  enabled: true
+  model_name: ${RERANKER_MODEL:-BAAI/bge-reranker-v2-m3}
+  device: ${RERANKER_DEVICE:-cpu}
+  top_k: 5
+  batch_size: 16
+
+# --- RAG (hybrid retrieval) ------------------------------------------------
+rag:
+  chunk_size: 512
+  chunk_overlap: 64
+  dense_top_k: 20
+  sparse_top_k: 20
+  fusion: rrf
+  final_top_k: 8
+  metadata_filtering: true
+
+# --- Milvus (vector retrieval ONLY) ---------------------------------------
+milvus:
+  host: ${MILVUS_HOST:-localhost}
+  port: ${MILVUS_PORT:-19530}
+  user: ${MILVUS_USER:-}
+  password: ${MILVUS_PASSWORD:-}
+  collection: ${MILVUS_COLLECTION:-enterprise_knowledge}
+  metric_type: IP
+  index_type: HNSW
+  index_params:
+    M: 16
+    efConstruction: 200
+
+# --- Knowledge graph (Neo4j, predefined Cypher templates ONLY) -------------
+neo4j:
+  uri: ${NEO4J_URI:-bolt://localhost:7687}
+  user: ${NEO4J_USER:-neo4j}
+  password: ${NEO4J_PASSWORD:-}
+  database: neo4j
+  max_connection_pool_size: 20
+  query_timeout_seconds: 15
+  allow_llm_generated_cypher: false   # must stay false - see ADR-004
+
+# --- DuckDB (read-only business database) ---------------------------------
+duckdb:
+  path: ${DUCKDB_PATH:-data/duckdb/enterprise.duckdb}
+  read_only: ${DUCKDB_READ_ONLY:-true}
+  max_rows: ${SQL_MAX_ROWS:-1000}
+  timeout_seconds: ${SQL_TIMEOUT_SECONDS:-30}
+  allow_ddl: false
+  allow_dml: false
+
+# --- Analysis (controlled Pandas / NumPy functions only) -------------------
+analysis:
+  max_rows_scanned: 200000
+  allow_arbitrary_python: false       # must stay false
+
+# --- Tools / governance ----------------------------------------------------
+tools:
+  default_timeout_seconds: 30
+  max_retries: 1
+  max_parallel_calls: 4
+  registry_file: config/tool_registry.yaml
+
+# --- Verification ----------------------------------------------------------
+verification:
+  enabled: true
+  min_support_score: 0.6
+  max_retry: 2
+  on_failure: retry        # retry | correct | pass_with_warning
+
+# --- Evaluation ------------------------------------------------------------
+evaluation:
+  dataset_path: ${EVAL_DATASET_PATH:-data/eval_dataset.jsonl}
+  output_dir: ${EVAL_OUTPUT_DIR:-outputs/eval}
+  dataset_version: v0.0.0            # numbers are filled only after real runs
+  default_top_k: 5
+  metrics:
+    - task_success_rate
+    - routing_accuracy
+    - retrieval_recall_at_k
+    - sql_execution_accuracy
+    - evidence_support_rate
+    - average_latency_ms
+  baselines:
+    - llm_only
+    - llm_rag
+    - hybrid_rag_sql
+    - rag_sql_kg
+    - ours
+  ablations:
+    - no_task_adaptive_routing
+    - no_knowledge_graph
+    - no_claim_evidence_verification

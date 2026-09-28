@@ -1,0 +1,80 @@
+# ---------------------------------------------------------------------------
+# Enterprise AI Employee - .gitignore
+# ---------------------------------------------------------------------------
+
+# --- Secrets / credentials -------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+secrets.yaml
+
+# --- Python ----------------------------------------------------------------
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.mypy_cache/
+.ruff_cache/
+
+# --- Test / coverage -------------------------------------------------------
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.junit.xml
+
+# --- IDE / editor ----------------------------------------------------------
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# --- Frontend --------------------------------------------------------------
+node_modules/
+dist/
+dist-ssr/
+*.local
+.vite/
+
+# --- Runtime output --------------------------------------------------------
+logs/
+tmp/
+*.log
+outputs/
+reports/generated/
+
+# --- Local model weights (BGE-M3 / BGE-Reranker-v2-M3) ---------------------
+models/
+*.safetensors
+*.bin
+*.pt
+*.onnx
+.cache/huggingface/
+
+# --- Local database / index data ------------------------------------------
+*.duckdb
+*.duckdb.wal
+data/duckdb/
+data/milvus/
+data/neo4j/
+volumes/
+
+# --- Large raw datasets ----------------------------------------------------
+data/raw/
+data/external/
+*.zip
+*.tar.gz
+data/*.csv
+
+# --- Local overrides -------------------------------------------------------
+config/local.*.yaml

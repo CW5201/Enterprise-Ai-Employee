@@ -1,0 +1,138 @@
+# ---------------------------------------------------------------------------
+# Prompt templates and versions.
+#
+# Prompts are treated as versioned artefacts: every result produced by the
+# evaluation framework must record the prompt versions used, otherwise the
+# experiment is not reproducible.
+#
+# Loaded by src/core/config_loader.py; rendered by the node that owns them.
+# Phase 0: template bodies are declared but NOT wired to any LLM call.
+# ---------------------------------------------------------------------------
+
+version: v0.1
+default_language: zh-CN
+
+prompt_name:
+
+  # --- Intent Understanding (src/nodes/intent_understanding.py) ------------
+  intent_understanding:
+    version: v0.1
+    owner: intent_understanding
+    description: Classify the user task into the intent taxonomy and extract slots.
+    inputs: [user_task, intent_taxonomy, conversation_context]
+    outputs: [intent, slots, constraints, confidence]
+    template: |
+      You are the intent understanding module of an enterprise AI digital employee.
+      Available intents: {intent_taxonomy}
+      User task: {user_task}
+      Conversation context: {conversation_context}
+      Return a structured result containing: intent, extracted slots, constraints
+      (time range, department, threshold), and a confidence score in [0, 1].
+      If the task is ambiguous or outside the enterprise scope, say so explicitly.
+
+  # --- Supervisor Router (src/nodes/supervisor_router.py) -----------------
+  supervisor_router:
+    version: v0.1
+    owner: supervisor_router
+    description: Choose the tool set for the task using the routing policy.
+    inputs: [intent, slots, routing_rules, tool_registry, available_evidence]
+    outputs: [selected_tools, plan, confidence]
+    template: |
+      You are the task-adaptive router. Given the intent, the extracted slots and
+      the routing policy, select the minimal tool set that can complete the task
+      and explain the selection in one sentence per tool.
+      Prefer structured data for numeric questions, documents for definitional
+      questions, and the knowledge graph for relationship questions.
+      If confidence is below {min_confidence}, request clarification instead.
+
+  # --- RAG Retrieval (src/nodes/rag_retrieval.py) -------------------------
+  rag_query_rewrite:
+    version: v0.1
+    owner: rag_retrieval
+    description: Rewrite the task into retrieval queries plus metadata filters.
+    inputs: [user_task, intent, slots]
+    outputs: [queries, metadata_filters]
+    template: |
+      Rewrite the enterprise question into up to {max_queries} retrieval queries.
+      Extract metadata filters when the question names a department, document
+      type, region or effective date. Do not invent filters that are not implied.
+
+  # --- SQL (src/nodes/sql_execution.py) -----------------------------------
+  text_to_sql:
+    version: v0.1
+    owner: sql_execution
+    description: Generate a read-only DuckDB SQL statement from a natural-language question.
+    inputs: [question, database_schema, data_dictionary, few_shots]
+    outputs: [sql, rationale]
+    template: |
+      You are a Text-to-SQL generator for a read-only DuckDB business database.
+      Schema: {database_schema}
+      Data dictionary: {data_dictionary}
+      Examples: {few_shots}
+      Question: {question}
+      Produce a single read-only SELECT (or WITH ... SELECT) statement.
+      Never emit INSERT, UPDATE, DELETE, DROP, CREATE, ALTER, ATTACH, COPY or PRAGMA.
+      Explain in one sentence which tables and columns you used and why.
+
+  # --- Knowledge Graph (src/tools/kg_tool.py) -----------------------------
+  kg_template_selection:
+    version: v0.1
+    owner: tool_invocation
+    description: Select a predefined Cypher template and fill its parameters.
+    inputs: [question, template_catalogue]
+    outputs: [template_id, parameters]
+    template: |
+      Select ONE template id from the catalogue that answers the question and
+      fill its declared parameters. Never write raw Cypher.
+      Catalogue: {template_catalogue}
+      Question: {question}
+      If no template fits, answer with template_id: none.
+
+  # --- Clarification (src/nodes/clarification.py) -------------------------
+  clarification:
+    version: v0.1
+    owner: clarification
+    description: Ask the minimum set of questions needed to make the task executable.
+    inputs: [user_task, missing_slots, ambiguity]
+    outputs: [questions]
+    template: |
+      The task cannot be executed yet. Ask at most {max_questions} concise
+      questions that unblock execution. Do not ask for information that is
+      already present. Offer concrete options where possible.
+
+  # --- Answer Generation (src/nodes/answer_generation.py) -----------------
+  answer_generation:
+    version: v0.1
+    owner: answer_generation
+    description: Produce the final answer from fused multi-source evidence.
+    inputs: [user_task, fused_evidence, analysis_results]
+    outputs: [answer, citations]
+    template: |
+      Answer the enterprise question using ONLY the provided evidence.
+      Every factual statement must be traceable to an evidence item; cite the
+      evidence id inline. If the evidence is insufficient, state clearly what is
+      missing instead of guessing. Match the language of the user task.
+
+  # --- Verification (src/nodes/verification.py) ---------------------------
+  claim_extraction:
+    version: v0.1
+    owner: verification
+    description: Extract atomic factual claims from a generated answer.
+    inputs: [answer]
+    outputs: [claims]
+    template: |
+      Decompose the answer into atomic factual claims. Each claim must be
+      self-contained, checkable against data or documents, and must not contain
+      hedging or opinion. Return claims only, no commentary.
+
+  evidence_support_check:
+    version: v0.1
+    owner: verification
+    description: Judge whether each claim is supported by the retrieved evidence.
+    inputs: [claims, evidence]
+    outputs: [claim_verdicts]
+    template: |
+      For each claim, decide whether the provided evidence supports it:
+      supported / partially_supported / unsupported / contradicted.
+      Return the supporting evidence ids, a score in [0, 1], and a one-line reason.
+      Do not use outside knowledge; judge against the evidence only.

@@ -1,0 +1,94 @@
+# ---------------------------------------------------------------------------
+# Data dictionary - business meaning of tables, columns, metrics and enums.
+#
+# Purpose: Text-to-SQL accuracy depends on business semantics, not only on
+# column names. This dictionary supplies the metric definitions and enum
+# vocabularies that the SQL generator and the claim verifier both rely on
+# (both must use ONE definition of e.g. "active customer").
+#
+# Phase 0: declared, not verified against the real imported database.
+# ---------------------------------------------------------------------------
+
+version: v0.1
+status: declared_not_verified
+
+# --- Business metrics ------------------------------------------------------
+metrics:
+  - name: total_revenue
+    chinese: 总营收
+    definition: SUM(sales_orders.total_amount)，按下单日期归属
+    formula: SUM(sales_orders.total_amount)
+    grain: [day, month, quarter, year]
+    notes: 不含已取消订单（status = 'cancelled'）
+
+  - name: order_count
+    chinese: 订单量
+    definition: 有效订单数量
+    formula: COUNT(DISTINCT sales_orders.order_id)
+    grain: [day, month, quarter, year]
+    notes: 不含已取消订单
+
+  - name: active_customer
+    chinese: 活跃客户
+    definition: 统计周期内至少产生 1 笔有效订单的客户
+    formula: COUNT(DISTINCT sales_orders.customer_id)
+    grain: [month, quarter, year]
+    notes: 该口径是全系统唯一定义，SQL 与分析工具必须共用
+
+  - name: average_order_value
+    chinese: 客单价
+    definition: 总营收 / 订单量
+    formula: total_revenue / order_count
+    grain: [day, month, quarter, year]
+
+  - name: reimbursement_amount
+    chinese: 报销金额
+    definition: 已审批通过的报销金额合计
+    formula: SUM(finance_expenses.amount) WHERE approved = true
+    grain: [month, quarter, year]
+
+# --- Enum vocabularies -----------------------------------------------------
+enums:
+  sales_orders.status:
+    values:
+      - { value: pending,   chinese: 待处理 }
+      - { value: shipped,   chinese: 已发货 }
+      - { value: completed, chinese: 已完成 }
+      - { value: cancelled, chinese: 已取消, excluded_from_revenue: true }
+  finance_expenses.expense_type:
+    values:
+      - { value: travel,        chinese: 差旅 }
+      - { value: entertainment, chinese: 招待 }
+      - { value: procurement,   chinese: 采购 }
+      - { value: other,         chinese: 其他 }
+
+# --- Time semantics --------------------------------------------------------
+time_semantics:
+  fiscal_year_start_month: 1
+  default_time_column:
+    sales_orders: order_date
+    finance_expenses: expense_date
+  relative_expression_examples:
+    - { expression: 本季度, resolution: 自然季度, start: 当季首日, end: 当季末日 }
+    - { expression: 去年同期, resolution: 去年同一自然季度 }
+    - { expression: 近 12 个月, resolution: 滚动窗口 }
+
+# --- Ambiguity register ----------------------------------------------------
+# Questions whose wording is genuinely ambiguous must be clarified, not guessed.
+ambiguity_register:
+  - phrase: 销售额
+    possible_meanings: [total_revenue, total_amount, quantity * unit_price]
+    default_resolution: total_revenue
+    require_clarification: false
+  - phrase: 大客户
+    possible_meanings: [按累计营收, 按订单量, 按客户分类字段]
+    default_resolution: null
+    require_clarification: true
+
+# --- Knowledge graph entity mapping ---------------------------------------
+# Which structured entities also become knowledge graph nodes (Phase 2).
+kg_entity_sources:
+  - { entity: Employee,   source_table: employees,   key: employee_id }
+  - { entity: Department, source_table: departments, key: department_id }
+  - { entity: Customer,   source_table: customers,   key: customer_id }
+  - { entity: Product,    source_table: products,    key: product_id }

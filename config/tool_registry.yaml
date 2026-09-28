@@ -1,0 +1,113 @@
+# ---------------------------------------------------------------------------
+# Tool whitelist and governance.
+#
+# The agent may ONLY call tools declared here (whitelist, not blacklist).
+# Loaded by src/core/tool_registry.py in Phase 2.
+#
+# Database responsibility boundaries are strict and must not be mixed:
+#   Milvus  -> vector knowledge retrieval      (rag tool)
+#   DuckDB  -> business data / Text-to-SQL     (sql tool)
+#   Neo4j   -> knowledge graph relations       (kg tool)
+# ---------------------------------------------------------------------------
+
+version: v0.1
+
+tool_name:
+  rag:
+    description: Retrieve enterprise knowledge (policy, manual, procedure) from Milvus.
+    enabled: true
+    timeout: 20
+    permissions:
+      read_only: true
+      write: false
+      network: false
+      filesystem: false
+    inputs: [query, top_k, filters]
+    outputs: [chunks]
+    backend: milvus
+    implemented_in: src/tools/rag_tool.py
+
+  sql:
+    description: Run a read-only SQL query against the DuckDB business database.
+    enabled: true
+    timeout: 30
+    permissions:
+      read_only: true
+      write: false
+      network: false
+      filesystem: false
+      statement_type: [SELECT, WITH]
+    inputs: [question, sql]
+    outputs: [columns, rows, row_count]
+    backend: duckdb
+    implemented_in: src/tools/sql_tool.py
+
+  kg:
+    description: Query the enterprise knowledge graph with predefined Cypher templates.
+    enabled: true
+    timeout: 20
+    permissions:
+      read_only: true
+      write: false
+      network: false
+      filesystem: false
+      llm_generated_cypher: false
+    inputs: [template_id, parameters]
+    outputs: [paths, entities, relations]
+    backend: neo4j
+    implemented_in: src/tools/kg_tool.py
+
+  analysis:
+    description: Run controlled Pandas / NumPy analysis functions over tabular data.
+    enabled: true
+    timeout: 30
+    permissions:
+      read_only: true
+      write: false
+      network: false
+      filesystem: false
+      arbitrary_python: false
+    inputs: [operation, dataframe_ref, params]
+    outputs: [result_table, statistics]
+    backend: pandas
+    implemented_in: src/tools/analysis_tool.py
+
+  chart:
+    description: Build an ECharts-ready data payload from a result table.
+    enabled: true
+    timeout: 10
+    permissions:
+      read_only: true
+      write: false
+      network: false
+      filesystem: false
+    inputs: [chart_type, dataframe_ref, mapping]
+    outputs: [echarts_option]
+    backend: internal
+    implemented_in: src/tools/chart_tool.py
+
+  report:
+    description: Assemble the final structured report with evidence and charts.
+    enabled: true
+    timeout: 30
+    permissions:
+      read_only: true
+      write: false
+      network: false
+      filesystem: false
+    inputs: [answer, evidence, charts]
+    outputs: [report_markdown]
+    backend: internal
+    implemented_in: src/tools/report_tool.py
+
+# --- Governance ------------------------------------------------------------
+governance:
+  whitelist_only: true
+  deny_unknown_tools: true
+  require_permission_check: true
+  max_parallel_calls: 4
+  default_timeout: 30
+  # Every tool call must be logged with inputs, latency and outcome.
+  trace_all_calls: true
+  # Tools that must never be exposed to the LLM directly.
+  never_expose_to_llm: []
