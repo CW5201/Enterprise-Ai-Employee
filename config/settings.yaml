@@ -58,6 +58,8 @@ rag:
   metadata_filtering: true
 
 # --- Milvus (vector retrieval ONLY) ---------------------------------------
+# Phase 1: 本地 Docker 兜底（localhost:19530）；用户自有远程 Milvus 为 47.120.58.250:19530，
+# 需显式设置 MILVUS_HOST 才连接，避免默认打到远程。
 milvus:
   host: ${MILVUS_HOST:-localhost}
   port: ${MILVUS_PORT:-19530}

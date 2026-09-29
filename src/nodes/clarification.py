@@ -1,9 +1,8 @@
-"""Node: Clarification - ask the user when a task is under-specified.
+"""Node: Clarification — ask the user when the task is under-specified.
 
-Phase 1 keeps this minimal: when the router routes to ``clarify`` (low
-intent confidence, or out-of-scope intent), the node produces a short,
-honest clarifying message instead of guessing.  In later phases this node
-gains the ambiguity-register logic from ``data/schemas/data_dictionary.yaml``.
+Reached when the router routes to ``clarification`` (unknown/ambiguous
+intent, or confidence below the gate).  Produces a short, honest
+clarifying message instead of guessing, and stops the loop.
 """
 
 from __future__ import annotations
@@ -12,42 +11,27 @@ from src.core.observability import observe
 from src.core.state import AgentState
 
 _SCOPE_NOTICE = (
-    "该任务不属于企业数据分析 / 知识问答范围（意图: {intent}）。"
-    "请提出与业务数据、制度文档相关的具体任务。"
+    "该任务意图不明确或不属于「企业数据分析 / 企业知识问答」范围。"
+    "请提出与业务数据（订单、客户、金额…）或制度文档（政策、流程、标准…）相关的具体问题。"
 )
 
 
 class ClarificationNode:
     @observe("clarify")
     def run(self, state: AgentState) -> AgentState:
-        intent = state.get("intent", "unknown")
-        confidence = float(state.get("intent_confidence", 0.0))
-        if intent in ("chitchat_or_out_of_scope", ""):
-            return {
-                "answer": _SCOPE_NOTICE.format(intent=intent or "unknown"),
-                "citations": [],
-                "status": "clarified_out_of_scope",
-                "next_action": "stop",
-            }
-        missing = _missing_slots(state)
-        prompt = "请补充以下信息后重新提交任务：" + "；".join(missing)
-        return {
-            "answer": f"{prompt}\n（当前意图: {intent}, 置信度: {confidence:.2f}）",
-            "citations": [],
-            "status": "clarify_needed",
-            "next_action": "stop",
-        }
-
-
-def _missing_slots(state: AgentState) -> list[str]:
-    slots = state.get("slots") or {}
-    constraints = state.get("constraints") or {}
-    missing: list[str] = []
-    if not slots.get("time_range"):
-        missing.append("统计时间范围（如：本季度 / 近 12 个月）")
-    if not constraints.get("department") and not slots.get("department"):
-        missing.append("部门 / 区域（如：指定部门时请说明）")
-    return missing
+        intent = state.get("intent", "") or "unknown"
+        confidence = float(state.get("confidence") or 0.0)
+        if intent in ("clarification", "") or confidence < 0.6:
+            answer = _SCOPE_NOTICE
+            status = "clarified_out_of_scope"
+        else:
+            answer = (
+                f"我需要再确认一下您的意图（当前判断为 {intent}，置信度 {confidence:.2f}）。"
+                f"原问题：「{state.get('user_query', '')}」。"
+                "请说明：您是想查询业务数据，还是想了解某项公司制度/流程？"
+            )
+            status = "clarify_needed"
+        return {"answer": answer, "status": status}
 
 
 __all__ = ["ClarificationNode"]

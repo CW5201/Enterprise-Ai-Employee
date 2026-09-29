@@ -1,8 +1,28 @@
 # 数据集与数据来源（DATASET）
 
-> 状态：Phase 0。本文档确定数据来源、构建规则与许可证边界。
-> **当前仓库中不包含任何实际数据文件**（除 Schema 声明与 Few-shot 声明外），
-> 尚未下载任何第三方数据集。
+> 状态：Phase 1 已更新（2026-09-29）。
+>
+> **当前仓库数据资产（已入库）**：
+> - `data/raw/wwi_ddl/` — WideWorldImporters 官方 T-SQL DDL 与种子脚本
+>   （本地下载，已被 `.gitignore` 忽略，**不进 Git**）；
+> - `data/runtime/wwi.duckdb` — 由 `scripts/import_wwi.py` 生成的 DuckDB 运行时数据库
+>   （含官方维度数据 3,364 行 + 由 `scripts/generate_synthetic_seed.py` 补齐的
+>   合成业务数据 3,200 行，**同样不入库**）；
+> - `data/schemas/*.yaml` — 数据库 Schema、数据字典、Text-to-SQL Few-shot（**已入库**，
+>   Few-shot 状态为 `verified`，即已在真实数据库上执行验证）；
+> - `data/knowledge_base/*/` — 企业知识库文档，全部为**合成语料**（synthetic），
+>   文档头部显式标注"非真实企业制度"，**不得描述为任何真实企业的内部数据**。
+>
+> **合成数据红线**：
+> - `generate_synthetic_seed.py` 生成的 Sales_Customers / Purchasing_Suppliers /
+>   Warehouse_StockItems / Sales_Orders / Sales_Invoices / Sales_InvoiceLines
+>   数据为确定性合成（synthetic），仅用于让 Text-to-SQL 全链路在真实表结构上跑通；
+>   任何统计结论必须标注"基于合成种子数据"，不得当作真实业务指标引用；
+> - WideWorldImporters 官方维度表（Application_* / 部分 Warehouse_*）为微软公开示例库
+>   的真实数据，与合成表来源不同，报告中需区分。
+>
+> 本文档其余部分（来源、许可证、评估集构建规则）为 Phase 0 边界声明，
+> 后续 Phase 的数据下载与评估集构建仍以本文件为准。
 
 ---
 
@@ -10,7 +30,7 @@
 
 | 类别 | 名称 | 本项目用途 | 当前状态 |
 |---|---|---|---|
-| 业务数据（主） | WideWorldImporters | DuckDB、Text-to-SQL、Analysis、KG 构建基础 | 未下载 |
+| 业务数据（主） | WideWorldImporters | DuckDB、Text-to-SQL、Analysis、KG 构建基础 | 已导入 DuckDB（`data/runtime/wwi.duckdb`，本地生成，不入库） |
 | 业务数据（辅） | AdventureWorks | 补充表结构与任务多样性 | 未下载 |
 | 企业知识库 | Public Enterprise Policy Corpus | RAG 语料（Milvus） | 未收集 |
 | Text-to-SQL | Spider | 能力对照 | 未下载 |

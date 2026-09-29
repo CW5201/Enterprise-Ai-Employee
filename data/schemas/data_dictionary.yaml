@@ -1,94 +1,1346 @@
-# ---------------------------------------------------------------------------
-# Data dictionary - business meaning of tables, columns, metrics and enums.
-#
-# Purpose: Text-to-SQL accuracy depends on business semantics, not only on
-# column names. This dictionary supplies the metric definitions and enum
-# vocabularies that the SQL generator and the claim verifier both rely on
-# (both must use ONE definition of e.g. "active customer").
-#
-# Phase 0: declared, not verified against the real imported database.
-# ---------------------------------------------------------------------------
-
-version: v0.1
-status: declared_not_verified
-
-# --- Business metrics ------------------------------------------------------
+version: v0.2
+status: verified
+generated_at: '2026-09-29 15:31:32'
+source_database: WideWorldImporters
+tables:
+  Application_Cities:
+    primary_key: []
+    columns:
+    - name: CityID
+      type: INTEGER
+    - name: CityName
+      type: VARCHAR
+    - name: StateProvinceID
+      type: INTEGER
+    - name: Location
+      type: VARCHAR
+    - name: LatestRecordedPopulation
+      type: BIGINT
+    - name: LastEditedBy
+      type: INTEGER
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  Application_Cities_Archive:
+    primary_key: []
+    columns:
+    - name: CityID
+      type: INTEGER
+    - name: CityName
+      type: VARCHAR
+    - name: StateProvinceID
+      type: INTEGER
+    - name: Location
+      type: VARCHAR
+    - name: LatestRecordedPopulation
+      type: BIGINT
+    - name: LastEditedBy
+      type: INTEGER
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  Application_Countries:
+    primary_key: []
+    columns:
+    - name: CountryID
+      type: INTEGER
+    - name: CountryName
+      type: VARCHAR
+    - name: FormalName
+      type: VARCHAR
+    - name: IsoAlpha3Code
+      type: VARCHAR
+    - name: IsoNumericCode
+      type: INTEGER
+    - name: CountryType
+      type: VARCHAR
+    - name: LatestRecordedPopulation
+      type: BIGINT
+    - name: Continent
+      type: VARCHAR
+    - name: Region
+      type: VARCHAR
+    - name: Subregion
+      type: VARCHAR
+    - name: Border
+      type: VARCHAR
+    - name: LastEditedBy
+      type: INTEGER
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  Application_Countries_Archive:
+    primary_key: []
+    columns:
+    - name: CountryID
+      type: INTEGER
+    - name: CountryName
+      type: VARCHAR
+    - name: FormalName
+      type: VARCHAR
+    - name: IsoAlpha3Code
+      type: VARCHAR
+    - name: IsoNumericCode
+      type: INTEGER
+    - name: CountryType
+      type: VARCHAR
+    - name: LatestRecordedPopulation
+      type: BIGINT
+    - name: Continent
+      type: VARCHAR
+    - name: Region
+      type: VARCHAR
+    - name: Subregion
+      type: VARCHAR
+    - name: Border
+      type: VARCHAR
+    - name: LastEditedBy
+      type: INTEGER
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  Application_DeliveryMethods:
+    primary_key: []
+    columns:
+    - name: DeliveryMethodID
+      type: INTEGER
+    - name: DeliveryMethodName
+      type: VARCHAR
+    - name: LastEditedBy
+      type: INTEGER
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  Application_DeliveryMethods_Archive:
+    primary_key: []
+    columns:
+    - name: DeliveryMethodID
+      type: INTEGER
+    - name: DeliveryMethodName
+      type: VARCHAR
+    - name: LastEditedBy
+      type: INTEGER
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  Application_Logs:
+    primary_key: []
+    columns:
+    - name: Message
+      type: VARCHAR
+    - name: Level
+      type: VARCHAR
+    - name: EventTime
+      type: TIMESTAMP
+    - name: LogEvent
+      type: VARCHAR
+  Application_PaymentMethods:
+    primary_key: []
+    columns:
+    - name: PaymentMethodID
+      type: INTEGER
+    - name: PaymentMethodName
+      type: VARCHAR
+    - name: LastEditedBy
+      type: INTEGER
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  Application_PaymentMethods_Archive:
+    primary_key: []
+    columns:
+    - name: PaymentMethodID
+      type: INTEGER
+    - name: PaymentMethodName
+      type: VARCHAR
+    - name: LastEditedBy
+      type: INTEGER
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  Application_People:
+    primary_key: []
+    columns:
+    - name: PersonID
+      type: INTEGER
+    - name: FullName
+      type: VARCHAR
+    - name: PreferredName
+      type: VARCHAR
+    - name: SearchName
+      type: VARCHAR
+    - name: IsPermittedToLogon
+      type: BOOLEAN
+    - name: LogonName
+      type: VARCHAR
+    - name: IsExternalLogonProvider
+      type: BOOLEAN
+    - name: HashedPassword
+      type: BLOB
+    - name: IsSystemUser
+      type: BOOLEAN
+    - name: IsEmployee
+      type: BOOLEAN
+    - name: IsSalesperson
+      type: BOOLEAN
+    - name: UserPreferences
+      type: VARCHAR
+    - name: PhoneNumber
+      type: VARCHAR
+    - name: FaxNumber
+      type: VARCHAR
+    - name: EmailAddress
+      type: VARCHAR
+    - name: Photo
+      type: BLOB
+    - name: CustomFields
+      type: VARCHAR
+    - name: OtherLanguages
+      type: VARCHAR
+    - name: LastEditedBy
+      type: INTEGER
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  Application_People_Archive:
+    primary_key: []
+    columns:
+    - name: PersonID
+      type: INTEGER
+    - name: FullName
+      type: VARCHAR
+    - name: PreferredName
+      type: VARCHAR
+    - name: SearchName
+      type: VARCHAR
+    - name: IsPermittedToLogon
+      type: BOOLEAN
+    - name: LogonName
+      type: VARCHAR
+    - name: IsExternalLogonProvider
+      type: BOOLEAN
+    - name: HashedPassword
+      type: BLOB
+    - name: IsSystemUser
+      type: BOOLEAN
+    - name: IsEmployee
+      type: BOOLEAN
+    - name: IsSalesperson
+      type: BOOLEAN
+    - name: UserPreferences
+      type: VARCHAR
+    - name: PhoneNumber
+      type: VARCHAR
+    - name: FaxNumber
+      type: VARCHAR
+    - name: EmailAddress
+      type: VARCHAR
+    - name: Photo
+      type: BLOB
+    - name: CustomFields
+      type: VARCHAR
+    - name: OtherLanguages
+      type: VARCHAR
+    - name: LastEditedBy
+      type: INTEGER
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  Application_StateProvinces:
+    primary_key: []
+    columns:
+    - name: StateProvinceID
+      type: INTEGER
+    - name: StateProvinceCode
+      type: VARCHAR
+    - name: StateProvinceName
+      type: VARCHAR
+    - name: CountryID
+      type: INTEGER
+    - name: SalesTerritory
+      type: VARCHAR
+    - name: Border
+      type: VARCHAR
+    - name: LatestRecordedPopulation
+      type: BIGINT
+    - name: LastEditedBy
+      type: INTEGER
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  Application_StateProvinces_Archive:
+    primary_key: []
+    columns:
+    - name: StateProvinceID
+      type: INTEGER
+    - name: StateProvinceCode
+      type: VARCHAR
+    - name: StateProvinceName
+      type: VARCHAR
+    - name: CountryID
+      type: INTEGER
+    - name: SalesTerritory
+      type: VARCHAR
+    - name: Border
+      type: VARCHAR
+    - name: LatestRecordedPopulation
+      type: BIGINT
+    - name: LastEditedBy
+      type: INTEGER
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  Application_SystemParameters:
+    primary_key: []
+    columns:
+    - name: SystemParameterID
+      type: INTEGER
+    - name: DeliveryAddressLine1
+      type: VARCHAR
+    - name: DeliveryAddressLine2
+      type: VARCHAR
+    - name: DeliveryCityID
+      type: INTEGER
+    - name: DeliveryPostalCode
+      type: VARCHAR
+    - name: DeliveryLocation
+      type: VARCHAR
+    - name: PostalAddressLine1
+      type: VARCHAR
+    - name: PostalAddressLine2
+      type: VARCHAR
+    - name: PostalCityID
+      type: INTEGER
+    - name: PostalPostalCode
+      type: VARCHAR
+    - name: ApplicationSettings
+      type: VARCHAR
+    - name: LastEditedBy
+      type: INTEGER
+    - name: LastEditedWhen
+      type: TIMESTAMP
+  Application_TransactionTypes:
+    primary_key: []
+    columns:
+    - name: TransactionTypeID
+      type: INTEGER
+    - name: TransactionTypeName
+      type: VARCHAR
+    - name: LastEditedBy
+      type: INTEGER
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  Application_TransactionTypes_Archive:
+    primary_key: []
+    columns:
+    - name: TransactionTypeID
+      type: INTEGER
+    - name: TransactionTypeName
+      type: VARCHAR
+    - name: LastEditedBy
+      type: INTEGER
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  DataLoadSimulation_AreaCode:
+    primary_key: []
+    columns:
+    - name: StateProvinceCode
+      type: VARCHAR
+    - name: AreaCode
+      type: VARCHAR
+  DataLoadSimulation_ColdRoomTemperatures_temp:
+    primary_key: []
+    columns:
+    - name: ColdRoomTemperatureID
+      type: BIGINT
+    - name: ColdRoomSensorNumber
+      type: INTEGER
+    - name: RecordedWhen
+      type: TIMESTAMP
+    - name: Temperature
+      type: DECIMAL(10,2)
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  DataLoadSimulation_FicticiousNamePool:
+    primary_key: []
+    columns:
+    - name: FullName
+      type: VARCHAR
+    - name: PreferredName
+      type: VARCHAR
+    - name: LastName
+      type: VARCHAR
+    - name: ToEmail
+      type: VARCHAR
+  DataLoadSimulation_SeasonVariation:
+    primary_key: []
+    columns:
+    - name: Year
+      type: INTEGER
+    - name: Season
+      type: SMALLINT
+    - name: YearlyVariation
+      type: DOUBLE
+    - name: SeasonalVariation
+      type: DOUBLE
+  Purchasing_PurchaseOrderLines:
+    primary_key: []
+    columns:
+    - name: PurchaseOrderLineID
+      type: INTEGER
+    - name: PurchaseOrderID
+      type: INTEGER
+    - name: StockItemID
+      type: INTEGER
+    - name: OrderedOuters
+      type: INTEGER
+    - name: Description
+      type: VARCHAR
+    - name: ReceivedOuters
+      type: INTEGER
+    - name: PackageTypeID
+      type: INTEGER
+    - name: ExpectedUnitPricePerOuter
+      type: DECIMAL(18,2)
+    - name: LastReceiptDate
+      type: DATE
+    - name: IsOrderLineFinalized
+      type: BOOLEAN
+    - name: LastEditedBy
+      type: INTEGER
+    - name: LastEditedWhen
+      type: TIMESTAMP
+  Purchasing_PurchaseOrders:
+    primary_key: []
+    columns:
+    - name: PurchaseOrderID
+      type: INTEGER
+    - name: SupplierID
+      type: INTEGER
+    - name: OrderDate
+      type: DATE
+    - name: DeliveryMethodID
+      type: INTEGER
+    - name: ContactPersonID
+      type: INTEGER
+    - name: ExpectedDeliveryDate
+      type: DATE
+    - name: SupplierReference
+      type: VARCHAR
+    - name: IsOrderFinalized
+      type: BOOLEAN
+    - name: Comments
+      type: VARCHAR
+    - name: InternalComments
+      type: VARCHAR
+    - name: LastEditedBy
+      type: INTEGER
+    - name: LastEditedWhen
+      type: TIMESTAMP
+  Purchasing_SupplierCategories:
+    primary_key: []
+    columns:
+    - name: SupplierCategoryID
+      type: INTEGER
+    - name: SupplierCategoryName
+      type: VARCHAR
+    - name: LastEditedBy
+      type: INTEGER
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  Purchasing_SupplierCategories_Archive:
+    primary_key: []
+    columns:
+    - name: SupplierCategoryID
+      type: INTEGER
+    - name: SupplierCategoryName
+      type: VARCHAR
+    - name: LastEditedBy
+      type: INTEGER
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  Purchasing_SupplierTransactions:
+    primary_key: []
+    columns:
+    - name: SupplierTransactionID
+      type: INTEGER
+    - name: SupplierID
+      type: INTEGER
+    - name: TransactionTypeID
+      type: INTEGER
+    - name: PurchaseOrderID
+      type: INTEGER
+    - name: PaymentMethodID
+      type: INTEGER
+    - name: SupplierInvoiceNumber
+      type: VARCHAR
+    - name: TransactionDate
+      type: DATE
+    - name: AmountExcludingTax
+      type: DECIMAL(18,2)
+    - name: TaxAmount
+      type: DECIMAL(18,2)
+    - name: TransactionAmount
+      type: DECIMAL(18,2)
+    - name: OutstandingBalance
+      type: DECIMAL(18,2)
+    - name: FinalizationDate
+      type: DATE
+    - name: IsFinalized
+      type: VARCHAR
+    - name: LastEditedBy
+      type: INTEGER
+    - name: LastEditedWhen
+      type: TIMESTAMP
+  Purchasing_Suppliers:
+    primary_key: []
+    columns:
+    - name: SupplierID
+      type: INTEGER
+    - name: SupplierName
+      type: VARCHAR
+    - name: SupplierCategoryID
+      type: INTEGER
+    - name: PrimaryContactPersonID
+      type: INTEGER
+    - name: AlternateContactPersonID
+      type: INTEGER
+    - name: DeliveryMethodID
+      type: INTEGER
+    - name: DeliveryCityID
+      type: INTEGER
+    - name: PostalCityID
+      type: INTEGER
+    - name: SupplierReference
+      type: VARCHAR
+    - name: BankAccountName
+      type: VARCHAR
+    - name: BankAccountBranch
+      type: VARCHAR
+    - name: BankAccountCode
+      type: VARCHAR
+    - name: BankAccountNumber
+      type: VARCHAR
+    - name: BankInternationalCode
+      type: VARCHAR
+    - name: PaymentDays
+      type: INTEGER
+    - name: InternalComments
+      type: VARCHAR
+    - name: PhoneNumber
+      type: VARCHAR
+    - name: FaxNumber
+      type: VARCHAR
+    - name: WebsiteURL
+      type: VARCHAR
+    - name: DeliveryAddressLine1
+      type: VARCHAR
+    - name: DeliveryAddressLine2
+      type: VARCHAR
+    - name: DeliveryPostalCode
+      type: VARCHAR
+    - name: DeliveryLocation
+      type: VARCHAR
+    - name: PostalAddressLine1
+      type: VARCHAR
+    - name: PostalAddressLine2
+      type: VARCHAR
+    - name: PostalPostalCode
+      type: VARCHAR
+    - name: LastEditedBy
+      type: INTEGER
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  Purchasing_Suppliers_Archive:
+    primary_key: []
+    columns:
+    - name: SupplierID
+      type: INTEGER
+    - name: SupplierName
+      type: VARCHAR
+    - name: SupplierCategoryID
+      type: INTEGER
+    - name: PrimaryContactPersonID
+      type: INTEGER
+    - name: AlternateContactPersonID
+      type: INTEGER
+    - name: DeliveryMethodID
+      type: INTEGER
+    - name: DeliveryCityID
+      type: INTEGER
+    - name: PostalCityID
+      type: INTEGER
+    - name: SupplierReference
+      type: VARCHAR
+    - name: BankAccountName
+      type: VARCHAR
+    - name: BankAccountBranch
+      type: VARCHAR
+    - name: BankAccountCode
+      type: VARCHAR
+    - name: BankAccountNumber
+      type: VARCHAR
+    - name: BankInternationalCode
+      type: VARCHAR
+    - name: PaymentDays
+      type: INTEGER
+    - name: InternalComments
+      type: VARCHAR
+    - name: PhoneNumber
+      type: VARCHAR
+    - name: FaxNumber
+      type: VARCHAR
+    - name: WebsiteURL
+      type: VARCHAR
+    - name: DeliveryAddressLine1
+      type: VARCHAR
+    - name: DeliveryAddressLine2
+      type: VARCHAR
+    - name: DeliveryPostalCode
+      type: VARCHAR
+    - name: DeliveryLocation
+      type: VARCHAR
+    - name: PostalAddressLine1
+      type: VARCHAR
+    - name: PostalAddressLine2
+      type: VARCHAR
+    - name: PostalPostalCode
+      type: VARCHAR
+    - name: LastEditedBy
+      type: INTEGER
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  Sales_BuyingGroups:
+    primary_key: []
+    columns:
+    - name: BuyingGroupID
+      type: INTEGER
+    - name: BuyingGroupName
+      type: VARCHAR
+    - name: LastEditedBy
+      type: INTEGER
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  Sales_BuyingGroups_Archive:
+    primary_key: []
+    columns:
+    - name: BuyingGroupID
+      type: INTEGER
+    - name: BuyingGroupName
+      type: VARCHAR
+    - name: LastEditedBy
+      type: INTEGER
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  Sales_CustomerCategories:
+    primary_key: []
+    columns:
+    - name: CustomerCategoryID
+      type: INTEGER
+    - name: CustomerCategoryName
+      type: VARCHAR
+    - name: LastEditedBy
+      type: INTEGER
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  Sales_CustomerCategories_Archive:
+    primary_key: []
+    columns:
+    - name: CustomerCategoryID
+      type: INTEGER
+    - name: CustomerCategoryName
+      type: VARCHAR
+    - name: LastEditedBy
+      type: INTEGER
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  Sales_CustomerTransactions:
+    primary_key: []
+    columns:
+    - name: CustomerTransactionID
+      type: INTEGER
+    - name: CustomerID
+      type: INTEGER
+    - name: TransactionTypeID
+      type: INTEGER
+    - name: InvoiceID
+      type: INTEGER
+    - name: PaymentMethodID
+      type: INTEGER
+    - name: TransactionDate
+      type: DATE
+    - name: AmountExcludingTax
+      type: DECIMAL(18,2)
+    - name: TaxAmount
+      type: DECIMAL(18,2)
+    - name: TransactionAmount
+      type: DECIMAL(18,2)
+    - name: OutstandingBalance
+      type: DECIMAL(18,2)
+    - name: FinalizationDate
+      type: DATE
+    - name: IsFinalized
+      type: VARCHAR
+    - name: LastEditedBy
+      type: INTEGER
+    - name: LastEditedWhen
+      type: TIMESTAMP
+  Sales_Customers:
+    primary_key: []
+    columns:
+    - name: CustomerID
+      type: INTEGER
+    - name: CustomerName
+      type: VARCHAR
+    - name: BillToCustomerID
+      type: INTEGER
+    - name: CustomerCategoryID
+      type: INTEGER
+    - name: BuyingGroupID
+      type: INTEGER
+    - name: PrimaryContactPersonID
+      type: INTEGER
+    - name: AlternateContactPersonID
+      type: INTEGER
+    - name: DeliveryMethodID
+      type: INTEGER
+    - name: DeliveryCityID
+      type: INTEGER
+    - name: PostalCityID
+      type: INTEGER
+    - name: CreditLimit
+      type: DECIMAL(18,2)
+    - name: AccountOpenedDate
+      type: DATE
+    - name: StandardDiscountPercentage
+      type: DECIMAL(18,3)
+    - name: IsStatementSent
+      type: BOOLEAN
+    - name: IsOnCreditHold
+      type: BOOLEAN
+    - name: PaymentDays
+      type: INTEGER
+    - name: PhoneNumber
+      type: VARCHAR
+    - name: FaxNumber
+      type: VARCHAR
+    - name: DeliveryRun
+      type: VARCHAR
+    - name: RunPosition
+      type: VARCHAR
+    - name: WebsiteURL
+      type: VARCHAR
+    - name: DeliveryAddressLine1
+      type: VARCHAR
+    - name: DeliveryAddressLine2
+      type: VARCHAR
+    - name: DeliveryPostalCode
+      type: VARCHAR
+    - name: DeliveryLocation
+      type: VARCHAR
+    - name: PostalAddressLine1
+      type: VARCHAR
+    - name: PostalAddressLine2
+      type: VARCHAR
+    - name: PostalPostalCode
+      type: VARCHAR
+    - name: LastEditedBy
+      type: INTEGER
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  Sales_Customers_Archive:
+    primary_key: []
+    columns:
+    - name: CustomerID
+      type: INTEGER
+    - name: CustomerName
+      type: VARCHAR
+    - name: BillToCustomerID
+      type: INTEGER
+    - name: CustomerCategoryID
+      type: INTEGER
+    - name: BuyingGroupID
+      type: INTEGER
+    - name: PrimaryContactPersonID
+      type: INTEGER
+    - name: AlternateContactPersonID
+      type: INTEGER
+    - name: DeliveryMethodID
+      type: INTEGER
+    - name: DeliveryCityID
+      type: INTEGER
+    - name: PostalCityID
+      type: INTEGER
+    - name: CreditLimit
+      type: DECIMAL(18,2)
+    - name: AccountOpenedDate
+      type: DATE
+    - name: StandardDiscountPercentage
+      type: DECIMAL(18,3)
+    - name: IsStatementSent
+      type: BOOLEAN
+    - name: IsOnCreditHold
+      type: BOOLEAN
+    - name: PaymentDays
+      type: INTEGER
+    - name: PhoneNumber
+      type: VARCHAR
+    - name: FaxNumber
+      type: VARCHAR
+    - name: DeliveryRun
+      type: VARCHAR
+    - name: RunPosition
+      type: VARCHAR
+    - name: WebsiteURL
+      type: VARCHAR
+    - name: DeliveryAddressLine1
+      type: VARCHAR
+    - name: DeliveryAddressLine2
+      type: VARCHAR
+    - name: DeliveryPostalCode
+      type: VARCHAR
+    - name: DeliveryLocation
+      type: VARCHAR
+    - name: PostalAddressLine1
+      type: VARCHAR
+    - name: PostalAddressLine2
+      type: VARCHAR
+    - name: PostalPostalCode
+      type: VARCHAR
+    - name: LastEditedBy
+      type: INTEGER
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  Sales_InvoiceLines:
+    primary_key: []
+    columns:
+    - name: InvoiceLineID
+      type: INTEGER
+    - name: InvoiceID
+      type: INTEGER
+    - name: StockItemID
+      type: INTEGER
+    - name: Description
+      type: VARCHAR
+    - name: PackageTypeID
+      type: INTEGER
+    - name: Quantity
+      type: INTEGER
+    - name: UnitPrice
+      type: DECIMAL(18,2)
+    - name: TaxRate
+      type: DECIMAL(18,3)
+    - name: TaxAmount
+      type: DECIMAL(18,2)
+    - name: LineProfit
+      type: DECIMAL(18,2)
+    - name: ExtendedPrice
+      type: DECIMAL(18,2)
+    - name: LastEditedBy
+      type: INTEGER
+    - name: LastEditedWhen
+      type: TIMESTAMP
+  Sales_Invoices:
+    primary_key: []
+    columns:
+    - name: InvoiceID
+      type: INTEGER
+    - name: CustomerID
+      type: INTEGER
+    - name: BillToCustomerID
+      type: INTEGER
+    - name: OrderID
+      type: INTEGER
+    - name: DeliveryMethodID
+      type: INTEGER
+    - name: ContactPersonID
+      type: INTEGER
+    - name: AccountsPersonID
+      type: INTEGER
+    - name: SalespersonPersonID
+      type: INTEGER
+    - name: PackedByPersonID
+      type: INTEGER
+    - name: InvoiceDate
+      type: DATE
+    - name: CustomerPurchaseOrderNumber
+      type: VARCHAR
+    - name: IsCreditNote
+      type: BOOLEAN
+    - name: CreditNoteReason
+      type: VARCHAR
+    - name: Comments
+      type: VARCHAR
+    - name: DeliveryInstructions
+      type: VARCHAR
+    - name: InternalComments
+      type: VARCHAR
+    - name: TotalDryItems
+      type: INTEGER
+    - name: TotalChillerItems
+      type: INTEGER
+    - name: DeliveryRun
+      type: VARCHAR
+    - name: RunPosition
+      type: VARCHAR
+    - name: ReturnedDeliveryData
+      type: VARCHAR
+    - name: ConfirmedDeliveryTime
+      type: VARCHAR
+    - name: ConfirmedReceivedBy
+      type: VARCHAR
+    - name: LastEditedBy
+      type: INTEGER
+    - name: LastEditedWhen
+      type: TIMESTAMP
+  Sales_OrderLines:
+    primary_key: []
+    columns:
+    - name: OrderLineID
+      type: INTEGER
+    - name: OrderID
+      type: INTEGER
+    - name: StockItemID
+      type: INTEGER
+    - name: Description
+      type: VARCHAR
+    - name: PackageTypeID
+      type: INTEGER
+    - name: Quantity
+      type: INTEGER
+    - name: UnitPrice
+      type: DECIMAL(18,2)
+    - name: TaxRate
+      type: DECIMAL(18,3)
+    - name: PickedQuantity
+      type: INTEGER
+    - name: PickingCompletedWhen
+      type: TIMESTAMP
+    - name: LastEditedBy
+      type: INTEGER
+    - name: LastEditedWhen
+      type: TIMESTAMP
+  Sales_Orders:
+    primary_key: []
+    columns:
+    - name: OrderID
+      type: INTEGER
+    - name: CustomerID
+      type: INTEGER
+    - name: SalespersonPersonID
+      type: INTEGER
+    - name: PickedByPersonID
+      type: INTEGER
+    - name: ContactPersonID
+      type: INTEGER
+    - name: BackorderOrderID
+      type: INTEGER
+    - name: OrderDate
+      type: DATE
+    - name: ExpectedDeliveryDate
+      type: DATE
+    - name: CustomerPurchaseOrderNumber
+      type: VARCHAR
+    - name: IsUndersupplyBackordered
+      type: BOOLEAN
+    - name: Comments
+      type: VARCHAR
+    - name: DeliveryInstructions
+      type: VARCHAR
+    - name: InternalComments
+      type: VARCHAR
+    - name: PickingCompletedWhen
+      type: TIMESTAMP
+    - name: LastEditedBy
+      type: INTEGER
+    - name: LastEditedWhen
+      type: TIMESTAMP
+  Sales_SpecialDeals:
+    primary_key: []
+    columns:
+    - name: SpecialDealID
+      type: INTEGER
+    - name: StockItemID
+      type: INTEGER
+    - name: CustomerID
+      type: INTEGER
+    - name: BuyingGroupID
+      type: INTEGER
+    - name: CustomerCategoryID
+      type: INTEGER
+    - name: StockGroupID
+      type: INTEGER
+    - name: DealDescription
+      type: VARCHAR
+    - name: StartDate
+      type: DATE
+    - name: EndDate
+      type: DATE
+    - name: DiscountAmount
+      type: DECIMAL(18,2)
+    - name: DiscountPercentage
+      type: DECIMAL(18,3)
+    - name: UnitPrice
+      type: DECIMAL(18,2)
+    - name: LastEditedBy
+      type: INTEGER
+    - name: LastEditedWhen
+      type: TIMESTAMP
+  Warehouse_ColdRoomTemperatures:
+    primary_key: []
+    columns:
+    - name: ColdRoomTemperatureID
+      type: BIGINT
+    - name: ColdRoomSensorNumber
+      type: INTEGER
+    - name: RecordedWhen
+      type: TIMESTAMP
+    - name: Temperature
+      type: DECIMAL(10,2)
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  Warehouse_ColdRoomTemperatures_Archive:
+    primary_key: []
+    columns:
+    - name: ColdRoomTemperatureID
+      type: BIGINT
+    - name: ColdRoomSensorNumber
+      type: INTEGER
+    - name: RecordedWhen
+      type: TIMESTAMP
+    - name: Temperature
+      type: DECIMAL(10,2)
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  Warehouse_Colors:
+    primary_key: []
+    columns:
+    - name: ColorID
+      type: INTEGER
+    - name: ColorName
+      type: VARCHAR
+    - name: LastEditedBy
+      type: INTEGER
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  Warehouse_Colors_Archive:
+    primary_key: []
+    columns:
+    - name: ColorID
+      type: INTEGER
+    - name: ColorName
+      type: VARCHAR
+    - name: LastEditedBy
+      type: INTEGER
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  Warehouse_PackageTypes:
+    primary_key: []
+    columns:
+    - name: PackageTypeID
+      type: INTEGER
+    - name: PackageTypeName
+      type: VARCHAR
+    - name: LastEditedBy
+      type: INTEGER
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  Warehouse_PackageTypes_Archive:
+    primary_key: []
+    columns:
+    - name: PackageTypeID
+      type: INTEGER
+    - name: PackageTypeName
+      type: VARCHAR
+    - name: LastEditedBy
+      type: INTEGER
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  Warehouse_StockGroups:
+    primary_key: []
+    columns:
+    - name: StockGroupID
+      type: INTEGER
+    - name: StockGroupName
+      type: VARCHAR
+    - name: LastEditedBy
+      type: INTEGER
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  Warehouse_StockGroups_Archive:
+    primary_key: []
+    columns:
+    - name: StockGroupID
+      type: INTEGER
+    - name: StockGroupName
+      type: VARCHAR
+    - name: LastEditedBy
+      type: INTEGER
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  Warehouse_StockItemHoldings:
+    primary_key: []
+    columns:
+    - name: StockItemID
+      type: INTEGER
+    - name: QuantityOnHand
+      type: INTEGER
+    - name: BinLocation
+      type: VARCHAR
+    - name: LastStocktakeQuantity
+      type: INTEGER
+    - name: LastCostPrice
+      type: DECIMAL(18,2)
+    - name: ReorderLevel
+      type: INTEGER
+    - name: TargetStockLevel
+      type: INTEGER
+    - name: LastEditedBy
+      type: INTEGER
+    - name: LastEditedWhen
+      type: TIMESTAMP
+  Warehouse_StockItemStockGroups:
+    primary_key: []
+    columns:
+    - name: StockItemStockGroupID
+      type: INTEGER
+    - name: StockItemID
+      type: INTEGER
+    - name: StockGroupID
+      type: INTEGER
+    - name: LastEditedBy
+      type: INTEGER
+    - name: LastEditedWhen
+      type: TIMESTAMP
+  Warehouse_StockItemTransactions:
+    primary_key: []
+    columns:
+    - name: StockItemTransactionID
+      type: INTEGER
+    - name: StockItemID
+      type: INTEGER
+    - name: TransactionTypeID
+      type: INTEGER
+    - name: CustomerID
+      type: INTEGER
+    - name: InvoiceID
+      type: INTEGER
+    - name: SupplierID
+      type: INTEGER
+    - name: PurchaseOrderID
+      type: INTEGER
+    - name: TransactionOccurredWhen
+      type: TIMESTAMP
+    - name: Quantity
+      type: DECIMAL(18,3)
+    - name: LastEditedBy
+      type: INTEGER
+    - name: LastEditedWhen
+      type: TIMESTAMP
+  Warehouse_StockItems:
+    primary_key: []
+    columns:
+    - name: StockItemID
+      type: INTEGER
+    - name: StockItemName
+      type: VARCHAR
+    - name: SupplierID
+      type: INTEGER
+    - name: ColorID
+      type: INTEGER
+    - name: UnitPackageID
+      type: INTEGER
+    - name: OuterPackageID
+      type: INTEGER
+    - name: Brand
+      type: VARCHAR
+    - name: Size
+      type: VARCHAR
+    - name: LeadTimeDays
+      type: INTEGER
+    - name: QuantityPerOuter
+      type: INTEGER
+    - name: IsChillerStock
+      type: BOOLEAN
+    - name: Barcode
+      type: VARCHAR
+    - name: TaxRate
+      type: DECIMAL(18,3)
+    - name: UnitPrice
+      type: DECIMAL(18,2)
+    - name: RecommendedRetailPrice
+      type: DECIMAL(18,2)
+    - name: TypicalWeightPerUnit
+      type: DECIMAL(18,3)
+    - name: MarketingComments
+      type: VARCHAR
+    - name: InternalComments
+      type: VARCHAR
+    - name: Photo
+      type: BLOB
+    - name: CustomFields
+      type: VARCHAR
+    - name: Tags
+      type: VARCHAR
+    - name: SearchDetails
+      type: VARCHAR
+    - name: LastEditedBy
+      type: INTEGER
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  Warehouse_StockItems_Archive:
+    primary_key: []
+    columns:
+    - name: StockItemID
+      type: INTEGER
+    - name: StockItemName
+      type: VARCHAR
+    - name: SupplierID
+      type: INTEGER
+    - name: ColorID
+      type: INTEGER
+    - name: UnitPackageID
+      type: INTEGER
+    - name: OuterPackageID
+      type: INTEGER
+    - name: Brand
+      type: VARCHAR
+    - name: Size
+      type: VARCHAR
+    - name: LeadTimeDays
+      type: INTEGER
+    - name: QuantityPerOuter
+      type: INTEGER
+    - name: IsChillerStock
+      type: BOOLEAN
+    - name: Barcode
+      type: VARCHAR
+    - name: TaxRate
+      type: DECIMAL(18,3)
+    - name: UnitPrice
+      type: DECIMAL(18,2)
+    - name: RecommendedRetailPrice
+      type: DECIMAL(18,2)
+    - name: TypicalWeightPerUnit
+      type: DECIMAL(18,3)
+    - name: MarketingComments
+      type: VARCHAR
+    - name: InternalComments
+      type: VARCHAR
+    - name: Photo
+      type: BLOB
+    - name: CustomFields
+      type: VARCHAR
+    - name: Tags
+      type: VARCHAR
+    - name: SearchDetails
+      type: VARCHAR
+    - name: LastEditedBy
+      type: INTEGER
+    - name: ValidFrom
+      type: TIMESTAMP
+    - name: ValidTo
+      type: TIMESTAMP
+  Warehouse_VehicleTemperatures:
+    primary_key: []
+    columns:
+    - name: VehicleTemperatureID
+      type: BIGINT
+    - name: VehicleRegistration
+      type: VARCHAR
+    - name: ChillerSensorNumber
+      type: INTEGER
+    - name: RecordedWhen
+      type: TIMESTAMP
+    - name: Temperature
+      type: DECIMAL(10,2)
+    - name: FullSensorData
+      type: VARCHAR
+    - name: IsCompressed
+      type: BOOLEAN
+    - name: CompressedSensorData
+      type: BLOB
+  dbo_SampleVersion:
+    primary_key: []
+    columns:
+    - name: MajorSampleVersion
+      type: INTEGER
+    - name: MinorSampleVersion
+      type: INTEGER
+    - name: MinSQLServerBuild
+      type: VARCHAR
+    - name: RowCount
+      type: INTEGER
 metrics:
-  - name: total_revenue
+  total_revenue:
     chinese: 总营收
-    definition: SUM(sales_orders.total_amount)，按下单日期归属
-    formula: SUM(sales_orders.total_amount)
-    grain: [day, month, quarter, year]
-    notes: 不含已取消订单（status = 'cancelled'）
-
-  - name: order_count
+    definition: SUM(Orders.TotalProfit)，订单毛利润合计（WWI 无 Amount 列，以 TotalProfit 为营收口径）
+    formula: SUM(TotalProfit) FROM Sales_Orders
+  order_count:
     chinese: 订单量
-    definition: 有效订单数量
-    formula: COUNT(DISTINCT sales_orders.order_id)
-    grain: [day, month, quarter, year]
-    notes: 不含已取消订单
-
-  - name: active_customer
+    definition: 订单数量（不含 Backorder 标记）
+    formula: COUNT(OrderID) FROM Sales_Orders WHERE IsUndersupplyBackordered = false
+  active_customer:
     chinese: 活跃客户
-    definition: 统计周期内至少产生 1 笔有效订单的客户
-    formula: COUNT(DISTINCT sales_orders.customer_id)
-    grain: [month, quarter, year]
-    notes: 该口径是全系统唯一定义，SQL 与分析工具必须共用
-
-  - name: average_order_value
-    chinese: 客单价
-    definition: 总营收 / 订单量
-    formula: total_revenue / order_count
-    grain: [day, month, quarter, year]
-
-  - name: reimbursement_amount
-    chinese: 报销金额
-    definition: 已审批通过的报销金额合计
-    formula: SUM(finance_expenses.amount) WHERE approved = true
-    grain: [month, quarter, year]
-
-# --- Enum vocabularies -----------------------------------------------------
-enums:
-  sales_orders.status:
-    values:
-      - { value: pending,   chinese: 待处理 }
-      - { value: shipped,   chinese: 已发货 }
-      - { value: completed, chinese: 已完成 }
-      - { value: cancelled, chinese: 已取消, excluded_from_revenue: true }
-  finance_expenses.expense_type:
-    values:
-      - { value: travel,        chinese: 差旅 }
-      - { value: entertainment, chinese: 招待 }
-      - { value: procurement,   chinese: 采购 }
-      - { value: other,         chinese: 其他 }
-
-# --- Time semantics --------------------------------------------------------
-time_semantics:
-  fiscal_year_start_month: 1
-  default_time_column:
-    sales_orders: order_date
-    finance_expenses: expense_date
-  relative_expression_examples:
-    - { expression: 本季度, resolution: 自然季度, start: 当季首日, end: 当季末日 }
-    - { expression: 去年同期, resolution: 去年同一自然季度 }
-    - { expression: 近 12 个月, resolution: 滚动窗口 }
-
-# --- Ambiguity register ----------------------------------------------------
-# Questions whose wording is genuinely ambiguous must be clarified, not guessed.
-ambiguity_register:
-  - phrase: 销售额
-    possible_meanings: [total_revenue, total_amount, quantity * unit_price]
-    default_resolution: total_revenue
-    require_clarification: false
-  - phrase: 大客户
-    possible_meanings: [按累计营收, 按订单量, 按客户分类字段]
-    default_resolution: null
-    require_clarification: true
-
-# --- Knowledge graph entity mapping ---------------------------------------
-# Which structured entities also become knowledge graph nodes (Phase 2).
-kg_entity_sources:
-  - { entity: Employee,   source_table: employees,   key: employee_id }
-  - { entity: Department, source_table: departments, key: department_id }
-  - { entity: Customer,   source_table: customers,   key: customer_id }
-  - { entity: Product,    source_table: products,    key: product_id }
+    definition: 统计周期内至少产生 1 笔订单的客户
+    formula: COUNT(DISTINCT CustomerID) FROM Sales_Orders
+notes:
+- 本字典由 scripts/import_wwi.py 从 DuckDB 内省结果自动生成（v0.2 起不再手维护）。
+- WideWorldImporters 为微软公开示例库，全部数据均为虚构，不得声称属于任何真实企业。
+- WWI 维度表主键为 varchar dimension id（如 'WWI1'），非自增 int。

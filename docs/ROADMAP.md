@@ -1,6 +1,6 @@
 # 开发路线图（ROADMAP）
 
-> 状态：Phase 1 已完成（2026-09-28）。
+> 状态：Phase 1 完成并通过验收（2026-09-29）。
 > 阶段顺序固定，不跳阶段。每个阶段有明确的完成标准，未达标不进入下一阶段。
 
 ---
@@ -29,30 +29,38 @@
 **目标**：跑通 `Intent → Router → RAG/SQL → Answer`。
 
 内容（全部已实现）：
-- `src/core/`：`state.py`（`AgentState` + 统一 `Evidence` 模型 + append reducer）、
+- `src/core/`：`state.py`（`AgentState` + 统一 `EvidenceItem` 模型 + append reducer）、
   `config_loader.py`（settings.yaml + routing_rules.yaml 的 typed 加载，支持 `${VAR}` 环境变量覆盖）、
-  `llm_client.py`（Qwen OpenAI 兼容端点 + 离线 mock 后端）、
-  `exceptions.py`、`observability.py`（分项耗时）、`sql_executor.py`（只读 DuckDB + 语句白名单 + 行数上限）、
+  `llm_client.py`（OpenAI 兼容端点：Qwen / Agnes apihub 等，离线 backend 兜底；
+  唯一 LLM 入口，支持本地 `.env` 注入密钥）、
+  `exceptions.py`、`observability.py`（分项耗时）、`sql_executor.py`（只读 DuckDB + 语句白名单 + 行数上限 + 超时）、
   `vector_store.py`（Phase 1 进程内最小向量索引，Phase 2 切换 pymilvus 后端）；
-- `src/nodes/`：`intent_understanding.py`、`supervisor_router.py`（最小策略）、
-  `sql_execution.py`（Text-to-SQL + 安全执行）、`rag_retrieval.py`、
-  `answer_generation.py`、`clarification.py`；
+- `src/nodes/`：`intent_understanding.py`（规则 fast lane + LLM 分类）、
+  `supervisor_router.py`（最小策略）、`sql_execution.py`（Text-to-SQL + Schema + 数据字典 + Few-shot 上下文 + 安全执行）、
+  `rag_retrieval.py`、`answer_generation.py`（仅基于证据作答 + 无证据诚实降级）、`clarification.py`；
 - `src/tools/`：`base.py`（工具白名单注册表 + ToolResult）、`sql_tool.py`、
-  `rag_tool.py`（dense + BM25 + RRF 混合检索，本地语料 `data/knowledge_base/`）；
+  `rag_tool.py`（dense 检索 + 本地语料 `data/knowledge_base/`，Phase 2 接 BGE-M3 + Milvus + Rerank）；
 - `src/graph/builder.py`：最小 StateGraph + `DigitalEmployee` 入口；
 - `src/api/main.py`：FastAPI `POST /chat` 最小接口；
-- 导入 WideWorldImporters 到 DuckDB（`scripts/import_ww_i_duckdb.py`）；
+- `scripts/import_wwi.py`：WideWorldImporters 官方 T-SQL DDL → DuckDB 方言转换 + 种子数据导入
+  （官方维度表 3,364 行真实数据），自动生成 `data/schemas/*.yaml`（Schema / 数据字典 / Few-shot）；
+- `scripts/generate_synthetic_seed.py`：合成业务种子数据（Sales_Customers / Purchasing_Suppliers /
+  Warehouse_StockItems / Sales_Orders / Sales_Invoices / Sales_InvoiceLines，共 3,200 行，
+  **明确标注 synthetic**，仅用于让 Text-to-SQL 在真实表结构上可查，不得当作真实业务指标）；
 - 端到端测试 `tests/integration/test_sql_e2e.py` 与 `test_rag_e2e.py`。
 
 **完成标准**：✅ 给定一条中文业务问题，系统走完全流程并返回带 SQL 结果 / RAG 证据的答案；
-配置来自 `config/*.yaml`；LLM 调用只出现在 `llm_client.py`；12 项测试通过，ruff / mypy 全绿。
+配置来自 `config/*.yaml`；LLM 调用只出现在 `llm_client.py`；12 项测试通过，ruff 全绿。
 
 **Phase 1 边界（明确不做，留给 Phase 2+）**：
 - 不使用 Neo4j 知识图谱、不做 Claim-Evidence 验证、不建评估框架、不做前端；
 - RAG 用进程内最小向量索引 + 本地语料，BGE-M3 真实 Embedding 与 Milvus 服务端接入在 Phase 2；
-- Text-to-SQL 走 LLM 生成（mock 后端可离线跑通），SQL 安全校验已在 `sql_executor.py` 到位；
-- `DuckDB` 中的 `finance_expenses` 表为**明确标注的合成数据**，WWI 真实表需先下载官方
-  DDL 后运行 `scripts/import_ww_i_duckdb.py` 生成。
+  当前 `embedder.py` 支持本地 BGE-M3 模型路径（`EMBEDDING_MODEL` 环境变量），
+  `EMBEDDING_FORCE_OFFLINE=1` 时走 hash fallback（CI 离线场景）；
+- Text-to-SQL 走 LLM 生成（离线 backend 可 mock 跑通），SQL 安全校验已在 `sql_executor.py` 到位；
+- `finance_expenses` 表为**明确标注的合成数据**；WWI 真实维度数据（Application_* 等 14 张表）
+  已由 `import_wwi.py` 导入，业务大表（Customers/Orders/Invoices 等）由
+  `generate_synthetic_seed.py` 合成补齐——两者来源不同，报告中需区分。
 
 ---
 

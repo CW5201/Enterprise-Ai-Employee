@@ -1,96 +1,1933 @@
-# ---------------------------------------------------------------------------
-# Business database schema declaration (DuckDB).
-#
-# Declarative only: this file describes tables and columns so that
-#   - Text-to-SQL has a structural prior,
-#   - the SQL guard knows which identifiers are legal,
-#   - the knowledge graph build (Phase 2) knows which entities to extract.
-#
-# NOTHING here is loaded yet. The authoritative schema is whatever the real
-# WideWorldImporters / AdventureWorks import produces - this declaration is
-# verified against it in Phase 2 and corrected if it disagrees.
-#
-# Source databases (see docs/DATASET.md, THIRD_PARTY_LICENSES.md):
-#   - WideWorldImporters (primary)
-#   - AdventureWorks   (secondary)
-# ---------------------------------------------------------------------------
-
-version: v0.1
+version: v0.2
 dialect: duckdb
 source_database: WideWorldImporters
-status: declared_not_verified
-
+status: verified
+generated_at: '2026-09-29 15:31:32'
 tables:
-  - name: sales_orders
-    comment: 销售订单主表（由 WideWorldImporters 导入）
-    primary_key: order_id
-    columns:
-      - { name: order_id, type: integer, comment: 订单唯一标识 }
-      - { name: customer_id, type: integer, comment: 客户标识 }
-      - { name: order_date, type: date, comment: 下单日期 }
-      - { name: quantity, type: integer, comment: 数量 }
-      - { name: unit_price, type: decimal, comment: 单价 }
-      - { name: total_amount, type: decimal, comment: 订单金额 }
-      - { name: status, type: varchar, comment: 订单状态 }
-    relationships:
-      - { column: customer_id, references: customers.customer_id }
-
-  - name: customers
-    comment: 客户维表
-    primary_key: customer_id
-    columns:
-      - { name: customer_id, type: integer, comment: 客户标识 }
-      - { name: customer_name, type: varchar, comment: 客户名称 }
-      - { name: region, type: varchar, comment: 所属区域 }
-      - { name: category, type: varchar, comment: 客户分类 }
-      - { name: created_at, type: date, comment: 建档日期 }
-
-  - name: products
-    comment: 产品维表
-    primary_key: product_id
-    columns:
-      - { name: product_id, type: integer, comment: 产品标识 }
-      - { name: product_name, type: varchar, comment: 产品名称 }
-      - { name: category, type: varchar, comment: 产品类别 }
-      - { name: unit_price, type: decimal, comment: 标准单价 }
-      - { name: is_active, type: boolean, comment: 是否在售 }
-
-  - name: employees
-    comment: 员工维表（同时是知识图谱的人员实体来源）
-    primary_key: employee_id
-    columns:
-      - { name: employee_id, type: integer, comment: 员工标识 }
-      - { name: employee_name, type: varchar, comment: 姓名 }
-      - { name: department_id, type: integer, comment: 所属部门 }
-      - { name: title, type: varchar, comment: 职位 }
-      - { name: hire_date, type: date, comment: 入职日期 }
-      - { name: manager_id, type: integer, comment: 直属上级 }
-
-  - name: departments
-    comment: 部门维表
-    primary_key: department_id
-    columns:
-      - { name: department_id, type: integer, comment: 部门标识 }
-      - { name: department_name, type: varchar, comment: 部门名称 }
-      - { name: cost_center, type: varchar, comment: 成本中心 }
-      - { name: parent_department_id, type: integer, comment: 上级部门 }
-
-  - name: finance_expenses
-    comment: 费用与报销事实表
-    primary_key: expense_id
-    columns:
-      - { name: expense_id, type: integer, comment: 费用记录标识 }
-      - { name: employee_id, type: integer, comment: 报销人 }
-      - { name: department_id, type: integer, comment: 归属部门 }
-      - { name: expense_date, type: date, comment: 发生日期 }
-      - { name: expense_type, type: varchar, comment: 费用类型 }
-      - { name: amount, type: decimal, comment: 金额 }
-      - { name: approved, type: boolean, comment: 是否已审批 }
-
-# --- Access policy (enforced by src/core/sql_executor.py) ------------------
+- name: Application_Cities
+  primary_key: []
+  columns:
+  - name: CityID
+    type: INTEGER
+    nullable: false
+  - name: CityName
+    type: VARCHAR
+    nullable: false
+  - name: StateProvinceID
+    type: INTEGER
+    nullable: false
+  - name: Location
+    type: VARCHAR
+    nullable: true
+  - name: LatestRecordedPopulation
+    type: BIGINT
+    nullable: true
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: Application_Cities_Archive
+  primary_key: []
+  columns:
+  - name: CityID
+    type: INTEGER
+    nullable: false
+  - name: CityName
+    type: VARCHAR
+    nullable: false
+  - name: StateProvinceID
+    type: INTEGER
+    nullable: false
+  - name: Location
+    type: VARCHAR
+    nullable: true
+  - name: LatestRecordedPopulation
+    type: BIGINT
+    nullable: true
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: Application_Countries
+  primary_key: []
+  columns:
+  - name: CountryID
+    type: INTEGER
+    nullable: false
+  - name: CountryName
+    type: VARCHAR
+    nullable: false
+  - name: FormalName
+    type: VARCHAR
+    nullable: false
+  - name: IsoAlpha3Code
+    type: VARCHAR
+    nullable: true
+  - name: IsoNumericCode
+    type: INTEGER
+    nullable: true
+  - name: CountryType
+    type: VARCHAR
+    nullable: true
+  - name: LatestRecordedPopulation
+    type: BIGINT
+    nullable: true
+  - name: Continent
+    type: VARCHAR
+    nullable: false
+  - name: Region
+    type: VARCHAR
+    nullable: false
+  - name: Subregion
+    type: VARCHAR
+    nullable: false
+  - name: Border
+    type: VARCHAR
+    nullable: true
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: Application_Countries_Archive
+  primary_key: []
+  columns:
+  - name: CountryID
+    type: INTEGER
+    nullable: false
+  - name: CountryName
+    type: VARCHAR
+    nullable: false
+  - name: FormalName
+    type: VARCHAR
+    nullable: false
+  - name: IsoAlpha3Code
+    type: VARCHAR
+    nullable: true
+  - name: IsoNumericCode
+    type: INTEGER
+    nullable: true
+  - name: CountryType
+    type: VARCHAR
+    nullable: true
+  - name: LatestRecordedPopulation
+    type: BIGINT
+    nullable: true
+  - name: Continent
+    type: VARCHAR
+    nullable: false
+  - name: Region
+    type: VARCHAR
+    nullable: false
+  - name: Subregion
+    type: VARCHAR
+    nullable: false
+  - name: Border
+    type: VARCHAR
+    nullable: true
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: Application_DeliveryMethods
+  primary_key: []
+  columns:
+  - name: DeliveryMethodID
+    type: INTEGER
+    nullable: false
+  - name: DeliveryMethodName
+    type: VARCHAR
+    nullable: false
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: Application_DeliveryMethods_Archive
+  primary_key: []
+  columns:
+  - name: DeliveryMethodID
+    type: INTEGER
+    nullable: false
+  - name: DeliveryMethodName
+    type: VARCHAR
+    nullable: false
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: Application_Logs
+  primary_key: []
+  columns:
+  - name: Message
+    type: VARCHAR
+    nullable: false
+  - name: Level
+    type: VARCHAR
+    nullable: false
+  - name: EventTime
+    type: TIMESTAMP
+    nullable: false
+  - name: LogEvent
+    type: VARCHAR
+    nullable: true
+- name: Application_PaymentMethods
+  primary_key: []
+  columns:
+  - name: PaymentMethodID
+    type: INTEGER
+    nullable: false
+  - name: PaymentMethodName
+    type: VARCHAR
+    nullable: false
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: Application_PaymentMethods_Archive
+  primary_key: []
+  columns:
+  - name: PaymentMethodID
+    type: INTEGER
+    nullable: false
+  - name: PaymentMethodName
+    type: VARCHAR
+    nullable: false
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: Application_People
+  primary_key: []
+  columns:
+  - name: PersonID
+    type: INTEGER
+    nullable: false
+  - name: FullName
+    type: VARCHAR
+    nullable: false
+  - name: PreferredName
+    type: VARCHAR
+    nullable: false
+  - name: SearchName
+    type: VARCHAR
+    nullable: true
+  - name: IsPermittedToLogon
+    type: BOOLEAN
+    nullable: false
+  - name: LogonName
+    type: VARCHAR
+    nullable: true
+  - name: IsExternalLogonProvider
+    type: BOOLEAN
+    nullable: false
+  - name: HashedPassword
+    type: BLOB
+    nullable: true
+  - name: IsSystemUser
+    type: BOOLEAN
+    nullable: false
+  - name: IsEmployee
+    type: BOOLEAN
+    nullable: false
+  - name: IsSalesperson
+    type: BOOLEAN
+    nullable: false
+  - name: UserPreferences
+    type: VARCHAR
+    nullable: true
+  - name: PhoneNumber
+    type: VARCHAR
+    nullable: true
+  - name: FaxNumber
+    type: VARCHAR
+    nullable: true
+  - name: EmailAddress
+    type: VARCHAR
+    nullable: true
+  - name: Photo
+    type: BLOB
+    nullable: true
+  - name: CustomFields
+    type: VARCHAR
+    nullable: true
+  - name: OtherLanguages
+    type: VARCHAR
+    nullable: true
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: Application_People_Archive
+  primary_key: []
+  columns:
+  - name: PersonID
+    type: INTEGER
+    nullable: false
+  - name: FullName
+    type: VARCHAR
+    nullable: false
+  - name: PreferredName
+    type: VARCHAR
+    nullable: false
+  - name: SearchName
+    type: VARCHAR
+    nullable: false
+  - name: IsPermittedToLogon
+    type: BOOLEAN
+    nullable: false
+  - name: LogonName
+    type: VARCHAR
+    nullable: true
+  - name: IsExternalLogonProvider
+    type: BOOLEAN
+    nullable: false
+  - name: HashedPassword
+    type: BLOB
+    nullable: true
+  - name: IsSystemUser
+    type: BOOLEAN
+    nullable: false
+  - name: IsEmployee
+    type: BOOLEAN
+    nullable: false
+  - name: IsSalesperson
+    type: BOOLEAN
+    nullable: false
+  - name: UserPreferences
+    type: VARCHAR
+    nullable: true
+  - name: PhoneNumber
+    type: VARCHAR
+    nullable: true
+  - name: FaxNumber
+    type: VARCHAR
+    nullable: true
+  - name: EmailAddress
+    type: VARCHAR
+    nullable: true
+  - name: Photo
+    type: BLOB
+    nullable: true
+  - name: CustomFields
+    type: VARCHAR
+    nullable: true
+  - name: OtherLanguages
+    type: VARCHAR
+    nullable: true
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: Application_StateProvinces
+  primary_key: []
+  columns:
+  - name: StateProvinceID
+    type: INTEGER
+    nullable: false
+  - name: StateProvinceCode
+    type: VARCHAR
+    nullable: false
+  - name: StateProvinceName
+    type: VARCHAR
+    nullable: false
+  - name: CountryID
+    type: INTEGER
+    nullable: false
+  - name: SalesTerritory
+    type: VARCHAR
+    nullable: false
+  - name: Border
+    type: VARCHAR
+    nullable: true
+  - name: LatestRecordedPopulation
+    type: BIGINT
+    nullable: true
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: Application_StateProvinces_Archive
+  primary_key: []
+  columns:
+  - name: StateProvinceID
+    type: INTEGER
+    nullable: false
+  - name: StateProvinceCode
+    type: VARCHAR
+    nullable: false
+  - name: StateProvinceName
+    type: VARCHAR
+    nullable: false
+  - name: CountryID
+    type: INTEGER
+    nullable: false
+  - name: SalesTerritory
+    type: VARCHAR
+    nullable: false
+  - name: Border
+    type: VARCHAR
+    nullable: true
+  - name: LatestRecordedPopulation
+    type: BIGINT
+    nullable: true
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: Application_SystemParameters
+  primary_key: []
+  columns:
+  - name: SystemParameterID
+    type: INTEGER
+    nullable: false
+  - name: DeliveryAddressLine1
+    type: VARCHAR
+    nullable: false
+  - name: DeliveryAddressLine2
+    type: VARCHAR
+    nullable: true
+  - name: DeliveryCityID
+    type: INTEGER
+    nullable: false
+  - name: DeliveryPostalCode
+    type: VARCHAR
+    nullable: false
+  - name: DeliveryLocation
+    type: VARCHAR
+    nullable: false
+  - name: PostalAddressLine1
+    type: VARCHAR
+    nullable: false
+  - name: PostalAddressLine2
+    type: VARCHAR
+    nullable: true
+  - name: PostalCityID
+    type: INTEGER
+    nullable: false
+  - name: PostalPostalCode
+    type: VARCHAR
+    nullable: false
+  - name: ApplicationSettings
+    type: VARCHAR
+    nullable: false
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: LastEditedWhen
+    type: TIMESTAMP
+    nullable: false
+- name: Application_TransactionTypes
+  primary_key: []
+  columns:
+  - name: TransactionTypeID
+    type: INTEGER
+    nullable: false
+  - name: TransactionTypeName
+    type: VARCHAR
+    nullable: false
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: Application_TransactionTypes_Archive
+  primary_key: []
+  columns:
+  - name: TransactionTypeID
+    type: INTEGER
+    nullable: false
+  - name: TransactionTypeName
+    type: VARCHAR
+    nullable: false
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: DataLoadSimulation_AreaCode
+  primary_key: []
+  columns:
+  - name: StateProvinceCode
+    type: VARCHAR
+    nullable: true
+  - name: AreaCode
+    type: VARCHAR
+    nullable: true
+- name: DataLoadSimulation_ColdRoomTemperatures_temp
+  primary_key: []
+  columns:
+  - name: ColdRoomTemperatureID
+    type: BIGINT
+    nullable: false
+  - name: ColdRoomSensorNumber
+    type: INTEGER
+    nullable: false
+  - name: RecordedWhen
+    type: TIMESTAMP
+    nullable: false
+  - name: Temperature
+    type: DECIMAL(10,2)
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: DataLoadSimulation_FicticiousNamePool
+  primary_key: []
+  columns:
+  - name: FullName
+    type: VARCHAR
+    nullable: true
+  - name: PreferredName
+    type: VARCHAR
+    nullable: true
+  - name: LastName
+    type: VARCHAR
+    nullable: true
+  - name: ToEmail
+    type: VARCHAR
+    nullable: true
+- name: DataLoadSimulation_SeasonVariation
+  primary_key: []
+  columns:
+  - name: Year
+    type: INTEGER
+    nullable: false
+  - name: Season
+    type: SMALLINT
+    nullable: false
+  - name: YearlyVariation
+    type: DOUBLE
+    nullable: false
+  - name: SeasonalVariation
+    type: DOUBLE
+    nullable: false
+- name: Purchasing_PurchaseOrderLines
+  primary_key: []
+  columns:
+  - name: PurchaseOrderLineID
+    type: INTEGER
+    nullable: false
+  - name: PurchaseOrderID
+    type: INTEGER
+    nullable: false
+  - name: StockItemID
+    type: INTEGER
+    nullable: false
+  - name: OrderedOuters
+    type: INTEGER
+    nullable: false
+  - name: Description
+    type: VARCHAR
+    nullable: false
+  - name: ReceivedOuters
+    type: INTEGER
+    nullable: false
+  - name: PackageTypeID
+    type: INTEGER
+    nullable: false
+  - name: ExpectedUnitPricePerOuter
+    type: DECIMAL(18,2)
+    nullable: true
+  - name: LastReceiptDate
+    type: DATE
+    nullable: true
+  - name: IsOrderLineFinalized
+    type: BOOLEAN
+    nullable: false
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: LastEditedWhen
+    type: TIMESTAMP
+    nullable: false
+- name: Purchasing_PurchaseOrders
+  primary_key: []
+  columns:
+  - name: PurchaseOrderID
+    type: INTEGER
+    nullable: false
+  - name: SupplierID
+    type: INTEGER
+    nullable: false
+  - name: OrderDate
+    type: DATE
+    nullable: false
+  - name: DeliveryMethodID
+    type: INTEGER
+    nullable: false
+  - name: ContactPersonID
+    type: INTEGER
+    nullable: false
+  - name: ExpectedDeliveryDate
+    type: DATE
+    nullable: true
+  - name: SupplierReference
+    type: VARCHAR
+    nullable: true
+  - name: IsOrderFinalized
+    type: BOOLEAN
+    nullable: false
+  - name: Comments
+    type: VARCHAR
+    nullable: true
+  - name: InternalComments
+    type: VARCHAR
+    nullable: true
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: LastEditedWhen
+    type: TIMESTAMP
+    nullable: false
+- name: Purchasing_SupplierCategories
+  primary_key: []
+  columns:
+  - name: SupplierCategoryID
+    type: INTEGER
+    nullable: false
+  - name: SupplierCategoryName
+    type: VARCHAR
+    nullable: false
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: Purchasing_SupplierCategories_Archive
+  primary_key: []
+  columns:
+  - name: SupplierCategoryID
+    type: INTEGER
+    nullable: false
+  - name: SupplierCategoryName
+    type: VARCHAR
+    nullable: false
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: Purchasing_SupplierTransactions
+  primary_key: []
+  columns:
+  - name: SupplierTransactionID
+    type: INTEGER
+    nullable: false
+  - name: SupplierID
+    type: INTEGER
+    nullable: false
+  - name: TransactionTypeID
+    type: INTEGER
+    nullable: false
+  - name: PurchaseOrderID
+    type: INTEGER
+    nullable: true
+  - name: PaymentMethodID
+    type: INTEGER
+    nullable: true
+  - name: SupplierInvoiceNumber
+    type: VARCHAR
+    nullable: true
+  - name: TransactionDate
+    type: DATE
+    nullable: false
+  - name: AmountExcludingTax
+    type: DECIMAL(18,2)
+    nullable: false
+  - name: TaxAmount
+    type: DECIMAL(18,2)
+    nullable: false
+  - name: TransactionAmount
+    type: DECIMAL(18,2)
+    nullable: false
+  - name: OutstandingBalance
+    type: DECIMAL(18,2)
+    nullable: false
+  - name: FinalizationDate
+    type: DATE
+    nullable: true
+  - name: IsFinalized
+    type: VARCHAR
+    nullable: true
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: LastEditedWhen
+    type: TIMESTAMP
+    nullable: false
+- name: Purchasing_Suppliers
+  primary_key: []
+  columns:
+  - name: SupplierID
+    type: INTEGER
+    nullable: false
+  - name: SupplierName
+    type: VARCHAR
+    nullable: false
+  - name: SupplierCategoryID
+    type: INTEGER
+    nullable: false
+  - name: PrimaryContactPersonID
+    type: INTEGER
+    nullable: false
+  - name: AlternateContactPersonID
+    type: INTEGER
+    nullable: false
+  - name: DeliveryMethodID
+    type: INTEGER
+    nullable: true
+  - name: DeliveryCityID
+    type: INTEGER
+    nullable: false
+  - name: PostalCityID
+    type: INTEGER
+    nullable: false
+  - name: SupplierReference
+    type: VARCHAR
+    nullable: true
+  - name: BankAccountName
+    type: VARCHAR
+    nullable: true
+  - name: BankAccountBranch
+    type: VARCHAR
+    nullable: true
+  - name: BankAccountCode
+    type: VARCHAR
+    nullable: true
+  - name: BankAccountNumber
+    type: VARCHAR
+    nullable: true
+  - name: BankInternationalCode
+    type: VARCHAR
+    nullable: true
+  - name: PaymentDays
+    type: INTEGER
+    nullable: false
+  - name: InternalComments
+    type: VARCHAR
+    nullable: true
+  - name: PhoneNumber
+    type: VARCHAR
+    nullable: false
+  - name: FaxNumber
+    type: VARCHAR
+    nullable: false
+  - name: WebsiteURL
+    type: VARCHAR
+    nullable: false
+  - name: DeliveryAddressLine1
+    type: VARCHAR
+    nullable: false
+  - name: DeliveryAddressLine2
+    type: VARCHAR
+    nullable: true
+  - name: DeliveryPostalCode
+    type: VARCHAR
+    nullable: false
+  - name: DeliveryLocation
+    type: VARCHAR
+    nullable: true
+  - name: PostalAddressLine1
+    type: VARCHAR
+    nullable: false
+  - name: PostalAddressLine2
+    type: VARCHAR
+    nullable: true
+  - name: PostalPostalCode
+    type: VARCHAR
+    nullable: false
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: Purchasing_Suppliers_Archive
+  primary_key: []
+  columns:
+  - name: SupplierID
+    type: INTEGER
+    nullable: false
+  - name: SupplierName
+    type: VARCHAR
+    nullable: false
+  - name: SupplierCategoryID
+    type: INTEGER
+    nullable: false
+  - name: PrimaryContactPersonID
+    type: INTEGER
+    nullable: false
+  - name: AlternateContactPersonID
+    type: INTEGER
+    nullable: false
+  - name: DeliveryMethodID
+    type: INTEGER
+    nullable: true
+  - name: DeliveryCityID
+    type: INTEGER
+    nullable: false
+  - name: PostalCityID
+    type: INTEGER
+    nullable: false
+  - name: SupplierReference
+    type: VARCHAR
+    nullable: true
+  - name: BankAccountName
+    type: VARCHAR
+    nullable: true
+  - name: BankAccountBranch
+    type: VARCHAR
+    nullable: true
+  - name: BankAccountCode
+    type: VARCHAR
+    nullable: true
+  - name: BankAccountNumber
+    type: VARCHAR
+    nullable: true
+  - name: BankInternationalCode
+    type: VARCHAR
+    nullable: true
+  - name: PaymentDays
+    type: INTEGER
+    nullable: false
+  - name: InternalComments
+    type: VARCHAR
+    nullable: true
+  - name: PhoneNumber
+    type: VARCHAR
+    nullable: false
+  - name: FaxNumber
+    type: VARCHAR
+    nullable: false
+  - name: WebsiteURL
+    type: VARCHAR
+    nullable: false
+  - name: DeliveryAddressLine1
+    type: VARCHAR
+    nullable: false
+  - name: DeliveryAddressLine2
+    type: VARCHAR
+    nullable: true
+  - name: DeliveryPostalCode
+    type: VARCHAR
+    nullable: false
+  - name: DeliveryLocation
+    type: VARCHAR
+    nullable: true
+  - name: PostalAddressLine1
+    type: VARCHAR
+    nullable: false
+  - name: PostalAddressLine2
+    type: VARCHAR
+    nullable: true
+  - name: PostalPostalCode
+    type: VARCHAR
+    nullable: false
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: Sales_BuyingGroups
+  primary_key: []
+  columns:
+  - name: BuyingGroupID
+    type: INTEGER
+    nullable: false
+  - name: BuyingGroupName
+    type: VARCHAR
+    nullable: false
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: Sales_BuyingGroups_Archive
+  primary_key: []
+  columns:
+  - name: BuyingGroupID
+    type: INTEGER
+    nullable: false
+  - name: BuyingGroupName
+    type: VARCHAR
+    nullable: false
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: Sales_CustomerCategories
+  primary_key: []
+  columns:
+  - name: CustomerCategoryID
+    type: INTEGER
+    nullable: false
+  - name: CustomerCategoryName
+    type: VARCHAR
+    nullable: false
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: Sales_CustomerCategories_Archive
+  primary_key: []
+  columns:
+  - name: CustomerCategoryID
+    type: INTEGER
+    nullable: false
+  - name: CustomerCategoryName
+    type: VARCHAR
+    nullable: false
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: Sales_CustomerTransactions
+  primary_key: []
+  columns:
+  - name: CustomerTransactionID
+    type: INTEGER
+    nullable: false
+  - name: CustomerID
+    type: INTEGER
+    nullable: false
+  - name: TransactionTypeID
+    type: INTEGER
+    nullable: false
+  - name: InvoiceID
+    type: INTEGER
+    nullable: true
+  - name: PaymentMethodID
+    type: INTEGER
+    nullable: true
+  - name: TransactionDate
+    type: DATE
+    nullable: false
+  - name: AmountExcludingTax
+    type: DECIMAL(18,2)
+    nullable: false
+  - name: TaxAmount
+    type: DECIMAL(18,2)
+    nullable: false
+  - name: TransactionAmount
+    type: DECIMAL(18,2)
+    nullable: false
+  - name: OutstandingBalance
+    type: DECIMAL(18,2)
+    nullable: false
+  - name: FinalizationDate
+    type: DATE
+    nullable: true
+  - name: IsFinalized
+    type: VARCHAR
+    nullable: true
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: LastEditedWhen
+    type: TIMESTAMP
+    nullable: false
+- name: Sales_Customers
+  primary_key: []
+  columns:
+  - name: CustomerID
+    type: INTEGER
+    nullable: false
+  - name: CustomerName
+    type: VARCHAR
+    nullable: false
+  - name: BillToCustomerID
+    type: INTEGER
+    nullable: false
+  - name: CustomerCategoryID
+    type: INTEGER
+    nullable: false
+  - name: BuyingGroupID
+    type: INTEGER
+    nullable: true
+  - name: PrimaryContactPersonID
+    type: INTEGER
+    nullable: false
+  - name: AlternateContactPersonID
+    type: INTEGER
+    nullable: true
+  - name: DeliveryMethodID
+    type: INTEGER
+    nullable: false
+  - name: DeliveryCityID
+    type: INTEGER
+    nullable: false
+  - name: PostalCityID
+    type: INTEGER
+    nullable: false
+  - name: CreditLimit
+    type: DECIMAL(18,2)
+    nullable: true
+  - name: AccountOpenedDate
+    type: DATE
+    nullable: false
+  - name: StandardDiscountPercentage
+    type: DECIMAL(18,3)
+    nullable: false
+  - name: IsStatementSent
+    type: BOOLEAN
+    nullable: false
+  - name: IsOnCreditHold
+    type: BOOLEAN
+    nullable: false
+  - name: PaymentDays
+    type: INTEGER
+    nullable: false
+  - name: PhoneNumber
+    type: VARCHAR
+    nullable: false
+  - name: FaxNumber
+    type: VARCHAR
+    nullable: false
+  - name: DeliveryRun
+    type: VARCHAR
+    nullable: true
+  - name: RunPosition
+    type: VARCHAR
+    nullable: true
+  - name: WebsiteURL
+    type: VARCHAR
+    nullable: false
+  - name: DeliveryAddressLine1
+    type: VARCHAR
+    nullable: false
+  - name: DeliveryAddressLine2
+    type: VARCHAR
+    nullable: true
+  - name: DeliveryPostalCode
+    type: VARCHAR
+    nullable: false
+  - name: DeliveryLocation
+    type: VARCHAR
+    nullable: true
+  - name: PostalAddressLine1
+    type: VARCHAR
+    nullable: false
+  - name: PostalAddressLine2
+    type: VARCHAR
+    nullable: true
+  - name: PostalPostalCode
+    type: VARCHAR
+    nullable: false
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: Sales_Customers_Archive
+  primary_key: []
+  columns:
+  - name: CustomerID
+    type: INTEGER
+    nullable: false
+  - name: CustomerName
+    type: VARCHAR
+    nullable: false
+  - name: BillToCustomerID
+    type: INTEGER
+    nullable: false
+  - name: CustomerCategoryID
+    type: INTEGER
+    nullable: false
+  - name: BuyingGroupID
+    type: INTEGER
+    nullable: true
+  - name: PrimaryContactPersonID
+    type: INTEGER
+    nullable: false
+  - name: AlternateContactPersonID
+    type: INTEGER
+    nullable: true
+  - name: DeliveryMethodID
+    type: INTEGER
+    nullable: false
+  - name: DeliveryCityID
+    type: INTEGER
+    nullable: false
+  - name: PostalCityID
+    type: INTEGER
+    nullable: false
+  - name: CreditLimit
+    type: DECIMAL(18,2)
+    nullable: true
+  - name: AccountOpenedDate
+    type: DATE
+    nullable: false
+  - name: StandardDiscountPercentage
+    type: DECIMAL(18,3)
+    nullable: false
+  - name: IsStatementSent
+    type: BOOLEAN
+    nullable: false
+  - name: IsOnCreditHold
+    type: BOOLEAN
+    nullable: false
+  - name: PaymentDays
+    type: INTEGER
+    nullable: false
+  - name: PhoneNumber
+    type: VARCHAR
+    nullable: false
+  - name: FaxNumber
+    type: VARCHAR
+    nullable: false
+  - name: DeliveryRun
+    type: VARCHAR
+    nullable: true
+  - name: RunPosition
+    type: VARCHAR
+    nullable: true
+  - name: WebsiteURL
+    type: VARCHAR
+    nullable: false
+  - name: DeliveryAddressLine1
+    type: VARCHAR
+    nullable: false
+  - name: DeliveryAddressLine2
+    type: VARCHAR
+    nullable: true
+  - name: DeliveryPostalCode
+    type: VARCHAR
+    nullable: false
+  - name: DeliveryLocation
+    type: VARCHAR
+    nullable: true
+  - name: PostalAddressLine1
+    type: VARCHAR
+    nullable: false
+  - name: PostalAddressLine2
+    type: VARCHAR
+    nullable: true
+  - name: PostalPostalCode
+    type: VARCHAR
+    nullable: false
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: Sales_InvoiceLines
+  primary_key: []
+  columns:
+  - name: InvoiceLineID
+    type: INTEGER
+    nullable: false
+  - name: InvoiceID
+    type: INTEGER
+    nullable: false
+  - name: StockItemID
+    type: INTEGER
+    nullable: false
+  - name: Description
+    type: VARCHAR
+    nullable: false
+  - name: PackageTypeID
+    type: INTEGER
+    nullable: false
+  - name: Quantity
+    type: INTEGER
+    nullable: false
+  - name: UnitPrice
+    type: DECIMAL(18,2)
+    nullable: true
+  - name: TaxRate
+    type: DECIMAL(18,3)
+    nullable: false
+  - name: TaxAmount
+    type: DECIMAL(18,2)
+    nullable: false
+  - name: LineProfit
+    type: DECIMAL(18,2)
+    nullable: false
+  - name: ExtendedPrice
+    type: DECIMAL(18,2)
+    nullable: false
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: LastEditedWhen
+    type: TIMESTAMP
+    nullable: false
+- name: Sales_Invoices
+  primary_key: []
+  columns:
+  - name: InvoiceID
+    type: INTEGER
+    nullable: false
+  - name: CustomerID
+    type: INTEGER
+    nullable: false
+  - name: BillToCustomerID
+    type: INTEGER
+    nullable: false
+  - name: OrderID
+    type: INTEGER
+    nullable: true
+  - name: DeliveryMethodID
+    type: INTEGER
+    nullable: false
+  - name: ContactPersonID
+    type: INTEGER
+    nullable: false
+  - name: AccountsPersonID
+    type: INTEGER
+    nullable: false
+  - name: SalespersonPersonID
+    type: INTEGER
+    nullable: false
+  - name: PackedByPersonID
+    type: INTEGER
+    nullable: false
+  - name: InvoiceDate
+    type: DATE
+    nullable: false
+  - name: CustomerPurchaseOrderNumber
+    type: VARCHAR
+    nullable: true
+  - name: IsCreditNote
+    type: BOOLEAN
+    nullable: false
+  - name: CreditNoteReason
+    type: VARCHAR
+    nullable: true
+  - name: Comments
+    type: VARCHAR
+    nullable: true
+  - name: DeliveryInstructions
+    type: VARCHAR
+    nullable: true
+  - name: InternalComments
+    type: VARCHAR
+    nullable: true
+  - name: TotalDryItems
+    type: INTEGER
+    nullable: false
+  - name: TotalChillerItems
+    type: INTEGER
+    nullable: false
+  - name: DeliveryRun
+    type: VARCHAR
+    nullable: true
+  - name: RunPosition
+    type: VARCHAR
+    nullable: true
+  - name: ReturnedDeliveryData
+    type: VARCHAR
+    nullable: true
+  - name: ConfirmedDeliveryTime
+    type: VARCHAR
+    nullable: true
+  - name: ConfirmedReceivedBy
+    type: VARCHAR
+    nullable: true
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: LastEditedWhen
+    type: TIMESTAMP
+    nullable: false
+- name: Sales_OrderLines
+  primary_key: []
+  columns:
+  - name: OrderLineID
+    type: INTEGER
+    nullable: false
+  - name: OrderID
+    type: INTEGER
+    nullable: false
+  - name: StockItemID
+    type: INTEGER
+    nullable: false
+  - name: Description
+    type: VARCHAR
+    nullable: false
+  - name: PackageTypeID
+    type: INTEGER
+    nullable: false
+  - name: Quantity
+    type: INTEGER
+    nullable: false
+  - name: UnitPrice
+    type: DECIMAL(18,2)
+    nullable: true
+  - name: TaxRate
+    type: DECIMAL(18,3)
+    nullable: false
+  - name: PickedQuantity
+    type: INTEGER
+    nullable: false
+  - name: PickingCompletedWhen
+    type: TIMESTAMP
+    nullable: true
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: LastEditedWhen
+    type: TIMESTAMP
+    nullable: false
+- name: Sales_Orders
+  primary_key: []
+  columns:
+  - name: OrderID
+    type: INTEGER
+    nullable: false
+  - name: CustomerID
+    type: INTEGER
+    nullable: false
+  - name: SalespersonPersonID
+    type: INTEGER
+    nullable: false
+  - name: PickedByPersonID
+    type: INTEGER
+    nullable: true
+  - name: ContactPersonID
+    type: INTEGER
+    nullable: false
+  - name: BackorderOrderID
+    type: INTEGER
+    nullable: true
+  - name: OrderDate
+    type: DATE
+    nullable: false
+  - name: ExpectedDeliveryDate
+    type: DATE
+    nullable: false
+  - name: CustomerPurchaseOrderNumber
+    type: VARCHAR
+    nullable: true
+  - name: IsUndersupplyBackordered
+    type: BOOLEAN
+    nullable: false
+  - name: Comments
+    type: VARCHAR
+    nullable: true
+  - name: DeliveryInstructions
+    type: VARCHAR
+    nullable: true
+  - name: InternalComments
+    type: VARCHAR
+    nullable: true
+  - name: PickingCompletedWhen
+    type: TIMESTAMP
+    nullable: true
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: LastEditedWhen
+    type: TIMESTAMP
+    nullable: false
+- name: Sales_SpecialDeals
+  primary_key: []
+  columns:
+  - name: SpecialDealID
+    type: INTEGER
+    nullable: false
+  - name: StockItemID
+    type: INTEGER
+    nullable: true
+  - name: CustomerID
+    type: INTEGER
+    nullable: true
+  - name: BuyingGroupID
+    type: INTEGER
+    nullable: true
+  - name: CustomerCategoryID
+    type: INTEGER
+    nullable: true
+  - name: StockGroupID
+    type: INTEGER
+    nullable: true
+  - name: DealDescription
+    type: VARCHAR
+    nullable: false
+  - name: StartDate
+    type: DATE
+    nullable: false
+  - name: EndDate
+    type: DATE
+    nullable: false
+  - name: DiscountAmount
+    type: DECIMAL(18,2)
+    nullable: true
+  - name: DiscountPercentage
+    type: DECIMAL(18,3)
+    nullable: true
+  - name: UnitPrice
+    type: DECIMAL(18,2)
+    nullable: true
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: LastEditedWhen
+    type: TIMESTAMP
+    nullable: false
+- name: Warehouse_ColdRoomTemperatures
+  primary_key: []
+  columns:
+  - name: ColdRoomTemperatureID
+    type: BIGINT
+    nullable: false
+  - name: ColdRoomSensorNumber
+    type: INTEGER
+    nullable: false
+  - name: RecordedWhen
+    type: TIMESTAMP
+    nullable: false
+  - name: Temperature
+    type: DECIMAL(10,2)
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: Warehouse_ColdRoomTemperatures_Archive
+  primary_key: []
+  columns:
+  - name: ColdRoomTemperatureID
+    type: BIGINT
+    nullable: false
+  - name: ColdRoomSensorNumber
+    type: INTEGER
+    nullable: false
+  - name: RecordedWhen
+    type: TIMESTAMP
+    nullable: false
+  - name: Temperature
+    type: DECIMAL(10,2)
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: Warehouse_Colors
+  primary_key: []
+  columns:
+  - name: ColorID
+    type: INTEGER
+    nullable: false
+  - name: ColorName
+    type: VARCHAR
+    nullable: false
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: Warehouse_Colors_Archive
+  primary_key: []
+  columns:
+  - name: ColorID
+    type: INTEGER
+    nullable: false
+  - name: ColorName
+    type: VARCHAR
+    nullable: false
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: Warehouse_PackageTypes
+  primary_key: []
+  columns:
+  - name: PackageTypeID
+    type: INTEGER
+    nullable: false
+  - name: PackageTypeName
+    type: VARCHAR
+    nullable: false
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: Warehouse_PackageTypes_Archive
+  primary_key: []
+  columns:
+  - name: PackageTypeID
+    type: INTEGER
+    nullable: false
+  - name: PackageTypeName
+    type: VARCHAR
+    nullable: false
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: Warehouse_StockGroups
+  primary_key: []
+  columns:
+  - name: StockGroupID
+    type: INTEGER
+    nullable: false
+  - name: StockGroupName
+    type: VARCHAR
+    nullable: false
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: Warehouse_StockGroups_Archive
+  primary_key: []
+  columns:
+  - name: StockGroupID
+    type: INTEGER
+    nullable: false
+  - name: StockGroupName
+    type: VARCHAR
+    nullable: false
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: Warehouse_StockItemHoldings
+  primary_key: []
+  columns:
+  - name: StockItemID
+    type: INTEGER
+    nullable: false
+  - name: QuantityOnHand
+    type: INTEGER
+    nullable: false
+  - name: BinLocation
+    type: VARCHAR
+    nullable: false
+  - name: LastStocktakeQuantity
+    type: INTEGER
+    nullable: false
+  - name: LastCostPrice
+    type: DECIMAL(18,2)
+    nullable: false
+  - name: ReorderLevel
+    type: INTEGER
+    nullable: false
+  - name: TargetStockLevel
+    type: INTEGER
+    nullable: false
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: LastEditedWhen
+    type: TIMESTAMP
+    nullable: false
+- name: Warehouse_StockItemStockGroups
+  primary_key: []
+  columns:
+  - name: StockItemStockGroupID
+    type: INTEGER
+    nullable: false
+  - name: StockItemID
+    type: INTEGER
+    nullable: false
+  - name: StockGroupID
+    type: INTEGER
+    nullable: false
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: LastEditedWhen
+    type: TIMESTAMP
+    nullable: false
+- name: Warehouse_StockItemTransactions
+  primary_key: []
+  columns:
+  - name: StockItemTransactionID
+    type: INTEGER
+    nullable: false
+  - name: StockItemID
+    type: INTEGER
+    nullable: false
+  - name: TransactionTypeID
+    type: INTEGER
+    nullable: false
+  - name: CustomerID
+    type: INTEGER
+    nullable: true
+  - name: InvoiceID
+    type: INTEGER
+    nullable: true
+  - name: SupplierID
+    type: INTEGER
+    nullable: true
+  - name: PurchaseOrderID
+    type: INTEGER
+    nullable: true
+  - name: TransactionOccurredWhen
+    type: TIMESTAMP
+    nullable: false
+  - name: Quantity
+    type: DECIMAL(18,3)
+    nullable: false
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: LastEditedWhen
+    type: TIMESTAMP
+    nullable: false
+- name: Warehouse_StockItems
+  primary_key: []
+  columns:
+  - name: StockItemID
+    type: INTEGER
+    nullable: false
+  - name: StockItemName
+    type: VARCHAR
+    nullable: false
+  - name: SupplierID
+    type: INTEGER
+    nullable: false
+  - name: ColorID
+    type: INTEGER
+    nullable: true
+  - name: UnitPackageID
+    type: INTEGER
+    nullable: false
+  - name: OuterPackageID
+    type: INTEGER
+    nullable: false
+  - name: Brand
+    type: VARCHAR
+    nullable: true
+  - name: Size
+    type: VARCHAR
+    nullable: true
+  - name: LeadTimeDays
+    type: INTEGER
+    nullable: false
+  - name: QuantityPerOuter
+    type: INTEGER
+    nullable: false
+  - name: IsChillerStock
+    type: BOOLEAN
+    nullable: false
+  - name: Barcode
+    type: VARCHAR
+    nullable: true
+  - name: TaxRate
+    type: DECIMAL(18,3)
+    nullable: false
+  - name: UnitPrice
+    type: DECIMAL(18,2)
+    nullable: false
+  - name: RecommendedRetailPrice
+    type: DECIMAL(18,2)
+    nullable: true
+  - name: TypicalWeightPerUnit
+    type: DECIMAL(18,3)
+    nullable: false
+  - name: MarketingComments
+    type: VARCHAR
+    nullable: true
+  - name: InternalComments
+    type: VARCHAR
+    nullable: true
+  - name: Photo
+    type: BLOB
+    nullable: true
+  - name: CustomFields
+    type: VARCHAR
+    nullable: true
+  - name: Tags
+    type: VARCHAR
+    nullable: true
+  - name: SearchDetails
+    type: VARCHAR
+    nullable: true
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: Warehouse_StockItems_Archive
+  primary_key: []
+  columns:
+  - name: StockItemID
+    type: INTEGER
+    nullable: false
+  - name: StockItemName
+    type: VARCHAR
+    nullable: false
+  - name: SupplierID
+    type: INTEGER
+    nullable: false
+  - name: ColorID
+    type: INTEGER
+    nullable: true
+  - name: UnitPackageID
+    type: INTEGER
+    nullable: false
+  - name: OuterPackageID
+    type: INTEGER
+    nullable: false
+  - name: Brand
+    type: VARCHAR
+    nullable: true
+  - name: Size
+    type: VARCHAR
+    nullable: true
+  - name: LeadTimeDays
+    type: INTEGER
+    nullable: false
+  - name: QuantityPerOuter
+    type: INTEGER
+    nullable: false
+  - name: IsChillerStock
+    type: BOOLEAN
+    nullable: false
+  - name: Barcode
+    type: VARCHAR
+    nullable: true
+  - name: TaxRate
+    type: DECIMAL(18,3)
+    nullable: false
+  - name: UnitPrice
+    type: DECIMAL(18,2)
+    nullable: false
+  - name: RecommendedRetailPrice
+    type: DECIMAL(18,2)
+    nullable: true
+  - name: TypicalWeightPerUnit
+    type: DECIMAL(18,3)
+    nullable: false
+  - name: MarketingComments
+    type: VARCHAR
+    nullable: true
+  - name: InternalComments
+    type: VARCHAR
+    nullable: true
+  - name: Photo
+    type: BLOB
+    nullable: true
+  - name: CustomFields
+    type: VARCHAR
+    nullable: true
+  - name: Tags
+    type: VARCHAR
+    nullable: true
+  - name: SearchDetails
+    type: VARCHAR
+    nullable: false
+  - name: LastEditedBy
+    type: INTEGER
+    nullable: false
+  - name: ValidFrom
+    type: TIMESTAMP
+    nullable: false
+  - name: ValidTo
+    type: TIMESTAMP
+    nullable: false
+- name: Warehouse_VehicleTemperatures
+  primary_key: []
+  columns:
+  - name: VehicleTemperatureID
+    type: BIGINT
+    nullable: false
+  - name: VehicleRegistration
+    type: VARCHAR
+    nullable: false
+  - name: ChillerSensorNumber
+    type: INTEGER
+    nullable: false
+  - name: RecordedWhen
+    type: TIMESTAMP
+    nullable: false
+  - name: Temperature
+    type: DECIMAL(10,2)
+    nullable: false
+  - name: FullSensorData
+    type: VARCHAR
+    nullable: true
+  - name: IsCompressed
+    type: BOOLEAN
+    nullable: false
+  - name: CompressedSensorData
+    type: BLOB
+    nullable: true
+- name: dbo_SampleVersion
+  primary_key: []
+  columns:
+  - name: MajorSampleVersion
+    type: INTEGER
+    nullable: false
+  - name: MinorSampleVersion
+    type: INTEGER
+    nullable: false
+  - name: MinSQLServerBuild
+    type: VARCHAR
+    nullable: false
+  - name: RowCount
+    type: INTEGER
+    nullable: false
 access:
   read_only: true
-  allowed_statements: [SELECT, WITH]
-  forbidden_statements: [INSERT, UPDATE, DELETE, DROP, CREATE, ALTER, ATTACH, DETACH, COPY, PRAGMA, CALL, EXPORT, INSTALL, LOAD]
+  allowed_statements:
+  - SELECT
+  - WITH
+  forbidden_statements:
+  - INSERT
+  - UPDATE
+  - DELETE
+  - DROP
+  - CREATE
+  - ALTER
+  - ATTACH
+  - DETACH
+  - COPY
+  - PRAGMA
+  - CALL
+  - EXPORT
+  - INSTALL
+  - LOAD
   max_rows: 1000
   timeout_seconds: 30

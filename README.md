@@ -4,11 +4,14 @@
 
 企业 AI 数字员工是一个面向企业数据分析与任务执行的知识增强型 AI Agent 系统，通过任务理解、动态路由、RAG、Text-to-SQL、知识图谱、工具调用和结果验证，将自然语言任务转化为可执行的数据查询、知识检索、分析推理和报告生成流程。
 
-> **项目状态：Phase 1 — 最小 Agent 闭环（进行中）。**
+> **项目状态：Phase 1 — 最小 Agent 闭环（✅ 已完成并通过验收，2026-09-29）。**
 > Phase 0 完成骨架与文档；Phase 1 已实现 `Intent → Router → RAG/SQL → Answer` 的最小闭环，
-> 并导入 WideWorldImporters 到 DuckDB、跑通 SQL 与 RAG 两条端到端测试。
-> 尚未实现 Neo4j 知识图谱、Claim-Evidence 验证、评估框架与前端。
-> 本文件与 `docs/` 中的所有指标数值仍为待实验填充（TBD）。
+> 并导入 WideWorldImporters 官方维度数据到 DuckDB（`scripts/import_wwi.py`）、
+> 补齐合成业务种子（`scripts/generate_synthetic_seed.py`，**明确标注 synthetic**）、
+> 跑通 SQL 与 RAG 两条端到端测试。
+> 尚未实现：真实 BGE-M3 Embedding 与 Milvus 服务端接入、Neo4j 知识图谱、
+> Claim-Evidence 验证、评估框架与前端（均为 Phase 2+ 内容，见 Roadmap）。
+> 本文件与 `docs/` 中的实验指标数值仍为待填充（TBD）。
 
 ---
 

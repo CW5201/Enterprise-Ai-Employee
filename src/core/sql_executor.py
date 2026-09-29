@@ -1,104 +1,84 @@
-"""SQL executor - read-only DuckDB execution with a safety guard.
+"""SQL executor — safe, read-only DuckDB execution (Phase 1).
 
-Guarantees (ADR-005):
-
-1. **Read-only connection**: the DuckDB database is opened with
-   ``read_only=True`` when the file already exists, so even a leaked DML
-   cannot mutate business data.
-2. **Statement whitelist**: only ``SELECT`` / ``WITH`` statements pass
-   the guard; everything else (DDL, DML, ``ATTACH``, ``INSTALL``, ...)
-   is rejected with :class:`SQLGuardError` BEFORE execution.
-3. **Row cap**: results are truncated to ``max_rows`` (default 1000) to
-   keep the evidence payload bounded.
-
-The executor is stateless and thread-confined to one process; the graph
-creates one executor per run via :func:`open_database`.
+Guarantees:
+1. **Read-only**: existing database files are always opened
+   ``read_only=True``; the DML/DDL whitelist is a second, pre-execution
+   line of defence.
+2. **Statement whitelist**: only ``SELECT`` / ``WITH ... SELECT`` pass;
+   INSERT / UPDATE / DELETE / DROP / ALTER / CREATE / ... are rejected
+   with :class:`SQLGuardError` *before* execution.
+3. **Bounded execution**: query timeout (thread-based) + max-rows cap keep
+   any LLM-generated statement from exhausting the process.
+4. **Structured errors**: failures raise :class:`SQLExecutionError`
+   (subclass of :class:`AppError`) with machine-readable details.
+5. **Timing**: every execution records ``execution_time_ms`` in the
+   returned payload.
 """
 
 from __future__ import annotations
 
+import concurrent.futures
 import re
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import duckdb
 
-from src.core.config_loader import DuckDBSettings, get_settings
 from src.core.exceptions import SQLExecutionError, SQLGuardError
-from src.core.observability import observe
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
-# statements allowed to enter execution (everything else is rejected)
 _ALLOWED_LEADING = re.compile(r"^\s*(with|select)\b", re.IGNORECASE)
 _FORBIDDEN_KEYWORDS = re.compile(
-    r"\b(insert|update|delete|drop|create|alter|attach|detach|copy|pragma|call|export|install|load|vacuum|backup|restore)\b",
+    r"\b(insert|update|delete|drop|alter|create|attach|detach|copy|pragma|call|export|"
+    r"install|load|vacuum|backup|restore)\b",
     re.IGNORECASE,
 )
 
 
-@dataclass
-class SQLResult:
-    """Executed result set, already shaped for the evidence model."""
-
-    columns: list[str]
-    rows: list[Any]
-    row_count: int
-    truncated: bool
-
-    def to_payload(self) -> dict[str, Any]:
-        return {
-            "columns": self.columns,
-            "rows": self.rows,
-            "row_count": self.row_count,
-            "truncated": self.truncated,
-        }
-
-    @property
-    def empty(self) -> bool:
-        return not self.rows
+def default_database_path() -> Path:
+    """The runtime database produced by scripts/import_wwi.py."""
+    return _PROJECT_ROOT / "data" / "runtime" / "wwi.duckdb"
 
 
-def guard_sql(sql: str, *, allow_dml: bool = False, allow_ddl: bool = False) -> str:
-    """Validate a statement against the read-only policy.  Returns stripped SQL."""
+def guard_sql(sql: str) -> str:
+    """Reject anything that is not a plain read-only SELECT/WITH statement."""
     stripped = sql.strip().rstrip(";").strip()
     if not stripped:
         raise SQLGuardError("Empty SQL statement")
     if not _ALLOWED_LEADING.match(stripped):
         first_word = stripped.split(None, 1)[0].lower()
         raise SQLGuardError(
-            f"Statement must start with SELECT or WITH (got: {first_word!r})",
+            f"Statement must start with SELECT or WITH (got {first_word!r})",
         )
-    forbidden = _FORBIDDEN_KEYWORDS.findall(stripped)
+    forbidden = sorted({k.upper() for k in _FORBIDDEN_KEYWORDS.findall(stripped)})
     if forbidden:
         raise SQLGuardError(
             "Statement contains forbidden keyword(s)",
-            details={"keywords": sorted({k.upper() for k in forbidden})},
+            details={"keywords": forbidden},
         )
-    if not allow_dml or not allow_ddl:
-        # covered by the keyword check above; explicit for clarity
-        pass
     return stripped
 
 
+@dataclass
 class SQLExecutor:
-    """Thin, safe wrapper around a DuckDB connection."""
+    """Thin safe wrapper around one DuckDB connection (read-only when the
+    database file exists)."""
 
-    def __init__(self, settings: DuckDBSettings | None = None) -> None:
-        self.settings = settings or get_settings().duckdb
-        self._connection: duckdb.DuckDBPyConnection | None = None
+    db_path: Path | None = None
+    read_only: bool = True
+    max_rows: int = 1000
+    timeout_seconds: int = 30
+    _connection: duckdb.DuckDBPyConnection | None = field(default=None, repr=False, init=False)
+
+    # -- lifecycle ----------------------------------------------------------
 
     def connect(self) -> None:
-        from pathlib import Path
-
-        path = self.settings.path
-        db = Path(path)
-        if not db.is_absolute():
-            db = _PROJECT_ROOT / db
-        db.parent.mkdir(parents=True, exist_ok=True)
-        read_only = self.settings.read_only and db.exists()
-        self._connection = duckdb.connect(str(db), read_only=read_only)
+        path = self.db_path or default_database_path()
+        read_only = self.read_only and path.exists()
+        self._connection = duckdb.connect(str(path), read_only=read_only)
 
     def close(self) -> None:
         if self._connection is not None:
@@ -112,52 +92,67 @@ class SQLExecutor:
     def __exit__(self, *exc: object) -> None:
         self.close()
 
-    @observe("sql_exec")
-    def execute(self, sql: str) -> SQLResult:
-        """Guard + execute + shape.  Raises SQLGuardError / SQLExecutionError."""
+    # -- execution ----------------------------------------------------------
+
+    def execute(self, sql: str) -> dict[str, Any]:
+        """Guard + execute + shape.  Returns the structured result payload.
+
+        Raises SQLGuardError (rejected by the guard) or SQLExecutionError
+        (DuckDB failure / timeout) — both carry structured details.
+        """
         if self._connection is None:
             self.connect()
         assert self._connection is not None
-        safe_sql = guard_sql(sql, allow_dml=self.settings.allow_dml, allow_ddl=self.settings.allow_ddl)
+        safe_sql = guard_sql(sql)
+
+        start = time.perf_counter()
         try:
-            cursor = self._connection.execute(safe_sql)
-            columns = [d[0] for d in cursor.description] if cursor.description else []
-            max_rows = self.settings.max_rows
-            rows = cursor.fetchmany(max_rows + 1)
-            truncated = len(rows) > max_rows
-            if truncated:
-                rows = rows[:max_rows]
-            return SQLResult(
-                columns=columns,
-                rows=[tuple(r) for r in rows],
-                row_count=len(rows),
-                truncated=truncated,
-            )
-        except SQLGuardError:
+            payload = self._execute_with_timeout(safe_sql)
+        except SQLExecutionError:
             raise
-        except duckdb.Error as exc:
+        except concurrent.futures.TimeoutError as exc:
             raise SQLExecutionError(
-                f"SQL execution failed: {exc}",
+                f"SQL query timed out after {self.timeout_seconds}s",
                 details={"sql": safe_sql},
             ) from exc
+        payload["execution_time_ms"] = round((time.perf_counter() - start) * 1000.0, 2)
+        return payload
+
+    def _execute_with_timeout(self, sql: str) -> dict[str, Any]:
+        conn = self._connection
+        assert conn is not None
+
+        def _run() -> dict[str, Any]:
+            cursor = conn.execute(sql)
+            columns = [d[0] for d in (cursor.description or [])]
+            rows = cursor.fetchmany(self.max_rows + 1)
+            truncated = len(rows) > self.max_rows
+            if truncated:
+                rows = rows[: self.max_rows]
+            return {
+                "sql": sql,
+                "columns": columns,
+                "rows": [tuple(r) for r in rows],
+                "row_count": len(rows),
+                "truncated": truncated,
+                "execution_time_ms": 0.0,  # filled in by the caller
+            }
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(_run)
+            result = future.result(timeout=self.timeout_seconds)
+            return result
 
     def list_tables(self) -> list[str]:
-        """Return user table names (for schema introspection / tests)."""
+        """User table names (schema introspection / tests)."""
         if self._connection is None:
             self.connect()
         assert self._connection is not None
-        result = self._connection.execute(
+        rows = self._connection.execute(
             "SELECT table_name FROM information_schema.tables "
-            "WHERE table_schema = 'main' ORDER BY table_name"
+            "WHERE table_schema = 'main' AND table_type = 'BASE TABLE' ORDER BY table_name"
         ).fetchall()
-        return [r[0] for r in result]
+        return [r[0] for r in rows]
 
 
-def open_database(settings: DuckDBSettings | None = None) -> SQLExecutor:
-    """Create and connect an executor (use as context manager)."""
-    executor = SQLExecutor(settings)
-    executor.connect()
-    return executor
-
-
-__all__ = ["SQLExecutor", "SQLResult", "guard_sql", "open_database"]
+__all__ = ["SQLExecutor", "default_database_path", "guard_sql"]

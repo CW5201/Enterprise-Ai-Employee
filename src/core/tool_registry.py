@@ -1,17 +1,47 @@
-"""Tool registry - tool whitelist, governance, timeout and permissions
+"""Core tool registry — loads the whitelist from config/tool_registry.yaml.
 
-Status
-------
-Phase 0 (project skeleton): interface placeholder only.
-NO business logic is allowed in this phase.
-
-See docs/ROADMAP.md for the phase in which this module is implemented,
-docs/ARCHITECTURE.md for its role in the task pipeline, and ADR.md for the
-design decisions behind it.
+Phase 1: bridge between the YAML whitelist and the runtime
+:class:`src.tools.base.ToolRegistry`.  The YAML declares which tools exist,
+their input schemas, timeouts and permissions; this module instantiates the
+enabled tools and registers them, so the *whitelist is the source of truth*
+(a tool not in the YAML can never be called).
 """
 
 from __future__ import annotations
 
-__all__: list[str] = []
+from pathlib import Path
 
-# TODO(Phase 1+): implement according to docs/ROADMAP.md.
+from src.tools.base import ToolRegistry, default_registry
+
+_CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "config" / "tool_registry.yaml"
+
+
+def _load_whitelist() -> dict[str, dict[str, object]]:
+    try:
+        import yaml
+
+        with _CONFIG_PATH.open(encoding="utf-8") as fh:
+            doc = yaml.safe_load(fh) or {}
+        return {name: cfg for name, cfg in (doc.get("tool_name") or {}).items() if isinstance(cfg, dict)}
+    except (FileNotFoundError, ModuleNotFoundError):
+        return {}
+
+
+def build_registry() -> ToolRegistry:
+    """Create the Phase 1 registry, filtered by the YAML whitelist.
+
+    The YAML declares rag + sql (plus placeholders for kg/analysis/chart/
+    report that are not implemented yet).  Only tools whose registry entry is
+    ``enabled: true`` AND that have a real implementation are registered.
+    """
+    registry = default_registry()  # sql_tool + rag_tool
+    whitelist = _load_whitelist()
+    for name in list(registry.list_enabled()):
+        entry = whitelist.get(name)
+        if entry is not None and entry.get("enabled") is False:
+            # keep it registered but disabled so whitelist-off is respected
+            registry.disable(name)
+    return registry
+
+
+__all__ = ["build_registry"]

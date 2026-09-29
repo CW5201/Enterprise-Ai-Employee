@@ -1,101 +1,169 @@
-"""Node: Intent Understanding - parse the user task into a typed intent.
+"""Node: Intent Understanding — classify the user query into a typed intent.
 
-Uses the ``intent_understanding`` prompt template (``config/prompt_templates.yaml``)
-and the LLM client (``src/core/llm_client.py``).  The intent vocabulary comes
-from ``config/routing_rules.yaml`` so routing and understanding share ONE taxonomy.
+Two lanes (docs/ROADMAP.md Phase 1):
 
-Output written to AgentState:
-    intent, slots, constraints, intent_confidence, intent_reason
+1. **Rule fast lane** — deterministic keyword signals decide
+   ``data_query`` / ``knowledge_query`` / ``complex_analysis`` immediately
+   (cheap, fast, no model call).  Ambiguous queries fall through to the LLM.
+2. **LLM lane** — :class:`IntentResult` is requested through the unified
+   LLM client and validated by Pydantic; free-text model output can never
+   reach downstream nodes unstructured.
+
+Outputs written to AgentState: ``intent``, ``confidence``, ``entities``,
+``plan`` (the intent-level interpretation).
 """
 
 from __future__ import annotations
 
-from typing import Any
+import re
+from typing import Any, Literal
 
-from src.core.config_loader import RoutingRules
+from pydantic import BaseModel, Field, field_validator
+
 from src.core.exceptions import LLMError
 from src.core.llm_client import LLMClient
 from src.core.observability import observe
-from src.core.state import AgentState
+from src.core.state import AgentState, ErrorRecord
+
+# ---------------------------------------------------------------------------
+# Structured schema
+# ---------------------------------------------------------------------------
+
+IntentLabel = Literal["data_query", "knowledge_query", "complex_analysis", "clarification"]
+
+INTENTS: tuple[str, ...] = ("data_query", "knowledge_query", "complex_analysis", "clarification")
 
 
-def _error_record(stage: str, message: str) -> dict[str, Any]:
-    return {"stage": stage, "message": message}
+class IntentResult(BaseModel):
+    """Pydantic schema for the intent LLM call — output is always validated."""
+
+    intent: IntentLabel
+    confidence: float = Field(ge=0.0, le=1.0)
+    entities: list[str] = Field(default_factory=list)
+    reason: str = ""
+
+    @field_validator("intent")
+    @classmethod
+    def _check_intent(cls, value: str) -> str:
+        if value not in INTENTS:
+            raise ValueError(f"intent {value!r} is not in the Phase 1 taxonomy {INTENTS}")
+        return value
 
 
-def _append_error(state: AgentState, stage: str, message: str) -> list[dict[str, Any]]:
-    errors = list(state.get("errors") or [])
-    errors.append(_error_record(stage, message))
-    return errors
+# ---------------------------------------------------------------------------
+# Rule fast lane
+# ---------------------------------------------------------------------------
+
+_DATA_KEYWORDS = [
+    "查询", "统计", "多少", "数量", "金额", "总额", "订单", "销售额", "营收",
+    "利润", "客户", "产品", "库存", "前10", "top", "排名", "合计", "平均",
+    "占比", "趋势", "环比", "同比", "最大", "最少", "最多",
+]
+_KNOWLEDGE_KEYWORDS = [
+    "政策", "制度", "规定", "标准", "报销", "流程", "手册", "规范",
+    "要求", "说明", "是什么", "什么意思", "怎么", "如何",
+]
+_COMPLEX_MARKERS = [
+    "并结合", "以及", "综合", "同时", "交叉", "对比", "结合相关", "解释结果",
+]
+
+
+def _contains_any(text: str, keywords: list[str]) -> bool:
+    return any(k in text.lower() for k in keywords)
+
+
+def classify_by_rules(query: str) -> tuple[str, float, list[str], str] | None:
+    """Return (intent, confidence, entities, reason) when a rule is decisive.
+
+    A rule fires only when the signal is strong enough to skip the LLM:
+    - complex markers + data terms  -> complex_analysis
+    - data terms only               -> data_query
+    - policy terms only             -> knowledge_query
+    Anything ambiguous returns None (LLM lane).
+    """
+    has_complex = _contains_any(query, _COMPLEX_MARKERS)
+    has_data = _contains_any(query, _DATA_KEYWORDS)
+    has_knowledge = _contains_any(query, _KNOWLEDGE_KEYWORDS)
+
+    if has_complex and has_data:
+        return "complex_analysis", 0.95, _extract_data_entities(query), "rule: 数据查询 + 结合文档解释"
+    if has_data and not has_knowledge:
+        return "data_query", 0.95, _extract_data_entities(query), "rule: 数据查询关键词"
+    if has_knowledge and not has_data:
+        return "knowledge_query", 0.95, [], "rule: 政策/制度/文档关键词"
+    return None
+
+
+def _extract_data_entities(query: str) -> list[str]:
+    entities: list[str] = []
+    top_match = re.search(r"前\s*(\d+)", query)
+    if top_match:
+        entities.append(f"top_n:{top_match.group(1)}")
+    for name in re.findall(r"['‘’]([^’‘']{1,40})['‘’]", query):
+        entities.append(name)
+    return entities
+
+
+# ---------------------------------------------------------------------------
+# LLM lane
+# ---------------------------------------------------------------------------
 
 _SYSTEM_PROMPT = """你是企业 AI 数字员工的意图理解模块。
-将用户任务分类到给定的意图体系，抽取槽位与约束。
-意图体系: {intent_taxonomy}
-返回 JSON: {{"intent": str, "slots": object, "constraints": object,
-            "confidence": 0~1, "reason": str}}
-若任务模糊或超范围，将 confidence 调低并在 reason 说明。"""
+将用户问题分类到以下意图之一，并抽取关键实体：
+- data_query: 针对结构化业务数据的查询/统计（订单、金额、客户、库存…）
+- knowledge_query: 企业制度、政策、流程、规范类文档问答
+- complex_analysis: 需要同时使用数据查询和业务文档解释的复合任务
+- clarification: 问题模糊、缺关键信息或超出企业任务范围
 
-_USER_TEMPLATE = "用户任务: {user_task}\n对话上下文: {context}"
+返回 JSON: {{"intent": str, "confidence": 0~1, "entities": [str], "reason": str}}
+意图必须是上述四个取值之一，不得返回其他值。"""
 
-# fallback intent if the LLM returns something outside the taxonomy
-_DEFAULT_INTENT = "chitchat_or_out_of_scope"
+
+def _llm_classify(query: str, llm: LLMClient) -> IntentResult:
+    return llm.generate_structured(
+        _SYSTEM_PROMPT,
+        f"用户问题: {query}",
+        IntentResult,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Node
+# ---------------------------------------------------------------------------
 
 
 class IntentUnderstandingNode:
-    def __init__(self, rules: RoutingRules, llm: LLMClient | None = None) -> None:
-        self.rules = rules
-        self.llm = llm or LLMClient()
+    """Intent node: rule fast lane first, LLM lane for ambiguous queries."""
+
+    def __init__(self, llm: LLMClient | None = None) -> None:
+        self._llm = llm or LLMClient()
 
     @observe("intent")
     def run(self, state: AgentState) -> AgentState:
-        user_task = state.get("user_task", "")
-        context = json_context(state.get("conversation") or [])
-        taxonomy = dict(self.rules.intent_descriptions.items())
-        system = _SYSTEM_PROMPT.format(intent_taxonomy=_format_taxonomy(taxonomy))
-        user = _USER_TEMPLATE.format(user_task=user_task, context=context or "(none)")
-        try:
-            parsed = self.llm.chat_json(system, user)
-        except LLMError as exc:
-            # do not crash the pipeline on a single LLM failure: record and default
-            return {
-                "intent": _DEFAULT_INTENT,
-                "slots": {},
-                "constraints": {},
-                "intent_confidence": 0.0,
-                "intent_reason": f"LLM unavailable: {exc.message}",
-                "errors": _append_error(state, "intent", str(exc)),
-            }
+        query = state.get("user_query", "")
+        errors: list[ErrorRecord] = []
+        entities: list[dict[str, Any]] = []
 
-        intent = str(parsed.get("intent", _DEFAULT_INTENT))
-        if intent not in self.rules.intent_tools:
-            intent = _DEFAULT_INTENT
-        confidence = float(parsed.get("confidence", 0.5) or 0.5)
-        confidence = max(0.0, min(1.0, confidence))
+        rule = classify_by_rules(query)
+        if rule is not None:
+            intent, confidence, raw_entities, reason = rule
+        else:
+            try:
+                parsed = _llm_classify(query, self._llm)
+                intent, confidence = parsed.intent, parsed.confidence
+                raw_entities, reason = parsed.entities, parsed.reason
+            except LLMError as exc:
+                errors.append(ErrorRecord(stage="intent", message=str(exc.message)))
+                intent, confidence, raw_entities, reason = "clarification", 0.0, [], f"LLM 不可用: {exc.message}"
+
+        entities = [{"type": "raw", "value": e} for e in raw_entities]
         return {
             "intent": intent,
-            "slots": _as_dict(parsed.get("slots")),
-            "constraints": _as_dict(parsed.get("constraints")),
-            "intent_confidence": confidence,
-            "intent_reason": str(parsed.get("reason", "")),
+            "confidence": confidence,
+            "entities": entities,
+            "plan": f"intent={intent} ({reason})",
+            "errors": errors,
         }
 
 
-def _as_dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
-
-
-def _format_taxonomy(taxonomy: dict[str, str]) -> str:
-    if not taxonomy:
-        return "(none declared)"
-    return "\n".join(f"- {name}: {desc}" for name, desc in taxonomy.items())
-
-
-def json_context(conversation: list[dict[str, str]]) -> str:
-    import json
-
-    if not conversation:
-        return ""
-    return json.dumps(conversation[-4:], ensure_ascii=False)
-
-
-__all__ = ["IntentUnderstandingNode"]
+__all__ = ["IntentResult", "INTENTS", "IntentUnderstandingNode", "classify_by_rules"]

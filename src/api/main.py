@@ -1,59 +1,66 @@
-"""FastAPI entry point - app factory and router mounting (Phase 1 minimum).
+"""FastAPI application factory for the Enterprise AI Employee service.
 
-Exposes a single POST /chat endpoint that runs the LangGraph pipeline and
-returns the final AgentState as JSON.  SSE streaming, auth and the other
-routes are added in Phase 6/7 together with the Vue3 workbench.
+Phase 1 exposes a single JSON endpoint, POST /api/chat:
+    {"message": "..."}  ->  {request_id, answer, intent, route, sql,
+                             evidence, tool_calls}
+SSE streaming, auth and the report/task routes are added together with
+the Vue3 workbench (Phase 6).
 """
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from src.api.routes.chat import router as chat_router
 from src.graph.builder import DigitalEmployee
 
-app = FastAPI(title="Enterprise AI Employee", version="0.1.0")
-_employee = DigitalEmployee()
+logger = logging.getLogger("eae.api")
 
 
 class ChatRequest(BaseModel):
-    task: str
-    task_id: str | None = None
+    """POST /api/chat request body."""
+
+    message: str
+    request_id: str | None = None
 
 
 class ChatResponse(BaseModel):
-    task_id: str
-    status: str
-    intent: str
-    selected_tools: list[str]
+    """POST /api/chat response body."""
+
+    request_id: str
     answer: str
-    citations: list[str]
+    intent: str
+    route: str
+    sql: str
     evidence: list[dict[str, Any]]
-    errors: list[dict[str, Any]]
-    latency_ms: dict[str, float]
+    tool_calls: list[dict[str, Any]]
+    status: str
+    latency: dict[str, float]
 
 
-@app.post("/chat", response_model=ChatResponse)
-def chat(request: ChatRequest) -> ChatResponse:
-    state = _employee.run(request.task, task_id=request.task_id)
-    return ChatResponse(
-        task_id=str(state.get("task_id", "")),
-        status=str(state.get("status", "")),
-        intent=str(state.get("intent", "")),
-        selected_tools=list(state.get("selected_tools") or []),
-        answer=str(state.get("answer", "")),
-        citations=list(state.get("citations") or []),
-        evidence=[ev.model_dump() for ev in (state.get("evidence") or [])],
-        errors=list(state.get("errors") or []),
-        latency_ms=dict(state.get("latency_ms") or {}),
+def create_app() -> FastAPI:
+    app = FastAPI(title="Enterprise AI Employee", version="0.1.0")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],  # Phase 1: single local dev server; tightened in Phase 7
+        allow_methods=["POST"],
+        allow_headers=["*"],
     )
+    app.state.employee = DigitalEmployee()
+    app.include_router(chat_router, prefix="/api")
+
+    @app.get("/health")
+    def health() -> dict[str, str]:
+        return {"status": "ok"}
+
+    return app
 
 
-@app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+app = create_app()
 
-
-__all__ = ["app"]
+__all__ = ["app", "ChatRequest", "ChatResponse", "create_app"]

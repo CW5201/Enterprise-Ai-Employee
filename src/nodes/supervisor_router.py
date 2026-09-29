@@ -1,63 +1,62 @@
-"""Node: Supervisor Router - task-adaptive routing over RAG / SQL (Phase 1).
+"""Node: Supervisor Router — stable conditional routing (Phase 1).
 
-Phase 1 implements the *minimum* routing needed for the
-``Intent -> Router -> RAG/SQL -> Answer`` loop:
+Phase 1 intentionally has NO complex planner: one deterministic table maps
+each intent to its execution path, and a confidence gate diverts weak
+decisions to clarification.  The dynamic routing research contribution
+(Innovation 1, ablation A) is built on top of this node in Phase 3.
 
-- consults ``config/routing_rules.yaml`` (intent -> tool mapping);
-- applies the confidence gate (``route.min_confidence``): below the gate the
-  router sends the task to the clarification node;
-- supports multi-tool lists but executes them in the declared priority order.
-
-The full dynamic-routing research contribution (Innovation 1, with fallback,
-escalation and ablation A) is implemented in Phase 3 on top of this node.
+    data_query        -> sql
+    knowledge_query   -> rag
+    complex_analysis  -> sql_rag   (SQL then RAG, results aggregated)
+    clarification / * -> clarification
 """
 
 from __future__ import annotations
 
-from src.core.config_loader import RoutingRules
+from src.core.config_loader import get_settings
 from src.core.observability import observe
-from src.core.state import AgentState
+from src.core.state import AgentState, ErrorRecord
 
-# Phase 1 only activates the two tools that exist; others are ignored.
-_ACTIVE_TOOLS = ("sql", "rag")
-
-
-def _select_tools(rules: RoutingRules, intent: str, intent_confidence: float) -> tuple[list[str], float, str]:
-    eligible = [t for t in rules.intent_tools.get(intent, []) if t in _ACTIVE_TOOLS]
-    if intent_confidence < rules.min_confidence:
-        return [], intent_confidence, "low_confidence -> clarify"
-    if not eligible:
-        # out-of-scope intent: nothing to do; answer node will explain scope
-        return [], 1.0, "no active tool for intent"
-    return eligible, min(intent_confidence + 0.1, 1.0), f"intent {intent} -> {eligible}"
+_ROUTE_BY_INTENT: dict[str, str] = {
+    "data_query": "sql",
+    "knowledge_query": "rag",
+    "complex_analysis": "sql_rag",
+    "clarification": "clarification",
+}
 
 
 class SupervisorRouterNode:
-    def __init__(self, rules: RoutingRules) -> None:
-        self.rules = rules
+    def __init__(self, min_confidence: float | None = None) -> None:
+        self._min_confidence = (
+            min_confidence if min_confidence is not None else float(get_settings().routing.get("route", {}).get("min_confidence", 0.6))
+        )
 
     @observe("routing")
     def run(self, state: AgentState) -> AgentState:
-        intent = state.get("intent", "")
-        confidence = float(state.get("intent_confidence", 0.0))
-        tools, routing_conf, plan = _select_tools(self.rules, intent, confidence)
+        intent = str(state.get("intent") or "")
+        confidence = float(state.get("confidence") or 0.0)
 
-        entry = {
-            "intent": intent,
-            "intent_confidence": confidence,
-            "selected_tools": tools,
-            "routing_confidence": routing_conf,
-            "plan": plan,
-        }
+        if intent in _ROUTE_BY_INTENT and confidence >= self._min_confidence:
+            route = _ROUTE_BY_INTENT[intent]
+            plan = f"{intent} -> {route}"
+            errors: list[ErrorRecord] = []
+        else:
+            route = "clarification"
+            plan = f"{intent or 'unknown'} (confidence {confidence:.2f}) -> clarification"
+            errors = [
+                ErrorRecord(
+                    stage="routing",
+                    message="route to clarification",
+                    details={"intent": intent, "confidence": confidence},
+                )
+            ]
 
         return {
-            "selected_tools": tools,
-            "routing_plan": plan,
-            "routing_confidence": routing_conf,
-            "routing_history": [entry],  # append reducer merges this into the list
-            "next_action": "clarify" if not tools and confidence < self.rules.min_confidence
-            else ("answer" if not tools else "execute"),
+            "route": route,
+            "route_confidence": confidence,
+            "plan": plan,
+            "errors": errors,
         }
 
 
-__all__ = ["SupervisorRouterNode"]
+__all__ = ["SupervisorRouterNode", "_ROUTE_BY_INTENT"]

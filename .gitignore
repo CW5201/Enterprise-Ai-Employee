@@ -65,6 +65,7 @@ models/
 *.duckdb
 *.duckdb.wal
 data/duckdb/
+data/runtime/
 data/milvus/
 data/neo4j/
 volumes/
