@@ -1,35 +1,44 @@
-"""Vector store — unified Milvus interface with an in-process fallback.
+"""Vector store — unified interface with two explicitly separated backends.
 
-Phase 1 target is Milvus (pymilvus).  Real deployments connect to a running
-Milvus server (``MILVUS_HOST``).  To keep the minimum loop runnable and
-testable on a machine without a Milvus server, this module also provides:
+Phase 2.1 target backend is Milvus (pymilvus ``MilvusClient``):
 
-- :class:`MilvusVectorStore` — the pymilvus-backed store (used when a server
-  is reachable / configured).
-- :class:`LocalVectorStore` — an in-process cosine index with the *same
-  search API*, persisted to ``data/runtime/wwi.kb.json`` so the RAG path
-  still runs end-to-end offline.
+- :class:`MilvusVectorStore` — formal backend (``backend = "milvus"``).
+  Connects to a running Milvus server (URI/token from
+  ``config/settings.yaml`` resolved by :mod:`src.core.config_loader`),
+  creates the collection schema on first use, and performs real
+  dense retrieval.
+- :class:`FakeVectorStore` — local in-memory fallback
+  (``backend = "fake"``).  **Unit tests / test mode ONLY.**  It is
+  selected explicitly (``create_vector_store(backend="fake")`` or
+  ``EMBEDDING_FORCE_OFFLINE=1`` in test contexts) and must never be
+  silently substituted when a formal Milvus connection fails: a
+  formal backend failure raises :class:`RetrievalError`, it does not
+  downgrade.
 
-The two are selected by :func:`create_vector_store` based on
-configuration and reachability; callers only see one search/insert API so
-swapping in the real Milvus server later is a config change, not a code
-change.  Extension points (BM25 / reranker / metadata filtering) keep their
-interfaces here for Phase 2.
+The Milvus collection stores per chunk::
+
+    chunk_id (VARCHAR, PK), document_id, title, source, category,
+    text, metadata_json (VARCHAR), vector (FLOAT_VECTOR, dim measured
+    from the real BGE-M3 model, never hardcoded)
+
+Search results keep ``source`` / ``title`` / ``category`` so downstream
+answer generation can cite them.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import math
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Protocol
 
-from src.core.embedder import EmbedFn, create_embedder
+from src.core.embedder import EmbedFn
 from src.core.exceptions import RetrievalError
 
-_RUNTIME_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "runtime"
-_LOCAL_INDEX_FILE = _RUNTIME_DIR / "wwi.kb.json"
+logger = logging.getLogger("eae.vector_store")
+
+_OUTPUT_FIELDS: list[str] = ["chunk_id", "document_id", "title", "source", "category", "text", "metadata_json"]
 
 
 # ---------------------------------------------------------------------------
@@ -46,21 +55,33 @@ class SearchHit:
     source: str
     metadata: dict[str, Any] = field(default_factory=dict)
     score: float = 0.0
+    document_id: str = ""
+    title: str = ""
+    category: str = ""
 
     def to_payload(self) -> dict[str, Any]:
         return {
             "chunk_id": self.chunk_id,
+            "document_id": self.document_id,
             "text": self.text,
+            "title": self.title,
             "source": self.source,
+            "category": self.category,
             "metadata": self.metadata,
             "score": self.score,
         }
 
 
 class VectorStore(Protocol):
-    """Common retrieval interface shared by the Milvus and local backends."""
+    """Common retrieval interface shared by the Milvus and fake backends."""
 
     backend: str
+
+    def connect(self) -> None: ...
+
+    def health_check(self) -> dict[str, Any]: ...
+
+    def create_collection(self) -> None: ...
 
     def insert(self, records: list[dict[str, Any]]) -> int: ...
 
@@ -71,65 +92,57 @@ class VectorStore(Protocol):
         filter: dict[str, Any] | None = None,  # noqa: A002 - mirrors Milvus expr API
     ) -> list[SearchHit]: ...
 
+    def delete(self, chunk_ids: list[str]) -> int: ...
+
     def size(self) -> int: ...
 
     def drop(self) -> None: ...
 
 
 # ---------------------------------------------------------------------------
-# In-process local store (offline fallback, same API as Milvus)
+# Fake backend — UNIT TEST / TEST MODE ONLY
 # ---------------------------------------------------------------------------
 
 
-class LocalVectorStore:
-    """Cosine similarity index persisted to a JSON sidecar file.
+class FakeVectorStore:
+    """In-process cosine index for tests (pre-computed embeddings stored).
 
-    Stores pre-computed embeddings (from the injected ``embed_fn``) so
-    search does not need a model at query time.
+    This is an explicit, labelled fake: ``backend = "fake"``.  It exists so
+    unit tests stay fast and deterministic; it must NEVER be used as the
+    formal retrieval backend.
     """
 
-    backend = "local"
+    backend = "fake"
 
-    def __init__(self, embed_fn: EmbedFn, path: Path | None = None) -> None:
+    def __init__(self, collection: str, dim: int, embed_fn: EmbedFn | None = None) -> None:
+        self.collection = collection
+        self.dim = dim
         self._embed_fn = embed_fn
-        self._path = path or _LOCAL_INDEX_FILE
         self._records: dict[str, dict[str, Any]] = {}
         self._vectors: dict[str, list[float]] = {}
-        self._load()
+        self._connected = False
 
-    def _load(self) -> None:
-        if self._path.exists():
-            try:
-                data = json.loads(self._path.read_text(encoding="utf-8"))
-                for rec in data.get("records", []):
-                    self._records[rec["chunk_id"]] = rec
-                    self._vectors[rec["chunk_id"]] = rec.get("vector", [])
-            except (json.JSONDecodeError, KeyError) as exc:
-                raise RetrievalError(f"Local index corrupt: {exc}") from exc
+    def connect(self) -> None:
+        self._connected = True
 
-    def _save(self) -> None:
-        records = [
-            {**r, "vector": self._vectors[r["chunk_id"]]}
-            for r in self._records.values()
-            if self._vectors.get(r["chunk_id"])
-        ]
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(
-            json.dumps({"records": records}, ensure_ascii=False),
-            encoding="utf-8",
-        )
+    def health_check(self) -> dict[str, Any]:
+        return {"backend": "fake", "collection": self.collection, "entity_count": self.size()}
+
+    def create_collection(self) -> None:
+        return None
 
     def insert(self, records: list[dict[str, Any]]) -> int:
         for record in records:
-            chunk_id = record["chunk_id"]
+            chunk_id = str(record["chunk_id"])
             self._records[chunk_id] = {k: v for k, v in record.items() if k != "vector"}
-            self._vectors[chunk_id] = record.get("vector") or self._embed_fn(record.get("text", ""))
-        self._save()
+            self._vectors[chunk_id] = list(record.get("vector") or [])
         return len(records)
 
     def search(self, query: str, top_k: int = 5, filter: dict[str, Any] | None = None) -> list[SearchHit]:
         if not self._records:
             return []
+        if self._embed_fn is None:
+            raise RetrievalError("FakeVectorStore.search requires an embed_fn to vectorise the query")
         qv = self._embed_fn(query)
         hits: list[SearchHit] = []
         for chunk_id, record in self._records.items():
@@ -138,18 +151,29 @@ class LocalVectorStore:
             rv = self._vectors.get(chunk_id)
             if not rv:
                 continue
-            score = _cosine(qv, rv)
             hits.append(
                 SearchHit(
                     chunk_id=chunk_id,
-                    text=record.get("text", ""),
+                    text=str(record.get("text", "")),
                     source=str(record.get("source", "")),
                     metadata=record.get("metadata", {}),
-                    score=score,
+                    score=_cosine(qv, rv),
+                    document_id=str(record.get("document_id", "")),
+                    title=str(record.get("title", "")),
+                    category=str(record.get("category", "")),
                 )
             )
         hits.sort(key=lambda h: h.score, reverse=True)
         return hits[:top_k]
+
+    def delete(self, chunk_ids: list[str]) -> int:
+        removed = 0
+        for chunk_id in chunk_ids:
+            if chunk_id in self._records:
+                del self._records[chunk_id]
+                self._vectors.pop(chunk_id, None)
+                removed += 1
+        return removed
 
     def size(self) -> int:
         return len(self._records)
@@ -157,8 +181,6 @@ class LocalVectorStore:
     def drop(self) -> None:
         self._records.clear()
         self._vectors.clear()
-        if self._path.exists():
-            self._path.unlink()
 
 
 def _cosine(a: list[float], b: list[float]) -> float:
@@ -171,117 +193,231 @@ def _cosine(a: list[float], b: list[float]) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Milvus-backed store (pymilvus)
+# Milvus backend — Phase 2.1 formal retrieval
 # ---------------------------------------------------------------------------
 
 
 class MilvusVectorStore:
-    """pymilvus-backed store — the Phase 2 primary backend.
+    """Milvus-backed store (pymilvus ``MilvusClient``) — the formal backend.
 
-    Created only when a Milvus server is actually reachable; otherwise the
-    factory falls back to :class:`LocalVectorStore` so the pipeline still runs.
+    The dimension is **measured from the real BGE-M3 model**, not hardcoded;
+    a schema dimension that disagrees with the model output raises
+    :class:`RetrievalError` immediately instead of corrupting retrieval.
     """
 
     backend = "milvus"
 
-    def __init__(self, collection: str, dim: int, uri: str = "http://localhost:19530") -> None:
-        from pymilvus import connections, utility  # type: ignore[import-not-found]
+    def __init__(
+        self,
+        collection: str,
+        dim: int,
+        *,
+        uri: str,
+        user: str = "",
+        password: str = "",
+        metric_type: str = "IP",
+        index_type: str = "HNSW",
+        index_params: dict[str, int] | None = None,
+        embed_fn: EmbedFn | None = None,
+    ) -> None:
+        from src.core.embedder import create_embedder
 
-        self._connections = connections
-        self._utility = utility
-        self._collection_name = collection
-        self._dim = dim
+        self.collection = collection
+        self.dim = dim
         self._uri = uri
-        self._collection = None
+        self._user = user
+        self._password = password
+        self._metric_type = metric_type
+        self._index_type = index_type
+        self._index_params = index_params or {"M": 16, "efConstruction": 200}
+        self._embed_fn = embed_fn or create_embedder()
+        self._client: Any = None
+        self._collection_ready = False
 
     # -- lifecycle ----------------------------------------------------------
 
-    def _connect(self) -> None:
-        if self._collection is None:
-            import pymilvus  # type: ignore[import-not-found]
+    def connect(self) -> None:
+        if self._client is not None:
+            return
+        from pymilvus import MilvusClient
 
-            handle = self._connections.connect("default", uri=self._uri)
-            if handle is None:
-                raise RetrievalError(f"Milvus unreachable at {self._uri}")
-            self._prepare_collection(pymilvus)
+        token = f"{self._user}:{self._password}" if self._user or self._password else ""
+        try:
+            self._client = MilvusClient(uri=self._uri, token=token)
+        except Exception as exc:  # noqa: BLE001 - surface as unified retrieval error
+            raise RetrievalError(
+                f"Milvus connection failed at {self._uri}: {exc}",
+                details={"uri": self._uri, "collection": self.collection},
+            ) from exc
 
-    def _prepare_collection(self, pymilvus: Any) -> None:
-        if self._utility.has_collection(self._collection_name):
-            self._collection = pymilvus.Collection(self._collection_name)
-        else:
-            schema = pymilvus.CollectionSchema(fields=[
-                {"name": "chunk_id", "datatype": pymilvus.DataType.VARCHAR, "is_primary": True, "max_length": 128},
-                {"name": "text", "datatype": pymilvus.DataType.VARCHAR, "max_length": 8192},
-                {"name": "source", "datatype": pymilvus.DataType.VARCHAR, "max_length": 512},
-                {"name": "metadata_json", "datatype": pymilvus.DataType.VARCHAR, "max_length": 8192},
-                {"name": "vector", "datatype": pymilvus.DataType.FLOAT_VECTOR, "dim": self._dim},
-            ])
-            self._collection = pymilvus.Collection(name=self._collection_name, schema=schema)
-            index_params = {"metric_type": "IP", "index_type": "HNSW", "params": {"M": 16, "efConstruction": 200}}
-            self._collection.create_index("vector", index_type="HNSW", **index_params)
-        self._collection.load()
+    def health_check(self) -> dict[str, Any]:
+        self.connect()
+        if not self._client.has_collection(self.collection):
+            return {
+                "backend": "milvus",
+                "collection": self.collection,
+                "uri": self._uri,
+                "dimension": self.dim,
+                "metric_type": self._metric_type,
+                "index_type": self._index_type,
+                "entity_count": 0,
+                "exists": False,
+            }
+        self._ensure()
+        entity_count = self.size()
+        return {
+            "backend": "milvus",
+            "collection": self.collection,
+            "uri": self._uri,
+            "dimension": self.dim,
+            "metric_type": self._metric_type,
+            "index_type": self._index_type,
+            "entity_count": entity_count,
+        }
 
-    # -- VectorStore interface --------------------------------------------
+    def create_collection(self) -> None:
+        """Create the collection + HNSW index if it does not exist yet."""
+        self.connect()
+        if self._client.has_collection(self.collection):
+            self._collection_ready = True
+            return
+        from pymilvus import CollectionSchema, DataType, FieldSchema
+        from pymilvus.milvus_client import IndexParams
+
+        fields: list[dict[str, Any]] = [
+            {"name": "chunk_id", "dtype": DataType.VARCHAR, "is_primary": True, "max_length": 128},
+            {"name": "document_id", "dtype": DataType.VARCHAR, "max_length": 64},
+            {"name": "title", "dtype": DataType.VARCHAR, "max_length": 256},
+            {"name": "source", "dtype": DataType.VARCHAR, "max_length": 512},
+            {"name": "category", "dtype": DataType.VARCHAR, "max_length": 64},
+            {"name": "text", "dtype": DataType.VARCHAR, "max_length": 8192},
+            {"name": "metadata_json", "dtype": DataType.VARCHAR, "max_length": 8192},
+            {"name": "vector", "dtype": DataType.FLOAT_VECTOR, "dim": self.dim},
+        ]
+        schema = CollectionSchema(fields=[FieldSchema(**f) for f in fields])
+        index_params = IndexParams()
+        index_params.add_index(
+            "vector",
+            index_type=self._index_type,
+            metric_type=self._metric_type,
+            **self._index_params,
+        )
+        self._client.create_collection(self.collection, schema=schema, index_params=index_params)
+        self._client.load_collection(self.collection)
+        self._collection_ready = True
+
+    def _ensure(self) -> None:
+        """Make sure the collection exists and is loaded for search."""
+        if not self._client.has_collection(self.collection):
+            self.create_collection()
+        elif not self._collection_ready:
+            self._client.load_collection(self.collection)
+            self._collection_ready = True
 
     def insert(self, records: list[dict[str, Any]]) -> int:
-
-        self._connect()
+        self._ensure()
         if not records:
             return 0
-        data = [
-            [r["chunk_id"] for r in records],
-            [r.get("text", "") for r in records],
-            [str(r.get("source", "")) for r in records],
-            [json.dumps(r.get("metadata", {}), ensure_ascii=False) for r in records],
-            [r.get("vector") or [] for r in records],
-        ]
-        self._collection.insert(data)
-        self._collection.flush()
-        return len(records)
+        data: list[dict[str, Any]] = []
+        for record in records:
+            vector = record.get("vector") or []
+            if len(vector) != self.dim:
+                logger.error(
+                    "Embedding dim %d != collection dim %d (%s); refusing to insert mismatched vectors",
+                    len(vector), self.dim, self.collection,
+                )
+                raise RetrievalError(
+                    f"Vector dimension mismatch: got {len(vector)}, collection '{self.collection}' "
+                    f"is {self.dim}",
+                    details={"record_chunk_id": record.get("chunk_id"), "expected": self.dim, "got": len(vector)},
+                )
+            data.append(
+                {
+                    "chunk_id": str(record["chunk_id"]),
+                    "document_id": str(record.get("document_id", "")),
+                    "title": str(record.get("title", "")),
+                    "source": str(record.get("source", "")),
+                    "category": str(record.get("category", "")),
+                    "text": str(record.get("text", "")),
+                    "metadata_json": json.dumps(record.get("metadata", {}), ensure_ascii=False),
+                    "vector": [float(v) for v in vector],
+                }
+            )
+        self._client.insert(self.collection, data)
+        self._client.flush(self.collection)
+        return len(data)
 
     def search(self, query: str, top_k: int = 5, filter: dict[str, Any] | None = None) -> list[SearchHit]:
-        self._connect()
-
-        from src.core.embedder import create_embedder
-
-        embedder = create_embedder()
-        vector = embedder(query)
-        expr = None
-        if filter:
-            expr = " and ".join(f'metadata_json like "%{k}:{v}"%' for k, v in filter.items())
-        res = self._collection.search(
-            [vector],
-            limit=top_k,
-            output_fields=["text", "source", "metadata_json"],
-            expr=expr,
+        self._ensure()
+        if top_k < 1:
+            raise RetrievalError(f"top_k must be >= 1, got {top_k}")
+        vector = [float(v) for v in self._embed_fn(query)]
+        if len(vector) != self.dim:
+            raise RetrievalError(
+                f"Query vector dimension {len(vector)} != collection dimension {self.dim}",
+                details={"collection": self.collection},
+            )
+        expr = _build_filter_expr(filter)
+        results = self._client.search(
+            self.collection,
+            data=[vector],
+            limit=int(top_k),
+            filter=expr,
+            output_fields=_OUTPUT_FIELDS,
+            search_params={"metric_type": self._metric_type},
         )
         hits: list[SearchHit] = []
-        for row in res[0]:
-            meta = {}
+        for row in results[0]:
+            ent = row.get("entity", row)
+            meta: dict[str, Any] = {}
             try:
-                meta = json.loads(row.entity.get("metadata_json") or "{}")
+                meta = json.loads(ent.get("metadata_json") or "{}")
             except json.JSONDecodeError:
                 meta = {}
             hits.append(
                 SearchHit(
-                    chunk_id=row.id,
-                    text=row.entity.get("text", ""),
-                    source=str(row.entity.get("source", "")),
+                    chunk_id=str(ent.get("chunk_id", row.get("id", ""))),
+                    document_id=str(ent.get("document_id", "")),
+                    text=str(ent.get("text", "")),
+                    title=str(ent.get("title", "")),
+                    source=str(ent.get("source", "")),
+                    category=str(ent.get("category", "")),
                     metadata=meta,
-                    score=float(row.distance),
+                    score=float(row.get("distance", 0.0)),
                 )
             )
         return hits
 
+    def delete(self, chunk_ids: list[str]) -> int:
+        self._ensure()
+        if not chunk_ids:
+            return 0
+        self._client.delete(self.collection, ids=chunk_ids)
+        self._client.flush(self.collection)
+        return len(chunk_ids)
+
     def size(self) -> int:
-        self._connect()
-        return int(self._collection.num_entities)
+        self._ensure()
+        stats = self._client.get_collection_stats(self.collection)
+        return int(stats.get("row_count", 0))
 
     def drop(self) -> None:
-        from pymilvus import utility  # type: ignore[import-not-found]
+        self.connect()
+        if self._client.has_collection(self.collection):
+            self._client.drop_collection(self.collection)
+        self._collection_ready = False
 
-        if utility.has_collection(self._collection_name):
-            utility.drop_collection(self._collection_name)
+
+def _build_filter_expr(filter: dict[str, Any] | None) -> str | None:
+    """Translate a simple equality filter dict into a Milvus expr."""
+    if not filter:
+        return None
+    parts: list[str] = []
+    for key, value in filter.items():
+        if key == "vector":
+            continue
+        parts.append(f'{key} == "{value}"')
+    return " and ".join(parts) if parts else None
 
 
 # ---------------------------------------------------------------------------
@@ -289,32 +425,72 @@ class MilvusVectorStore:
 # ---------------------------------------------------------------------------
 
 
-def create_vector_store() -> VectorStore:
-    """Pick the best available backend.
+def create_vector_store(
+    backend: str | None = None,
+    *,
+    dim: int | None = None,
+    collection: str | None = None,
+) -> MilvusVectorStore | FakeVectorStore:
+    """Build a vector store for an explicitly chosen backend.
 
-    Returns a Milvus store only when a server is reachable; otherwise a
-    persistent local store so the RAG pipeline always runs.
+    - ``backend="milvus"`` (default): formal backend.  Connection or
+      schema problems RAISE :class:`RetrievalError` — a formal failure
+      never silently downgrades to the fake backend.
+    - ``backend="fake"``: test-mode only in-memory store.
+
+    ``dim`` is read from the real embedder when not given, so the Milvus
+    schema dimension always matches BGE-M3's actual output.
     """
-    try:
-        import socket
+    from src.core.config_loader import get_settings
 
-        host = "localhost"
-        port = 19530
-        with socket.create_connection((host, port), timeout=0.5):
-            pass
-    except OSError:
-        # No live Milvus server — fall back to the persistent local store.
-        return LocalVectorStore(create_embedder())
-    try:
-        store: VectorStore = MilvusVectorStore(collection="enterprise_knowledge", dim=1024, uri="http://localhost:19530")
-        store.size()  # forces connect + prepare
-        return store
-    except RetrievalError:
-        return LocalVectorStore(create_embedder())
+    settings = get_settings()
+    milvus_cfg = settings.raw.get("milvus", {})
+    collection_name = collection or str(milvus_cfg.get("collection", "enterprise_knowledge"))
+    chosen = backend or "milvus"
+    if chosen not in ("milvus", "fake"):
+        raise RetrievalError(f"Unknown vector store backend: {chosen!r} (expected 'milvus' or 'fake')")
+
+    if chosen == "fake":
+        fake_dim = dim
+        if fake_dim is None:
+            from src.core.embedder import HashEmbedder
+
+            fake_dim = HashEmbedder().dim
+        return FakeVectorStore(collection_name, int(fake_dim))
+
+    from src.core.embedder import create_embedder
+
+    embed_fn = create_embedder()
+    measured_dim = dim
+    if measured_dim is None:
+        measured_dim = embed_fn.dim
+        # Probe the real model once to detect the actual output dimension.
+        probe = embed_fn("dimension probe")
+        if len(probe):
+            measured_dim = len(probe)
+    host = str(milvus_cfg.get("host", "localhost"))
+    port = str(milvus_cfg.get("port", "19530"))
+    # host may already carry a scheme when the whole URI is given in config
+    uri = host if host.startswith(("http://", "https://")) else f"http://{host}:{port}"
+    store = MilvusVectorStore(
+        collection_name,
+        int(measured_dim),
+        uri=uri,
+        user=str(milvus_cfg.get("user", "")),
+        password=str(milvus_cfg.get("password", "")),
+        metric_type=str(milvus_cfg.get("metric_type", "IP")),
+        index_type=str(milvus_cfg.get("index_type", "HNSW")),
+        index_params=dict(milvus_cfg.get("index_params") or {}),
+        embed_fn=embed_fn,
+    )
+    # Formal backend: connect eagerly so misconfiguration fails now,
+    # never at first retrieval.
+    store.connect()
+    return store
 
 
 __all__ = [
-    "LocalVectorStore",
+    "FakeVectorStore",
     "MilvusVectorStore",
     "SearchHit",
     "VectorStore",

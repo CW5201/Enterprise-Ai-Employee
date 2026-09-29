@@ -122,7 +122,11 @@ class LLMSettings:
 class MilvusSettings:
     host: str = "localhost"
     port: int = 19530
+    user: str = ""
+    password: str = ""
     collection: str = "enterprise_knowledge"
+    metric_type: str = "IP"
+    index_type: str = "HNSW"
     index_dir: str = "data/kb_index"
 
     @classmethod
@@ -130,7 +134,11 @@ class MilvusSettings:
         return cls(
             host=str(d.get("host", cls.host)),
             port=int(d.get("port", cls.port)),
+            user=str(d.get("user", "")),
+            password=str(d.get("password", "")),
             collection=str(d.get("collection", cls.collection)),
+            metric_type=str(d.get("metric_type", cls.metric_type)),
+            index_type=str(d.get("index_type", cls.index_type)),
         )
 
 

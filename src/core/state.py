@@ -54,11 +54,16 @@ class SQLResultPayload(BaseModel):
 
 
 class RetrievedChunk(BaseModel):
-    """One RAG hit, source preserved (Phase 4 claim-evidence dependency)."""
+    """One RAG hit, source preserved (Phase 4 claim-evidence dependency).
+
+    ``source`` holds the Milvus ``source`` field (e.g.
+    ``finance/finance-0001-travel-reimbursement-policy``); the human-readable
+    document title is carried in ``metadata["title"]`` so answers can cite it.
+    """
 
     chunk_id: str
     text: str
-    source: str  # doc_id / title / license — never dropped
+    source: str  # source path / doc ref — never dropped
     metadata: dict[str, Any] = Field(default_factory=dict)
     score: float = 0.0
 
@@ -79,7 +84,7 @@ class EvidenceItem(BaseModel):
     """
 
     evidence_id: str
-    source_type: str = Field(description="duckdb | milvus (Phase 1)")
+    source_type: str = Field(description="duckdb | milvus | fake (Phase 2.1)")
     source_ref: str = Field(description="executed SQL, or milvus:chunk_id")
     content: str = ""
     payload: dict[str, Any] = Field(default_factory=dict)

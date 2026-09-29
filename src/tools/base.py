@@ -143,7 +143,7 @@ def _jsonable(value: dict[str, Any]) -> dict[str, Any]:
 
 
 def default_registry() -> ToolRegistry:
-    """Build the Phase 1 registry: sql_tool + rag_tool."""
+    """Build the Phase 2.1 registry: sql_tool + rag_tool (Milvus)."""
     from src.tools.rag_tool import RAGTool
     from src.tools.sql_tool import SQLTool
 

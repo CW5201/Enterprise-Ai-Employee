@@ -1,6 +1,6 @@
-"""Graph builder — assemble the Phase 1 minimum StateGraph.
+"""Graph builder — assemble the Phase 2.1 StateGraph (RAG via BGE-M3 + Milvus).
 
-Wiring (docs/ROADMAP.md Phase 1)::
+Wiring (docs/ROADMAP.md)::
 
     START
       -> intent_understanding
@@ -13,13 +13,9 @@ Wiring (docs/ROADMAP.md Phase 1)::
 
 Design notes:
 - One graph, one shared AgentState, no multi-agent.
-- The router emits ``route in {sql, rag, mixed, clarify}``.  To keep the
-  StateGraph conditional edges simple, the **sql node** executes the SQL and
-  the **rag node** executes retrieval; each node internally no-ops when the
-  route does not call for it.  The conditional edge after the router picks
-  the entry point (sql, rag, or sql which forwards into rag for ``mixed``),
-  and a second conditional edge after the sql node decides whether to run
-  rag or go straight to the answer.
+- ``backend`` selects the RAG vector-store backend: ``None`` (default) =
+  formal Milvus; ``"fake"`` = test-mode in-memory store (explicit only).
+- ``store_override`` lets tests inject a pre-populated fake store.
 """
 
 from __future__ import annotations
@@ -29,6 +25,7 @@ from typing import Any, cast
 from langgraph.graph import END, START, StateGraph
 
 from src.core.llm_client import LLMClient
+from src.core.observability import set_task_latencies
 from src.core.state import AgentState, make_state
 from src.nodes.answer_generation import AnswerGenerationNode
 from src.nodes.clarification import ClarificationNode
@@ -39,14 +36,21 @@ from src.nodes.supervisor_router import SupervisorRouterNode
 from src.tools.rag_tool import RAGTool
 
 
-def build_graph() -> Any:
+def build_graph(
+    backend: str | None = None,
+    rag_top_k: int = 5,
+    store_override: Any | None = None,
+) -> Any:
     llm = LLMClient()
-    rag_tool = RAGTool()
+    if store_override is not None:
+        rag_tool = RAGTool(store=store_override)
+    else:
+        rag_tool = RAGTool(backend=backend)
 
     intent_node = IntentUnderstandingNode(llm)
     router_node = SupervisorRouterNode()
     sql_node = SQLExecutionNode(llm=llm)
-    rag_node = RAGRetrievalNode(rag_tool)
+    rag_node = RAGRetrievalNode(rag_tool, top_k=rag_top_k, backend=backend)
     answer_node = AnswerGenerationNode(llm)
     clarify_node = ClarificationNode()
 
@@ -84,13 +88,18 @@ def build_graph() -> Any:
 
 
 class DigitalEmployee:
-    """High-level entry point: run one natural-language task end to end."""
+    """High-level entry point: run one natural-language task end to end.
 
-    def __init__(self) -> None:
-        self._graph = build_graph()
+    ``backend=None`` (default) uses the formal Milvus backend.  Pass
+    ``backend="fake"`` explicitly for unit tests / test mode.
+    """
+
+    def __init__(self, backend: str | None = None, rag_top_k: int = 5) -> None:
+        self._graph = build_graph(backend=backend, rag_top_k=rag_top_k)
 
     def run(self, user_query: str, *, request_id: str | None = None) -> AgentState:
         state: AgentState = make_state(user_query, request_id=request_id)
+        set_task_latencies(state["latency"])
         return cast(AgentState, self._graph.invoke(state))
 
 

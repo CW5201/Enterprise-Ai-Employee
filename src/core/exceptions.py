@@ -14,6 +14,7 @@ maps to):
 - :class:`SQLExecutionError`       DuckDB execution failure
 - :class:`KnowledgeBaseError`      KB document access failure
 - :class:`RetrievalError`          RAG retrieval failure
+- :class:`EmbeddingUnavailableError` BGE-M3 model cannot be loaded
 - :class:`ValidationError`         claim-evidence verification rejection
 """
 
@@ -84,6 +85,17 @@ class RetrievalError(AppError):
     code = "retrieval_error"
 
 
+class EmbeddingUnavailableError(RetrievalError):
+    """The BGE-M3 embedding model could not be loaded.
+
+    Raised ONLY when the formal (non-test) mode cannot produce a real
+    BGE-M3 vector.  The hashing fallback is test-mode only and never
+    used as a substitute for the model in production paths.
+    """
+
+    code = "embedding_unavailable"
+
+
 class ValidationError(AppError):
     """Claim-evidence verification rejected the answer."""
 
@@ -98,5 +110,6 @@ __all__ = [
     "SQLExecutionError",
     "KnowledgeBaseError",
     "RetrievalError",
+    "EmbeddingUnavailableError",
     "ValidationError",
 ]

@@ -39,35 +39,36 @@ embedding:
   normalize: true
   max_length: 8192
 
-# --- Reranker (BGE-Reranker-v2-M3) ----------------------------------------
+# --- Reranker (BGE-Reranker-v2-M3, Phase 2.2+) ----------------------------
+# Phase 2.1 只做 dense 检索，reranker 暂不启用（配置保留，供后续阶段）。
 reranker:
-  enabled: true
+  enabled: false
   model_name: ${RERANKER_MODEL:-BAAI/bge-reranker-v2-m3}
   device: ${RERANKER_DEVICE:-cpu}
   top_k: 5
   batch_size: 16
 
-# --- RAG (hybrid retrieval) ------------------------------------------------
+# --- RAG --------------------------------------------------------------------
+# Phase 2.1：dense-only（BGE-M3 + Milvus Top-K）；BM25 / Reranker 属
+# Phase 2.2+，本阶段不启用。
 rag:
   chunk_size: 512
   chunk_overlap: 64
-  dense_top_k: 20
-  sparse_top_k: 20
-  fusion: rrf
-  final_top_k: 8
-  metadata_filtering: true
+  top_k: 5
 
 # --- Milvus (vector retrieval ONLY) ---------------------------------------
-# Phase 1: 本地 Docker 兜底（localhost:19530）；用户自有远程 Milvus 为 47.120.58.250:19530，
-# 需显式设置 MILVUS_HOST 才连接，避免默认打到远程。
+# Phase 2.1: 本地 Docker Milvus 独立版（localhost:19530，数据目录
+# D:\Learningsoftware\milvus\volumes\milvus）；远程 Milvus 需显式设置
+# MILVUS_HOST / MILVUS_USER / MILVUS_PASSWORD 才连接。
+# collection 名称 / metric_type / index_type 均在此统一管理，代码不写死。
 milvus:
   host: ${MILVUS_HOST:-localhost}
   port: ${MILVUS_PORT:-19530}
   user: ${MILVUS_USER:-}
   password: ${MILVUS_PASSWORD:-}
   collection: ${MILVUS_COLLECTION:-enterprise_knowledge}
-  metric_type: IP
-  index_type: HNSW
+  metric_type: ${MILVUS_METRIC_TYPE:-IP}
+  index_type: ${MILVUS_INDEX_TYPE:-HNSW}
   index_params:
     M: 16
     efConstruction: 200

@@ -1,15 +1,17 @@
 """Node: Answer generation — final answer from fused SQL + RAG evidence.
 
-Contract (Phase 1, docs/ROADMAP.md):
+Contract (Phase 2.1, docs/ROADMAP.md):
 - NEVER fabricate data: SQL conclusions come strictly from ``sql_result``;
-  RAG conclusions keep their source; data findings and knowledge findings
-  are kept visibly distinct in the answer.
-- No full Claim-Evidence Verification in Phase 1, but every fact is written
-  back into the unified ``evidence`` list so Phase 4 can verify it.
+  RAG conclusions keep their source and must be traceable to the cited
+  document (e.g. 「根据《差旅报销制度》的相关规定…」).
+- Knowledge answers are generated ONLY from ``retrieved_context``; the
+  LLM prompt never sees any other knowledge source.
+- Every fact is written back into the unified ``evidence`` list so Phase 4
+  claim-evidence verification can use it later.
 
 Input: user_query, intent, route, sql_result, retrieved_context, evidence.
 Output: answer (data and knowledge sections kept distinct + citations),
-status.
+evidence list with source/chunk_id/score, status.
 """
 
 from __future__ import annotations
@@ -20,7 +22,7 @@ from typing import Any
 from src.core.exceptions import LLMError
 from src.core.llm_client import LLMClient
 from src.core.observability import observe
-from src.core.state import AgentState, ErrorRecord
+from src.core.state import AgentState, ErrorRecord, EvidenceItem, RetrievedChunk
 
 
 class AnswerGenerationNode:
@@ -33,7 +35,8 @@ class AnswerGenerationNode:
         intent = str(state.get("intent", ""))
         route = str(state.get("route", ""))
         sql_result = state.get("sql_result")
-        retrieved: list[Any] = list(state.get("retrieved_context") or [])
+        retrieved: list[RetrievedChunk | dict[str, Any]] = list(state.get("retrieved_context") or [])
+        evidence_in: list[EvidenceItem] = list(state.get("evidence") or [])
         errors: list[ErrorRecord] = list(state.get("errors") or [])
 
         has_sql = sql_result is not None
@@ -50,7 +53,7 @@ class AnswerGenerationNode:
         user = (
             f"用户问题: {question}\n意图: {intent}\n路由: {route}\n\n"
             f"== 数据查询结果 (SQL) ==\n{_render_sql_block(sql_result)}\n\n"
-            f"== 知识库检索结果 (RAG) ==\n{_render_rag_block(retrieved)}\n\n"
+            f"== 知识库检索结果 (RAG, 只能引用这些内容) ==\n{_render_rag_block(retrieved)}\n\n"
             "请按系统要求作答。"
         )
         try:
@@ -58,12 +61,18 @@ class AnswerGenerationNode:
             answer = _plain_answer(answer)
             status = "completed"
         except LLMError as exc:
-            # Deterministic fallback: report what we actually have, never invent.
             answer = _fallback_answer(question, intent, route, sql_result, retrieved)
             status = "completed_fallback"
             errors.append(ErrorRecord(stage="answer_generation", message=exc.message))
 
-        return {"answer": answer, "status": status, "errors": errors}
+        # RAG evidence items carry source / chunk_id / score for citation
+        rag_evidence = [e for e in evidence_in if e.source_type in ("milvus", "fake")]
+        return {
+            "answer": answer,
+            "status": status,
+            "errors": errors,
+            "evidence": rag_evidence,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -89,10 +98,20 @@ def _render_rag_block(chunks: list[Any]) -> str:
         return "(无知识库检索结果)"
     lines: list[str] = []
     for c in chunks:
-        meta = c.metadata if isinstance(c, dict) else getattr(c, "metadata", {})
-        source = (meta or {}).get("title", c.source if hasattr(c, "source") else c.get("source"))
-        chunk_id = c.chunk_id if hasattr(c, "chunk_id") else c.get("chunk_id")
-        lines.append(f"[{chunk_id}] 来源: {source} (score={c.score:.3f})\n{c.text}")
+        if isinstance(c, dict):
+            meta = c.get("metadata", {})
+            source = meta.get("title") or c.get("source", "")
+            chunk_id = c.get("chunk_id", "")
+            score = c.get("score", 0.0)
+            text = c.get("text", "")
+        else:
+            meta = c.metadata or {}
+            # Prefer the human-readable document title; fall back to source path
+            source = meta.get("title") or c.source
+            chunk_id = c.chunk_id
+            score = c.score
+            text = c.text
+        lines.append(f"[{chunk_id}] 来源: {source} (score={score:.3f})\n{text}")
     return "\n\n".join(lines)
 
 
@@ -132,7 +151,8 @@ def _fallback_answer(
 _SYSTEM_PROMPT = """你是企业 AI 数字员工的答案生成模块。
 规则：
 1. 只基于提供的【数据查询结果】与【知识库检索结果】作答，绝不编造数据或文档。
-2. 数据结论只能来自 SQL 结果；知识结论必须保留来源（doc_id/部门/标题）。
+2. 数据结论只能来自 SQL 结果；知识结论必须逐条标注来源，例如"根据《差旅报销制度》的相关规定……"，
+   并引用 chunk_id。
 3. 将"数据"与"知识"两类结论分小节展示，清晰区分。
 4. 若证据不足以回答，明确说明缺少什么，不要猜测。
 5. 用简洁中文作答。"""

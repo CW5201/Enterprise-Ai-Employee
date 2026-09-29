@@ -1,9 +1,12 @@
 """Route: POST /api/chat — run one enterprise task end to end.
 
 The handler delegates to the LangGraph pipeline (:class:`DigitalEmployee`),
-serialises the final AgentState into the Phase 1 response contract and
-records stage latencies for observability.  SSE streaming joins in Phase 6
+serialises the final AgentState into the response contract and records
+stage latencies for observability.  SSE streaming joins in Phase 6
 together with the workbench.
+
+The Pydantic request/response models live here (not in ``main.py``) to
+avoid the circular import between the app factory and its routes.
 """
 
 from __future__ import annotations
@@ -12,12 +15,34 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
 
-from src.api.main import ChatRequest, ChatResponse
 from src.core.state import AgentState
 from src.graph.builder import DigitalEmployee
 
 logger = logging.getLogger("eae.api.chat")
+
+
+class ChatRequest(BaseModel):
+    """POST /api/chat request body."""
+
+    message: str
+    request_id: str | None = None
+
+
+class ChatResponse(BaseModel):
+    """POST /api/chat response body."""
+
+    request_id: str
+    answer: str
+    intent: str
+    route: str
+    sql: str
+    evidence: list[dict[str, Any]]
+    tool_calls: list[dict[str, Any]]
+    status: str
+    latency: dict[str, float]
+
 
 router = APIRouter(tags=["chat"])
 
@@ -52,4 +77,4 @@ def chat(request: Request, body: ChatRequest) -> dict[str, Any]:
     }
 
 
-__all__ = ["router"]
+__all__ = ["router", "ChatRequest", "ChatResponse"]

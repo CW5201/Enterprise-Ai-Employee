@@ -1,18 +1,21 @@
-"""Embedder — unified BGE-M3 embedding interface (Phase 1).
+"""Unified BGE-M3 embedding interface — formal real-model embeddings.
 
 Single entry point for text -> vector.  Business code must never import a
-model runtime directly.
+model runtime directly; it goes through :func:`create_embedder`.
 
-Phase 1 strategy:
-- Use ``BAAI/bge-m3`` (1024-dim) through ``sentence-transformers`` when the
-  model can be loaded (network or cached weights available).
-- When the model is unavailable (offline CI, no HF cache), fall back to a
-  deterministic hashing embedder of the same dimension so the full pipeline
-  stays runnable.  The fallback is clearly recorded in the embedder's
-  ``backend`` attribute so results can be attributed honestly.
+Phase 2.1 formal behaviour:
 
-The vector DB (Milvus) is handled by :mod:`src.core.vector_store`; the
-embedder only produces vectors.
+- ``bge-m3`` backend: loads a **real** BGE-M3 model (sentence-transformers)
+  from ``EMBEDDING_MODEL`` — an HF repo id or a local model directory
+  (e.g. ``D:/mode/bge-m3-safetensors``).  The output dimension is measured
+  from the model itself (never hardcoded), and vectors are L2-normalised.
+- When the model cannot be loaded (missing weights, broken runtime) the
+  factory raises :class:`EmbeddingUnavailableError` with a clear message.
+  **Formal mode never falls back to hashing** — a hash vector is not a
+  semantic embedding and must not masquerade as BGE-M3.
+- ``force_offline=True`` (used by unit tests only) yields the deterministic
+  hashing embedder of the same dimension, clearly labelled
+  ``backend = "fake"``.
 """
 
 from __future__ import annotations
@@ -22,6 +25,8 @@ import logging
 import math
 import os
 from typing import Protocol
+
+from src.core.exceptions import EmbeddingUnavailableError
 
 logger = logging.getLogger("eae.embedder")
 
@@ -36,9 +41,11 @@ class EmbedFn(Protocol):
 
 
 def _hash_embed(text: str, dim: int = BGE_M3_DIM) -> list[float]:
-    """Deterministic character n-gram hashing embedding (offline fallback).
+    """Deterministic character n-gram hashing embedding.
 
-    Not a semantic embedding — it keeps the whole pipeline testable offline.
+    TEST-MODE ONLY.  Not a semantic embedding — it keeps unit tests and
+    offline pipelines fast and reproducible.  It is NEVER used as the
+    formal BGE-M3 backend.
     """
     vec = [0.0] * dim
     n = 3
@@ -53,43 +60,99 @@ def _hash_embed(text: str, dim: int = BGE_M3_DIM) -> list[float]:
     return [v / norm for v in vec]
 
 
-class Embedder:
-    """One-shot embedder: BGE-M3 when available, hashing fallback otherwise."""
+class HashEmbedder:
+    """Test-mode deterministic embedder (same dimension, non-semantic)."""
 
-    def __init__(self, dim: int = BGE_M3_DIM, force_offline: bool = False) -> None:
+    backend = "fake"
+
+    def __init__(self, dim: int = BGE_M3_DIM) -> None:
         self.dim = dim
-        self.backend: str = "hash-fallback"
-        self._model = None
-        # EMBEDDING_FORCE_OFFLINE=1 skips model loading entirely (fast CI path).
-        if not force_offline and os.environ.get("EMBEDDING_FORCE_OFFLINE") != "1":
-            try:
-                from sentence_transformers import (
-                    SentenceTransformer,  # type: ignore[import-not-found]
-                )
-
-                # EMBEDDING_MODEL may be a local directory (HF snapshot or
-                # plain HF repo) so offline CI and local GPU boxes can use it
-                # without hitting the network.
-                model_source = os.environ.get("EMBEDDING_MODEL", BGE_M3_MODEL)
-                self._model = SentenceTransformer(model_source)
-                self.backend = "bge-m3"
-            except Exception as exc:  # noqa: BLE001 - model load failure is not fatal
-                logger.warning("BGE-M3 unavailable, using hash fallback: %s", exc)
+        self.model_path = "hash-fallback (test mode)"
+        self.status = "hash-fallback"
 
     def __call__(self, text: str) -> list[float]:
-        if self._model is not None:
-            return list(self._model.encode(text, normalize_embeddings=True))
         return _hash_embed(text, self.dim)
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        if self._model is not None:
-            return [list(v) for v in self._model.encode(texts, normalize_embeddings=True)]
         return [_hash_embed(t, self.dim) for t in texts]
 
 
-def create_embedder(force_offline: bool = False) -> Embedder:
-    """Factory used by the vector store / RAG tool."""
-    return Embedder(force_offline=force_offline)
+class Embedder:
+    """Real BGE-M3 embedder; raises EmbeddingUnavailableError when the model
+    cannot be loaded (formal mode never substitutes a hash vector)."""
+
+    backend = "bge-m3"
+
+    def __init__(self, model_source: str | None = None, dim: int = BGE_M3_DIM) -> None:
+        source = model_source or os.environ.get("EMBEDDING_MODEL", BGE_M3_MODEL)
+        device = os.environ.get("EMBEDDING_DEVICE", "cpu")
+        # CPU-only builds of torch do not honour an env var named cuda; fail fast
+        # with a clear error instead of a cryptic device-mismatch crash.
+        try:
+            import torch
+
+            if device.lower().startswith("cuda") and not torch.cuda.is_available():
+                logger.warning("EMBEDDING_DEVICE=cuda requested but CUDA is unavailable; using cpu")
+                device = "cpu"
+        except Exception:  # noqa: BLE001 - torch optional in odd environments
+            pass
+        try:
+            from sentence_transformers import SentenceTransformer
+
+            self._model = SentenceTransformer(source, device=device)
+        except Exception as exc:
+            raise EmbeddingUnavailableError(
+                f"BGE-M3 model '{source}' cannot be loaded ({type(exc).__name__}: {exc}). "
+                "Check EMBEDDING_MODEL points to a valid local model directory "
+                "or a reachable HF repo id, and that the runtime (torch / "
+                "sentence-transformers / transformers / tokenizers versions) is healthy.",
+                details={"model_source": source, "device": device},
+            ) from exc
+        # Support a local directory so the model path is always attributable.
+        self.model_path: str = source
+        self.dim: int = dim
+        self.status: str = "bge-m3"
+
+    def _encode(self, text: str) -> list[float]:
+        vector = self._model.encode(text, normalize_embeddings=True)
+        return [float(v) for v in vector]
+
+    def __call__(self, text: str) -> list[float]:
+        vec = self._encode(text)
+        # Keep the declared dimension honest: if the model outputs a
+        # different size than configured, surface it via the instance attr
+        # so callers can align the Milvus schema with the actual output.
+        self.dim = len(vec)
+        return vec
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        vectors = self._model.encode(texts, normalize_embeddings=True)
+        out = [[float(v) for v in vec] for vec in vectors]
+        if out:
+            self.dim = len(out[0])
+        return out
 
 
-__all__ = ["Embedder", "create_embedder", "_hash_embed", "BGE_M3_DIM", "BGE_M3_MODEL"]
+def create_embedder(force_offline: bool = False) -> Embedder | HashEmbedder:
+    """Factory used by the vector store / RAG tool / build scripts.
+
+    - ``force_offline=True`` (or ``EMBEDDING_FORCE_OFFLINE=1``): the
+      deterministic hashing embedder — unit tests / test mode only,
+      labelled ``backend = "fake"``.
+    - otherwise: a real BGE-M3 embedder; raises
+      :class:`EmbeddingUnavailableError` when the model cannot load.
+      Formal runs NEVER silently fall back to hashing.
+    """
+    if force_offline or os.environ.get("EMBEDDING_FORCE_OFFLINE") == "1":
+        return HashEmbedder()
+    return Embedder()
+
+
+__all__ = [
+    "BGE_M3_DIM",
+    "BGE_M3_MODEL",
+    "Embedder",
+    "EmbedFn",
+    "HashEmbedder",
+    "create_embedder",
+]
