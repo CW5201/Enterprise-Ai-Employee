@@ -1,6 +1,6 @@
 # 数据集与数据来源（DATASET）
 
-> 状态：Phase 1 已更新（2026-09-29）。
+> 状态：Phase 2.1 已更新（2026-09-29）。
 >
 > **当前仓库数据资产（已入库）**：
 > - `data/raw/wwi_ddl/` — WideWorldImporters 官方 T-SQL DDL 与种子脚本
@@ -12,6 +12,10 @@
 >   Few-shot 状态为 `verified`，即已在真实数据库上执行验证）；
 > - `data/knowledge_base/*/` — 企业知识库文档，全部为**合成语料**（synthetic），
 >   文档头部显式标注"非真实企业制度"，**不得描述为任何真实企业的内部数据**。
+>   Phase 2.1 新增 `hr/hr-0001-remote-work-policy.md`（员工远程办公管理办法），
+>   与 finance / operations / security 文档一同由 `scripts/build_kb.py`
+>   切分、BGE-M3 嵌入后写入 Milvus（`enterprise_knowledge` collection，
+>   当前 5 篇文档、35 个 chunk，`entity_count > 0`）。
 >
 > **合成数据红线**：
 > - `generate_synthetic_seed.py` 生成的 Sales_Customers / Purchasing_Suppliers /

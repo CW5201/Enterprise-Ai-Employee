@@ -1,6 +1,9 @@
 # 系统架构设计（ARCHITECTURE）
 
-> 状态：Phase 0。本文档描述**目标架构与约束**，其中所有模块当前均为接口占位，尚未实现。
+> 状态：Phase 2.1 已更新（2026-09-29）。
+> 本文档描述系统架构与约束。Phase 2.1 已实现 RAG 真实链路（BGE-M3 + Milvus），
+> 其余模块（Neo4j KG、Hybrid RAG / Rerank、Claim-Evidence Verification）仍为
+> 目标架构占位，尚未实现。
 
 ---
 
@@ -195,13 +198,24 @@ Evidence = {
 
 ## 11. RAG
 
-链路：`Query 改写 → Metadata Filter → Dense 检索(Milvus) + BM25 稀疏检索 → 融合(RRF) → Rerank(BGE-Reranker-v2-M3) → Top-K`
+**Phase 2.1 已实现的 dense 检索链路（真实 BGE-M3 + 真实 Milvus）**：
 
-- 为什么混合：制度类问题常含专有名词与编号（稀疏检索强），语义相近表述（稠密检索强），
-  单一通道都会漏召。
-- Metadata Filtering 使用文档前置元数据（部门、文档类型、生效日期），
-  使"现行有效的差旅标准"这类带约束的问题不会召回到已废止版本。
-- 输出进入统一证据模型（`source_type = "milvus"`）。
+```
+Query → BGE-M3 (1024-dim, L2-normalised) → Milvus Top-K → RetrievalResult (source preserved)
+```
+
+- Collection（名称 / metric / index 均来自 `config/settings.yaml`）：
+  `chunk_id / document_id / title / source / category / text / metadata_json / vector`。
+- 每个 chunk 保留 `source`（文档路径）与 `title`（文档标题），下游答案可引用。
+- 正式后端为 Milvus；fake 后端（进程内 hash 向量）仅限单元测试 / 测试模式，
+  且必须显式选择（`create_vector_store(backend="fake")`），Milvus 失败时**禁止**静默降级。
+- 输出进入统一证据模型（`source_type = "milvus"`，`source_ref = milvus:chunk_id`）。
+
+**Phase 2.2+ 目标扩展（尚未实现）**：
+
+- Hybrid 检索：`Query 改写 → Metadata Filter → Dense + BM25 稀疏 → RRF 融合 →
+  Rerank(BGE-Reranker-v2-M3) → Top-K`。
+- Metadata Filtering 使用文档前置元数据（部门、文档类型、生效日期）。
 
 ## 12. SQL
 

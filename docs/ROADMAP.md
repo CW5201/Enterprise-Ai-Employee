@@ -1,6 +1,6 @@
 # 开发路线图（ROADMAP）
 
-> 状态：Phase 1 完成并通过验收（2026-09-29）。
+> 状态：Phase 2.1 完成并通过验收（2026-09-29）；Phase 1 完成并通过验收（2026-09-29）。
 > 阶段顺序固定，不跳阶段。每个阶段有明确的完成标准，未达标不进入下一阶段。
 
 ---
@@ -61,6 +61,57 @@
 - `finance_expenses` 表为**明确标注的合成数据**；WWI 真实维度数据（Application_* 等 14 张表）
   已由 `import_wwi.py` 导入，业务大表（Customers/Orders/Invoices 等）由
   `generate_synthetic_seed.py` 合成补齐——两者来源不同，报告中需区分。
+
+---
+
+## Phase 2.1 — 真实 RAG（BGE-M3 + Milvus）✅
+
+**目标**：把 RAG 真正接通——知识库文档 → Chunk → BGE-M3 → Milvus → Top-K 检索 →
+Qwen 生成带来源的回答。本阶段使用**真实** BGE-M3 与 **真实** Milvus，
+禁止用 hash/fake 兜底冒充正式功能。
+
+内容（全部已实现）：
+- `src/core/embedder.py`：BGE-M3 真实加载（支持本地模型目录，维度实测 1024）；
+  正式模式模型加载失败时抛出 `EmbeddingUnavailableError`，**不做** hash 兜底；
+  hash 嵌入器仅作为 `backend="fake"` 的测试模式显式保留；
+- `src/core/vector_store.py`：`MilvusVectorStore`（pymilvus 3.x `MilvusClient`）+
+  `FakeVectorStore`（测试模式）；统一 schema：
+  `chunk_id / document_id / title / source / category / text / metadata_json / vector`；
+  `connect / health_check / create_collection / insert / search / delete / size / drop`；
+- `scripts/build_kb.py`：`data/knowledge_base/*.md` → 标题/段落切分 → BGE-M3 →
+  Milvus 入库（collection 名称 / metric / index 全部读自 `config/settings.yaml`）；
+- `src/tools/rag_tool.py`：`query → BGE-M3 → Milvus Top-K → RetrievalResult`，
+  结果保留 `source / title / category / score`；
+- `src/nodes/rag_retrieval.py`：读 `state.user_query` → 调 RAG Tool →
+  写 `state.retrieved_context` / `state.evidence`；
+- `src/nodes/answer_generation.py`：知识类回答只依据 `retrieved_context`，
+  引用文档标题与 `chunk_id`；`response` 保留
+  `evidence: [{source, chunk_id, score}]`；
+- `GET /health`（`src/api/main.py`）：返回 `llm / embedding / milvus / database`
+  分项健康状态，Milvus 分项含 `collection_name / entity_count / dimension /
+  metric_type / index_type`；
+- 测试：`tests/unit/test_embedder.py`、`tests/unit/test_vector_store.py`、
+  `tests/unit/test_rag_tool.py`（fake 后端 + 参数校验 + 空结果 + 维度 + 结果格式），
+  `tests/integration/test_real_milvus_rag.py`（真实 Milvus + BGE-M3 + LLM 全链路；
+  Milvus 未启动时**明确 SKIP**，不以 mock 冒充）；
+- 新增 `data/knowledge_base/hr/hr-0001-remote-work-policy.md`（合成）使"远程办公"
+  类问题在知识库中可被真实召回。
+
+**完成标准**（全部满足）：
+- ✅ BGE-M3 真实加载（维度 1024 实测一致，向量已归一化）；
+- ✅ Milvus 真实连接（`http://localhost:19530`，collection `enterprise_knowledge`）；
+- ✅ collection 已创建（HNSW / IP）；现有 5 篇文档、35 个 chunk，`entity_count = 35 > 0`；
+- ✅ 5 个真实 query 全部真实召回正确文档：差旅报销审批 / 可报销范围 / 采购流程 /
+  远程办公规定 / 信息安全要求；
+- ✅ 检索 → BGE-M3 → Milvus → Top-K → LLM 全链路无 hardcode 答案、无 fake 分数/来源；
+- ✅ unit tests 通过；real integration 通过；文档已同步。
+
+**本阶段明确不做**（留给 Phase 2.2+）：
+- 不做 Hybrid RAG（BM25 稀疏检索、RRF 融合）；
+- 不做 Reranker（BGE-Reranker-v2-M3 仅保留配置项，未启用）；
+- 不做 Neo4j 知识图谱 / GraphRAG；
+- 不做 Claim-Evidence Verification；
+- 不修改 Phase 1 已稳定的 SQL / Intent / Router 核心逻辑。
 
 ---
 
