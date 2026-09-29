@@ -147,6 +147,8 @@ class RagSettings:
     chunk_size: int = 512
     chunk_overlap: int = 64
     top_k: int = 5
+    retrieval_mode: str = "hybrid"  # dense | bm25 | hybrid
+    rrf_k: int = 60
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> RagSettings:
@@ -154,6 +156,8 @@ class RagSettings:
             chunk_size=int(d.get("chunk_size", cls.chunk_size)),
             chunk_overlap=int(d.get("chunk_overlap", cls.chunk_overlap)),
             top_k=int(d.get("top_k", cls.top_k)),
+            retrieval_mode=str(d.get("retrieval_mode", cls.retrieval_mode)),
+            rrf_k=int(d.get("rrf_k", cls.rrf_k)),
         )
 
 

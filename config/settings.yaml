@@ -39,8 +39,9 @@ embedding:
   normalize: true
   max_length: 8192
 
-# --- Reranker (BGE-Reranker-v2-M3, Phase 2.2+) ----------------------------
-# Phase 2.1 只做 dense 检索，reranker 暂不启用（配置保留，供后续阶段）。
+# --- Reranker (BGE-Reranker-v2-M3, Phase 2.3+) ----------------------------
+# Phase 2.2 does hybrid DENSE + BM25 + RRF; reranker is intentionally NOT
+# enabled yet (Phase 2.3).  Config kept for the future stage.
 reranker:
   enabled: false
   model_name: ${RERANKER_MODEL:-BAAI/bge-reranker-v2-m3}
@@ -48,13 +49,18 @@ reranker:
   top_k: 5
   batch_size: 16
 
-# --- RAG --------------------------------------------------------------------
-# Phase 2.1：dense-only（BGE-M3 + Milvus Top-K）；BM25 / Reranker 属
-# Phase 2.2+，本阶段不启用。
+# --- RAG (hybrid retrieval, Phase 2.2) --------------------------------------
+# Phase 2.2: Dense (BGE-M3 + Milvus) + BM25 (in-process keyword recall)
+# fused with Reciprocal Rank Fusion.  Reranker stays off until Phase 2.3.
 rag:
   chunk_size: 512
   chunk_overlap: 64
   top_k: 5
+  retrieval_mode: hybrid            # dense | bm25 | hybrid
+  rrf_k: 60                        # RRF constant (original paper default)
+  bm25:
+    k1: 1.5
+    b: 0.75
 
 # --- Milvus (vector retrieval ONLY) ---------------------------------------
 # Phase 2.1: 本地 Docker Milvus 独立版（localhost:19530，数据目录

@@ -1,16 +1,15 @@
-"""RAG tool — BGE-M3 + Milvus dense retrieval with source preserved.
+"""RAG tool — Dense + BM25 + RRF hybrid retrieval with source preserved.
 
-Pipeline (Phase 2.1): query -> BGE-M3 -> Milvus Top-K -> RetrievalResult.
+Pipeline (Phase 2.2): query -> (BGE-M3 -> Milvus dense) + (BM25 keyword)
+-> RRF fusion -> Top-K -> RetrievalResult, with ``retrieval_mode`` selecting
+``dense`` / ``bm25`` / ``hybrid``.
 
-Every returned chunk carries ``source`` / ``title`` / ``category`` /
-``score`` so answers can cite their origin.  The formal backend is
-Milvus; the fake (in-memory) backend is for unit tests only and must be
-selected explicitly (``create_vector_store(backend="fake")``).
+Upper layers only call this tool / the :class:`HybridRetriever`; they never
+touch Milvus or the BM25 index internals.  The formal dense backend is still
+the real Milvus server (Phase 2.1); the fake backend remains test-mode only.
 
-``iter_kb_chunks_for_store()`` is a test/offline helper that produces
-pre-chunked records (with hash vectors) so the fake backend can be
-populated without running BGE-M3 or Milvus.  It is NOT used by the
-formal pipeline.
+Every returned chunk keeps ``source`` / ``title`` / ``category`` /
+``document_id`` / ``metadata`` so answers can cite their origin.
 """
 
 from __future__ import annotations
@@ -21,10 +20,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from src.core.hybrid_retriever import HybridRetriever
 from src.core.observability import observe
-from src.core.vector_store import SearchHit, VectorStore, create_vector_store
+from src.core.retrieval_types import HybridHit
+from src.core.vector_store import VectorStore
 
 _KB_ROOT = Path(__file__).resolve().parent.parent.parent / "data" / "knowledge_base"
+
+_VALID_MODES = ("dense", "bm25", "hybrid")
 
 
 @dataclass
@@ -34,66 +37,104 @@ class RetrievalResult:
     query: str
     results: list[dict[str, Any]] = field(default_factory=list)
     backend: str = ""
+    retrieval_mode: str = "hybrid"
     index_size: int = 0
     execution_time_ms: float = 0.0
 
 
 class RAGTool:
-    """Read-only retrieval over the enterprise knowledge base in Milvus.
+    """Read-only retrieval over the enterprise KB (dense + BM25 + RRF).
 
-    The tool assumes the knowledge base has been built (``scripts/build_kb.py``)
-    and the Milvus collection is populated.  Retrieval that finds nothing is a
-    normal, honest result — it is never padded with fake hits.
+    The tool assumes the knowledge base has been built
+    (``scripts/build_kb.py`` -> Milvus; BM25 is built in-process over the
+    same chunk corpus).  An empty result is a normal, honest outcome.
     """
 
     name: str = "rag"
-    description: str = "Retrieve enterprise policy / procedure documents (BGE-M3 + Milvus, top-k, source cited)."
-    input_schema: dict[str, Any] = {"query": "str", "top_k": "int (default 5)"}
+    description: str = (
+        "Retrieve enterprise policy / procedure documents "
+        "(Dense + BM25 + RRF hybrid, top-k, source cited)."
+    )
+    input_schema: dict[str, Any] = {
+        "query": "str",
+        "top_k": "int (default 5)",
+        "retrieval_mode": "str in {dense, bm25, hybrid} (default hybrid)",
+    }
     timeout: int = 20
 
-    def __init__(self, store: VectorStore | None = None, backend: str | None = None) -> None:
-        self._store = store or create_vector_store(backend=backend)
+    def __init__(
+        self,
+        retriever: HybridRetriever | None = None,
+        *,
+        store: VectorStore | None = None,
+        backend: str | None = None,
+        retrieval_mode: str = "hybrid",
+    ) -> None:
+        if retrieval_mode not in _VALID_MODES:
+            raise ValueError(f"retrieval_mode must be one of {_VALID_MODES}, got {retrieval_mode!r}")
+        self._retrieval_mode = retrieval_mode
+        if retriever is not None:
+            self._retriever = retriever
+        else:
+            self._retriever = HybridRetriever(vector_store=store, backend=backend)
 
     @observe("rag_retrieval")
-    def run(self, *, query: str, top_k: int = 5) -> dict[str, Any]:
+    def run(self, *, query: str, top_k: int = 5, retrieval_mode: str | None = None) -> dict[str, Any]:
         if not query or not query.strip():
             return {
                 "tool": self.name,
                 "ok": False,
                 "error": "empty query",
                 "results": [],
-                "backend": self._store.backend,
+                "backend": self._retriever.backend,
+                "retrieval_mode": self._retrieval_mode,
             }
+        mode = retrieval_mode or self._retrieval_mode
         top_k = max(1, int(top_k))
-        hits: list[SearchHit] = self._store.search(query, top_k=top_k)
-        results = [
-            {
-                "chunk_id": hit.chunk_id,
-                "document_id": hit.document_id,
-                "text": hit.text,
-                "title": hit.title,
-                "source": hit.source,
-                "category": hit.category,
-                "metadata": hit.metadata,
-                "score": hit.score,
-            }
-            for hit in hits
-        ]
+        hits: list[HybridHit] = self._retriever.search(query, top_k=top_k, mode=mode)
+        results = [self._hit_to_payload(h) for h in hits]
         return {
             "tool": self.name,
             "ok": True,
             "results": results,
-            "backend": self._store.backend,
-            "index_size": self._store.size(),
+            "backend": self._retriever.backend,
+            "retrieval_mode": mode,
+            "index_size": self.index_size,
+        }
+
+    # -- helpers --------------------------------------------------------------
+
+    @staticmethod
+    def _hit_to_payload(hit: HybridHit) -> dict[str, Any]:
+        return {
+            "chunk_id": hit.chunk_id,
+            "document_id": hit.document_id,
+            "text": hit.text,
+            "title": hit.title,
+            "source": hit.source,
+            "category": hit.category,
+            "metadata": hit.metadata,
+            # unified hybrid fields
+            "dense_score": hit.dense_score,
+            "dense_rank": hit.dense_rank,
+            "bm25_score": hit.bm25_score,
+            "bm25_rank": hit.bm25_rank,
+            "fusion_score": hit.fusion_score,
+            # Phase 2.1 compatibility: the primary score is the fusion value.
+            "score": hit.fusion_score,
         }
 
     @property
+    def retriever(self) -> HybridRetriever:
+        return self._retriever
+
+    @property
     def store(self) -> VectorStore:
-        return self._store
+        return self._retriever.vector_store
 
     @property
     def index_size(self) -> int:
-        return self._store.size()
+        return self._retriever.vector_store.size()
 
 
 # ---------------------------------------------------------------------------

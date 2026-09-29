@@ -40,17 +40,18 @@ def build_graph(
     backend: str | None = None,
     rag_top_k: int = 5,
     store_override: Any | None = None,
+    retrieval_mode: str = "hybrid",
 ) -> Any:
     llm = LLMClient()
     if store_override is not None:
-        rag_tool = RAGTool(store=store_override)
+        rag_tool = RAGTool(store=store_override, retrieval_mode=retrieval_mode)
     else:
-        rag_tool = RAGTool(backend=backend)
+        rag_tool = RAGTool(backend=backend, retrieval_mode=retrieval_mode)
 
     intent_node = IntentUnderstandingNode(llm)
     router_node = SupervisorRouterNode()
     sql_node = SQLExecutionNode(llm=llm)
-    rag_node = RAGRetrievalNode(rag_tool, top_k=rag_top_k, backend=backend)
+    rag_node = RAGRetrievalNode(rag_tool, top_k=rag_top_k, backend=backend, retrieval_mode=retrieval_mode)
     answer_node = AnswerGenerationNode(llm)
     clarify_node = ClarificationNode()
 
@@ -94,8 +95,8 @@ class DigitalEmployee:
     ``backend="fake"`` explicitly for unit tests / test mode.
     """
 
-    def __init__(self, backend: str | None = None, rag_top_k: int = 5) -> None:
-        self._graph = build_graph(backend=backend, rag_top_k=rag_top_k)
+    def __init__(self, backend: str | None = None, rag_top_k: int = 5, retrieval_mode: str = "hybrid") -> None:
+        self._graph = build_graph(backend=backend, rag_top_k=rag_top_k, retrieval_mode=retrieval_mode)
 
     def run(self, user_query: str, *, request_id: str | None = None) -> AgentState:
         state: AgentState = make_state(user_query, request_id=request_id)
