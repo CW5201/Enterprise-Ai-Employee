@@ -82,3 +82,10 @@ config/local.*.yaml
 
 # --- Local working notes ---------------------------------------------------
 .project_memory.md
+
+# --- Experiment artifacts (large outputs stay local; small summaries may be
+# re-added explicitly, e.g. a hand-sized JSON report) ---------------------
+artifacts/
+!artifacts/evaluation/
+artifacts/evaluation/*.json
+artifacts/evaluation/*.csv

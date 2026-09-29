@@ -59,11 +59,12 @@ class HybridRetriever:
     ) -> None:
         self._vector_store = vector_store or create_vector_store(backend=backend)
         self._rrf_k = rrf_k if rrf_k is not None else _configured_rrf_k()
-        self._bm25 = bm25 or BM25Index()
+        self._bm25 = bm25 if bm25 is not None else BM25Index()
+        # An explicit ``bm25`` index (even an empty one) is authoritative:
+        # pass ``BM25Index()`` to opt out of the auto-built corpus index.
+        # When no index is supplied, build it from the knowledge-base corpus
+        # so both channels share the same chunk set.
         if bm25 is None:
-            # A fresh retriever (no explicit bm25 index) builds its keyword
-            # index from the current knowledge-base corpus so both channels
-            # share the same chunk set.
             self._build_bm25(kb_root=kb_root)
 
     # -- index ---------------------------------------------------------------

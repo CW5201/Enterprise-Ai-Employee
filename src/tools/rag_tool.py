@@ -26,6 +26,68 @@ from src.core.retrieval_types import HybridHit
 from src.core.vector_store import VectorStore
 
 _KB_ROOT = Path(__file__).resolve().parent.parent.parent / "data" / "knowledge_base"
+_CHUNKS_CACHE: list[dict[str, Any]] | None = None
+
+
+def _chunk_records(
+    kb_root: Path | None = None,
+    chunk_size: int = 512,
+    chunk_overlap: int = 64,
+) -> list[dict[str, Any]]:
+    """Chunk the knowledge base with build_kb's chunking (single source of
+    truth so the in-process chunk ids always match the ones in Milvus).
+
+    The default chunking result is cached in-module; explicit sizes fall
+    back to a fresh compute.  This keeps the helper import-safe even when
+    invoked before the repo root is on ``sys.path`` (e.g. from a test).
+    """
+    global _CHUNKS_CACHE
+    if kb_root is None and chunk_size == 512 and chunk_overlap == 64 and _CHUNKS_CACHE is not None:
+        return _CHUNKS_CACHE
+    try:
+        import importlib
+
+        kb_mod = importlib.import_module("scripts.build_kb")
+        root = Path(kb_root) if kb_root else _KB_ROOT
+        docs = kb_mod.iter_documents(root)
+        records: list[dict[str, Any]] = []
+        for doc in docs:
+            for chunk in kb_mod.chunk_text(doc.body, chunk_size=chunk_size, overlap=chunk_overlap, doc_id=doc.doc_id):
+                records.append(
+                    {
+                        "chunk_id": chunk["chunk_id"],
+                        "document_id": doc.doc_id,
+                        "title": doc.title,
+                        "source": doc.source,
+                        "category": doc.category,
+                        "text": chunk["text"],
+                        "metadata": doc.metadata,
+                    }
+                )
+        if kb_root is None and chunk_size == 512 and chunk_overlap == 64:
+            _CHUNKS_CACHE = records
+        return records
+    except ModuleNotFoundError:
+        # Fall back to the in-module chunking (legacy behaviour) when the
+        # scripts package is not importable.  Chunk ids may diverge from
+        # Milvus in this mode — acceptable only for offline test helpers.
+        root = Path(kb_root) if kb_root else _KB_ROOT
+        records: list[dict[str, Any]] = []
+        for doc in _iter_documents(root):
+            for chunk in _chunk_text(doc.body, chunk_size, chunk_overlap):
+                chunk_id = _chunk_id(doc.doc_id, chunk, doc.metadata)
+                records.append(
+                    {
+                        "chunk_id": chunk_id,
+                        "document_id": doc.doc_id,
+                        "title": doc.title,
+                        "source": doc.source,
+                        "category": doc.category,
+                        "text": chunk,
+                        "metadata": doc.metadata,
+                    }
+                )
+        return records
 
 _VALID_MODES = ("dense", "bm25", "hybrid")
 
@@ -149,30 +211,19 @@ def iter_kb_chunks_for_store(
 ) -> list[dict[str, Any]]:
     """Yield pre-chunked, hash-embedded records for test-mode stores.
 
-    Uses the deterministic hash embedder (test mode only) so no model or
-    Milvus server is required.  Each record has the full Milvus schema
-    fields so ``FakeVectorStore`` can store and filter them.
+    Chunking is delegated to ``scripts/build_kb`` so the in-process chunk
+    ids are identical to the ones inside Milvus — a BM25 hit can always be
+    matched to the same dense collection.  Hash embeddings keep this helper
+    fully offline (no model, no server).
     """
     from src.core.embedder import HashEmbedder
 
-    root = kb_root or _KB_ROOT
     embed = HashEmbedder()
-    records: list[dict[str, Any]] = []
-    for doc in _iter_documents(root):
-        for chunk in _chunk_text(doc.body, chunk_size, chunk_overlap):
-            chunk_id = _chunk_id(doc.doc_id, chunk, doc.metadata)
-            records.append(
-                {
-                    "chunk_id": chunk_id,
-                    "document_id": doc.doc_id,
-                    "title": doc.title,
-                    "source": doc.source,
-                    "category": doc.category,
-                    "text": chunk,
-                    "metadata": doc.metadata,
-                    "vector": embed(chunk),
-                }
-            )
+    records = []
+    for record in _chunk_records(kb_root=kb_root, chunk_size=chunk_size, chunk_overlap=chunk_overlap):
+        record = dict(record)
+        record["vector"] = embed(str(record["text"]))
+        records.append(record)
     return records
 
 
