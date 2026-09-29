@@ -1,6 +1,6 @@
 # 开发路线图（ROADMAP）
 
-> 状态：Phase 2.1 完成并通过验收（2026-09-29）；Phase 1 完成并通过验收（2026-09-29）。
+> 状态：Phase 2.2 完成（2026-09-30）；Phase 2.1 / Phase 1 完成并通过验收（2026-09-29）。
 > 阶段顺序固定，不跳阶段。每个阶段有明确的完成标准，未达标不进入下一阶段。
 
 ---
@@ -115,18 +115,86 @@ Qwen 生成带来源的回答。本阶段使用**真实** BGE-M3 与 **真实** 
 
 ---
 
+## Phase 2.2 — Hybrid RAG（Dense + BM25 + RRF）✅
+
+**目标**：把 Phase 2.1 的单一 Dense 检索升级为 Hybrid 检索——
+`Query → (BGE-M3 → Milvus Dense) + (BM25 关键词) → RRF 融合 → Top-K`。
+本阶段只实现 Hybrid RAG，正式 dense 侧仍走真实 BGE-M3 + 真实 Milvus。
+
+内容（全部已实现）：
+- `src/core/bm25_store.py`：`BM25Index`（中文 bigram + ASCII 分词，标准 Okapi
+  BM25，k1=1.5 / b=0.75），`chunk_id` 与 Milvus 对齐，支持
+  build / search / add / delete；
+- `src/core/retrieval_types.py`：统一结果类型 `HybridHit`
+  （`dense_score / dense_rank / bm25_score / bm25_rank / fusion_score`
+  + source / title / text / metadata）与 `rrf_fuse()`
+  （**基于 rank 的 Reciprocal Rank Fusion，k=60，不直接相加原始 score**）；
+- `src/core/hybrid_retriever.py`：`HybridRetriever` 统一接口
+  `search_dense / search_bm25 / hybrid_search`，`retrieval_mode` 支持
+  `dense | bm25 | hybrid`；上层只调该接口，不直接操作 Milvus / BM25；
+- `src/tools/rag_tool.py`、`src/nodes/rag_retrieval.py`：接入 hybrid 检索，
+  结果保留来源；
+- 实验：`scripts/build_hybrid_eval.py`（10 query 局部实验集
+  `data/eval/hybrid_eval.jsonl`）+ `scripts/run_hybrid_eval.py`
+  （自动计算 Recall@1/3/5 与 MRR，结果写入 `artifacts/evaluation/`）；
+- 测试：`tests/unit/test_bm25.py`、`test_rrf.py`、`test_hybrid_retrieval.py`，
+  `tests/integration/test_hybrid_rag.py`。
+
+**完成标准**：
+- ✅ Dense + BM25 + RRF 三通道统一接口可用，`retrieval_mode` 支持
+  dense / bm25 / hybrid；
+- ✅ 10 个真实 query 在真实 BGE-M3 + Milvus 下三模式各跑 top_k=5；
+- ✅ 实测结果如实记录（见 `docs/EVALUATION.md` 第 14 节）：
+  Dense R@5=0.95 / MRR=0.95；BM25 R@5=1.0 / MRR=0.95；
+  **Hybrid 与 Dense 指标一致，未表现出普遍增益（如实保留，未调参造假）**；
+- ✅ 单测 + 集成测试通过，ruff 全绿。
+
+**本阶段明确不做**（留给 Phase 2.3+）：
+- 不做 Reranker（BGE-Reranker-v2-M3 仍未启用）；
+- 不做 Neo4j / GraphRAG / Claim-Evidence Verification；
+- 不修改 Phase 1 的 SQL / Intent / Router，也不改 Phase 2.1 的真实 Milvus 行为；
+- 不扩大语料、不把 10-query 局部实验当作最终 430 条 Benchmark。
+
+---
+
+## Phase 2.3 — Reranker（BGE-Reranker-v2-M3）⏳
+
+**目标**：在 Hybrid 结果上加入 cross-encoder 重排。
+
+内容：
+- `src/core/reranker.py`：BGE-Reranker-v2-M3 封装（Phase 2.3）；
+- `config/settings.yaml` 的 `reranker.enabled` 置 true，RAG 链路在 RRF
+  之后接 Rerank → Top-K；
+- 在扩大语料后重跑 Dense / BM25 / Hybrid / Hybrid+Rerank 对比。
+
+**不做**：Neo4j、Verification、动态路由。
+
+---
+
+## Phase 2.4 — Neo4j Knowledge Graph ⏳
+
+**目标**：关系型知识走 Neo4j（预定义 Cypher 模板），与 RAG / SQL 职责不混用。
+
+---
+
 ## Phase 2 — Milvus RAG / DuckDB Text-to-SQL / Neo4j KG
 
 **目标**：三种知识源的专用能力到位，职责边界不混用。
 
+Phase 2 已按子阶段推进：Phase 2.1（真实 RAG，✅）→ Phase 2.2
+（Hybrid RAG = Dense + BM25 + RRF，✅）→ Phase 2.3（Reranker，⏳）→
+Phase 2.4（Neo4j KG，⏳）。
+
 内容：
-- `src/core/embedder.py`（BGE-M3）、`vector_store.py`（Milvus）；
-- `scripts/build_kb.py`：知识库切分、元数据写入、向量入库；
-- `src/nodes/rag_retrieval.py`：Dense + BM25 + Metadata Filter + RRF 融合 + Rerank；
+- `src/core/embedder.py`（BGE-M3）、`vector_store.py`（Milvus）—— ✅ Phase 2.1；
+- `src/core/bm25_store.py` + `src/core/retrieval_types.py` +
+  `src/core/hybrid_retriever.py`（BM25 + RRF 混合检索）—— ✅ Phase 2.2；
+- `scripts/build_kb.py`：知识库切分、元数据写入、向量入库 —— ✅；
+- `src/nodes/rag_retrieval.py`：Phase 2.2 已实现 Dense + BM25 + RRF；
+  Rerank 留给 Phase 2.3；
 - `src/nodes/sql_execution.py`：Text-to-SQL（Schema + 数据字典 + Few-shot）+ 安全校验；
-- `src/core/sql_executor.py`：只读执行器（语句白名单、行数上限、超时）；
-- `src/tools/kg_tool.py`：预定义 Cypher 模板（禁止 LLM 生成任意 Cypher）；
-- 知识图谱构建：从 WideWorldImporters 抽取实体与关系导入 Neo4j；
+- `src/tools/kg_tool.py`：预定义 Cypher 模板（禁止 LLM 生成任意 Cypher）—— Phase 2.4；
+- 知识图谱构建：从 WideWorldImporters 抽取实体与关系导入 Neo4j —— Phase 2.4；
 - `src/core/tool_registry.py`：工具白名单与权限校验；
 - 验证 `data/schemas/*.yaml` 与真实数据库一致，并修正声明。
 

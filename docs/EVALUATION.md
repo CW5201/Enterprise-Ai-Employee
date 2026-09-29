@@ -1,8 +1,10 @@
 # 评估设计（EVALUATION）
 
-> 状态：Phase 0。本文档定义评估协议。
-> **当前没有任何实验数值，也不允许填写任何未经真实运行的数值。**
-> 所有指标在 Phase 5 由 `src/evaluation/runner.py` 实际运行产出。
+> 状态：Phase 2.2 已更新（2026-09-30）。
+> 本文档定义评估协议。正式系统级指标在 Phase 5 由
+> `src/evaluation/runner.py` 实际运行产出，当前不填写未经验证的系统级数值。
+> Phase 2.2 完成了 Hybrid RAG 的**局部检索实验**（10 query），结果如实记录于
+> 第 14 节，属于阶段性实验，不等价于最终 430 条 Benchmark。
 
 ---
 
@@ -162,3 +164,76 @@ Evidence Support Rate = supported claims / total claims
 - `.github/workflows/ci.yml` 中的 evaluation gate 当前为注释状态；
 - 启用后，门禁与**已存档的 baseline 结果**比较，而不是写死阈值；
 - 门禁失败需给出是哪一项指标、哪个任务类别退化的具体信息。
+
+## 14. Phase 2.2 Hybrid Retrieval Experiment
+
+> **定位**：本节是 Phase 2.2 的**局部检索实验**（Dense vs BM25 vs Hybrid），
+> 用于验证混合检索链路是否正确接通，**不等于**第 1 节的 430 条
+> 正式 Evaluation Benchmark（正式集在 Phase 5 构建）。
+> 所有指标由 `scripts/run_hybrid_eval.py` 真实运行产生，**禁止手填**；
+> 结果如实记录，包含对"Hybrid 未超过 Dense"的负向结论。
+
+### 14.1 Experimental Setup
+
+| 项 | 取值 |
+|---|---|
+| 语料 | 当前企业知识库，**35 chunks**（`data/knowledge_base/*.md`） |
+| Queries | **10**（`data/eval/hybrid_eval.jsonl`） |
+| Top-K | **5**（三模式同一 top_k） |
+| Retrieval Modes | Dense / BM25 / Hybrid |
+| Embedding | **BGE-M3**（真实模型，1024 维） |
+| Vector DB | **Milvus**（`enterprise_knowledge` collection） |
+| 关键词召回 | **BM25**（in-process，与 Milvus 同一批 chunk，`chunk_id` 对齐） |
+| Fusion | **RRF**，k = 60（基于 rank，不直接相加原始 score） |
+| 生成脚本 | `scripts/run_hybrid_eval.py` |
+
+三模式在**同一 query、同一语料、同一 top_k** 下对比，公平性由 runner 保证；
+hybrid 内部融合窗口（更宽的候选池）已在输出中记录。
+
+### 14.2 Ground Truth
+
+- 10 个 query 使用当前知识库人工核验建立 `expected_chunk_ids`，写入
+  `data/eval/hybrid_eval.jsonl`（每条含 `query / expected_chunk_ids /
+  source / title / category`）；
+- **Ground Truth 不因实验结果而修改**——它先于结果固定，是判定召回的基准；
+- 生成脚本为 `scripts/build_hybrid_eval.py`。
+
+### 14.3 Metrics
+
+- **Recall@1 / Recall@3 / Recall@5**：Top-K 命中 `expected_chunk_ids` 的比例；
+- **MRR**：首个命中 chunk 的 1/rank。
+
+### 14.4 Results（真实运行）
+
+| Mode | Recall@1 | Recall@3 | Recall@5 | MRR |
+|---|---:|---:|---:|---:|
+| Dense | 0.3833 | 0.8500 | 0.9500 | 0.9500 |
+| BM25 | 0.4500 | 0.7667 | 1.0000 | 0.9500 |
+| Hybrid | 0.3833 | 0.8500 | 0.9500 | 0.9500 |
+
+逐 query 明细：`artifacts/evaluation/phase2.2_hybrid_results.json`（JSON）
+与 `.csv`（本地保留，不进 Git）。
+
+### 14.5 Analysis（如实记录）
+
+1. **Dense 已具备较高 Recall@3/5**（0.85 / 0.95）——BGE-M3 在制度类
+   小语料上的语义召回本身就较强。
+2. **Hybrid 与 Dense 指标完全相同**（Recall@1=0.3833、@3=0.85、@5=0.95、
+   MRR=0.95），在本次小规模实验上 **Hybrid 没有表现出对 Dense 的增益**。
+   这是**有效实验结果，不是失败**，必须如实保留。
+3. **BM25 的 Recall@5（1.0）高于 Dense（0.95）**，说明关键词匹配对
+   当前制度类小语料有一定价值（专有名词、编号等精确词命中）。
+4. **当前语料仅 35 chunks、query 区分度高**，样本量与多样性都不足以证明
+   Hybrid 在一般企业知识库上普遍有效，**不得据此下"Hybrid 显著优于 Dense"
+   的结论**。
+5. 下一阶段**扩大语料规模并引入 Reranker（Phase 2.3）后继续评估**，
+   届时在更大、更难的语料上重测 Hybrid vs Dense。
+
+### 14.6 Experimental Limitation
+
+- 本实验是 **Phase 2.2 的局部检索实验**（10 query / 35 chunk），
+  **不等价于**最终 430 条 Evaluation Benchmark（第 1 节，Phase 5 构建）。
+- 语料规模小、query 少，指标对单条结果敏感，**不能把 10-query 结果外推为
+  最终系统性能**；正式系统级指标仍以 Phase 5 的真实运行为准。
+- 单点 MRR=0.95 在三模式上相同，主要由 query 区分度高导致，非模型能力的
+  全面指标。

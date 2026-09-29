@@ -1,6 +1,6 @@
 # 数据集与数据来源（DATASET）
 
-> 状态：Phase 2.1 已更新（2026-09-29）。
+> 状态：Phase 2.2 已更新（2026-09-30）。
 >
 > **当前仓库数据资产（已入库）**：
 > - `data/raw/wwi_ddl/` — WideWorldImporters 官方 T-SQL DDL 与种子脚本
@@ -15,7 +15,12 @@
 >   Phase 2.1 新增 `hr/hr-0001-remote-work-policy.md`（员工远程办公管理办法），
 >   与 finance / operations / security 文档一同由 `scripts/build_kb.py`
 >   切分、BGE-M3 嵌入后写入 Milvus（`enterprise_knowledge` collection，
->   当前 5 篇文档、35 个 chunk，`entity_count > 0`）。
+>   当前 5 篇文档、35 个 chunk，`entity_count > 0`）；
+> - `data/eval/hybrid_eval.jsonl` — Phase 2.2 Hybrid Retrieval 的**局部实验集**
+>   （10 个 query + 人工核验的 `expected_chunk_ids`），由
+>   `scripts/build_hybrid_eval.py` 生成，**仅用于 35-chunk 语料上的
+>   Dense / BM25 / Hybrid 对比**，**不是**最终 430 条 Evaluation Dataset
+>   （后者在 Phase 5 由 `data/eval_dataset.jsonl` 构建）。
 >
 > **合成数据红线**：
 > - `generate_synthetic_seed.py` 生成的 Sales_Customers / Purchasing_Suppliers /
@@ -27,6 +32,26 @@
 >
 > 本文档其余部分（来源、许可证、评估集构建规则）为 Phase 0 边界声明，
 > 后续 Phase 的数据下载与评估集构建仍以本文件为准。
+
+---
+
+## 0. Phase 2.2 局部检索实验集（`data/eval/`）
+
+| 项 | 说明 |
+|---|---|
+| 文件 | `data/eval/hybrid_eval.jsonl`（10 query + `expected_chunk_ids`） |
+| 语料 | 当前企业知识库（35 chunks，`data/knowledge_base/*.md`） |
+| 用途 | 仅用于 Phase 2.2 的 Hybrid Retrieval 阶段实验（Dense / BM25 / Hybrid 对比） |
+| 生成 | `scripts/build_hybrid_eval.py`；指标由 `scripts/run_hybrid_eval.py` 计算 |
+| Ground Truth | 人工核验的 `expected_chunk_ids`，**不因实验结果而修改** |
+
+**边界（重要）**：
+
+- 这只是 **Hybrid Retrieval 的阶段性实验集**（10 query），
+  **不属于正式 430 条 Evaluation Dataset**；
+- 正式 430 条 Evaluation Dataset 在 **Phase 5** 由 `data/eval_dataset.jsonl`
+  构建（见第 11 节）；
+- 不得把 10-query 的召回指标当作最终系统性能对外引用。
 
 ---
 
@@ -43,7 +68,8 @@
 | Tool Calling | BFCL | 工具调用能力对照 | 未下载 |
 | Tool Calling | ToolBench | 工具调用能力对照 | 未下载 |
 | Agent | GAIA | 复杂任务对照 | 未下载 |
-| 自建评估集 | Enterprise AI Employee Task Dataset | 主评估集（约 430 条） | 未构建 |
+| 自建评估集 | Enterprise AI Employee Task Dataset | 主评估集（约 430 条） | 未构建（Phase 5） |
+| Phase 2.2 局部检索实验集 | `data/eval/hybrid_eval.jsonl` | 35-chunk 语料上 Dense/BM25/Hybrid 对比 | 已生成（10 query，已入库） |
 
 许可证与署名要求统一登记于 [`THIRD_PARTY_LICENSES.md`](../THIRD_PARTY_LICENSES.md)。
 

@@ -1,9 +1,10 @@
 # 系统架构设计（ARCHITECTURE）
 
-> 状态：Phase 2.1 已更新（2026-09-29）。
+> 状态：Phase 2.2 已更新（2026-09-30）。
 > 本文档描述系统架构与约束。Phase 2.1 已实现 RAG 真实链路（BGE-M3 + Milvus），
-> 其余模块（Neo4j KG、Hybrid RAG / Rerank、Claim-Evidence Verification）仍为
-> 目标架构占位，尚未实现。
+> Phase 2.2 已实现 Hybrid 检索（Dense + BM25 + RRF）。
+> 其余模块（BGE-Reranker、Neo4j KG / GraphRAG、Claim-Evidence Verification）
+> 仍为目标架构占位，尚未实现。
 
 ---
 
@@ -96,22 +97,27 @@ Agent 的"手"。**Agent 只能通过 Tool Registry 中登记的工具执行实�
 
 | 存储 | 唯一职责 | 明确不负责 |
 |---|---|---|
-| **Milvus** | 非结构化知识的向量检索（Dense / Hybrid 的向量侧） | 业务数据聚合、关系查询 |
+| **Milvus** | 非结构化知识的向量召回（Hybrid 的 Dense 侧） | 业务数据聚合、关系查询 |
+| **BM25（进程内）** | 非结构化知识的关键词召回（Hybrid 的 Sparse 侧） | 语义召回、业务数据 |
 | **DuckDB** | 业务数据、Text-to-SQL、统计分析（**只读**） | 向量检索、图遍历 |
-| **Neo4j** | 实体关系、路径、组织与业务关系 | 业务数据的聚合计算 |
+| **Neo4j** | 实体关系、路径、组织与业务关系（Phase 2.4） | 业务数据的聚合计算 |
 
 **职责不得混用。** 例如"某部门报销总额"必须走 DuckDB，
 "某部门下有哪些岗位、汇报关系如何"走 Neo4j，
-"报销制度规定上限是多少"走 Milvus——三者不能相互替代。
+"报销制度规定上限是多少"走 Milvus + BM25（Hybrid，RRF 融合）——三者不能相互替代。
+BM25 与 Milvus 共用同一批 chunk（`chunk_id` 对齐），BM25 只是对 Milvus
+向量召回的**关键词补全通道**，不替代向量侧。
 
 ## 6. Infrastructure Layer（L5）
 
 | 组件 | 文件 | 约束 |
 |---|---|---|
 | LLM 客户端 | `src/core/llm_client.py` | 唯一调用入口；业务代码不得直接耦合模型 SDK |
-| Embedding | `src/core/embedder.py` | 统一封装 BGE-M3 |
-| Reranker | 由检索侧统一封装 | BGE-Reranker-v2-M3 |
-| 向量库接口 | `src/core/vector_store.py` | 统一封装 Milvus |
+| Embedding | `src/core/embedder.py` | 统一封装 BGE-M3（真实模型） |
+| 向量库接口 | `src/core/vector_store.py` | 统一封装 Milvus（Dense 召回） |
+| 关键词召回 | `src/core/bm25_store.py` | 统一封装 BM25（Sparse 召回，与 Milvus chunk 对齐） |
+| 混合检索 | `src/core/hybrid_retriever.py`, `src/core/retrieval_types.py` | Dense + BM25 + RRF（k=60）统一接口 |
+| Reranker | （Phase 2.3，未启用） | BGE-Reranker-v2-M3 仅保留配置项 |
 | SQL 执行器 | `src/core/sql_executor.py` | 只读、语句白名单、行数上限、超时 |
 | 配置加载 | `src/core/config_loader.py` | 读取 `config/*.yaml`；密钥来自环境变量 |
 | 工具注册 | `src/core/tool_registry.py` | 白名单与权限校验 |
@@ -198,7 +204,7 @@ Evidence = {
 
 ## 11. RAG
 
-**Phase 2.1 已实现的 dense 检索链路（真实 BGE-M3 + 真实 Milvus）**：
+**Phase 2.1 实现的 dense 检索链路（真实 BGE-M3 + 真实 Milvus）**：
 
 ```
 Query → BGE-M3 (1024-dim, L2-normalised) → Milvus Top-K → RetrievalResult (source preserved)
@@ -211,11 +217,38 @@ Query → BGE-M3 (1024-dim, L2-normalised) → Milvus Top-K → RetrievalResult 
   且必须显式选择（`create_vector_store(backend="fake")`），Milvus 失败时**禁止**静默降级。
 - 输出进入统一证据模型（`source_type = "milvus"`，`source_ref = milvus:chunk_id`）。
 
-**Phase 2.2+ 目标扩展（尚未实现）**：
+**Phase 2.2 已实现的 Hybrid 检索链路（Dense + BM25 + RRF）**：
 
-- Hybrid 检索：`Query 改写 → Metadata Filter → Dense + BM25 稀疏 → RRF 融合 →
-  Rerank(BGE-Reranker-v2-M3) → Top-K`。
-- Metadata Filtering 使用文档前置元数据（部门、文档类型、生效日期）。
+```
+                ┌─→ BGE-M3 Dense Retrieval ─→ Milvus ─→ Dense Results ─┐
+Query ───────────┤                                                       ├─→ RRF Fusion ─→ Top-K ─→ Answer
+                └─→ BM25 Retrieval (keyword) ─────→ BM25 Results ───────┘
+```
+
+通道分工：
+
+- **Milvus（Dense）**：负责语义向量召回——由 BGE-M3 把 query 与 chunk 编码为
+  1024 维向量后做相似度检索，擅长同义/近义等语义相近表述；
+- **BM25（Sparse）**：负责关键词召回——在**同一批 chunk 语料**（`chunk_id` 与
+  Milvus 对齐）上统计关键词出现做稀疏检索，擅长专有名词、编号、精确术语；
+- **RRF（Reciprocal Rank Fusion, k=60）**：基于**排名**（rank）对两条通道
+  的结果融合：`RRF(d) = Σ_c 1/(k + rank_c(d))`。**不直接相加 Dense / BM25 的
+  原始 score**（两者量纲不可比），缺失通道的 chunk 该项记 0。
+
+实现位置：`src/core/bm25_store.py`（BM25）、`src/core/retrieval_types.py`
+（RRF 与统一结果类型）、`src/core/hybrid_retriever.py`（统一接口
+`search_dense / search_bm25 / hybrid_search`，`retrieval_mode` 支持
+`dense | bm25 | hybrid`）。上层（`rag_tool` / `rag_retrieval` 节点 /
+答案生成）只调用该统一接口，**不直接操作 Milvus 或 BM25 内部实现**。
+
+统一结果携带：`chunk_id / dense_score / dense_rank / bm25_score / bm25_rank /
+fusion_score`，并保留 `source / title / text / metadata`。
+
+**当前未实现（Phase 2.3+ / Phase 2.4 / Phase 4）**：
+
+- ❌ Reranker（BGE-Reranker-v2-M3 仅保留配置项，未启用）；
+- ❌ Knowledge Graph / GraphRAG（Neo4j）；
+- ❌ Claim-Evidence Verification。
 
 ## 12. SQL
 

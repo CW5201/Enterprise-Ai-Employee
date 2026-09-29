@@ -4,16 +4,16 @@
 
 企业 AI 数字员工是一个面向企业数据分析与任务执行的知识增强型 AI Agent 系统，通过任务理解、动态路由、RAG、Text-to-SQL、知识图谱、工具调用和结果验证，将自然语言任务转化为可执行的数据查询、知识检索、分析推理和报告生成流程。
 
-> **项目状态：Phase 2.1 — 真实 RAG（BGE-M3 + Milvus）✅ 已完成并通过验收（2026-09-29）。**
+> **项目状态：Phase 2.2 — Hybrid RAG（Dense + BM25 + RRF）✅ 已完成（2026-09-30）。**
 > Phase 0 完成骨架与文档；Phase 1 完成 `Intent → Router → RAG/SQL → Answer` 最小闭环；
-> Phase 2.1 已将 RAG 真正接通：
-> 知识库文档 → Chunk → **BGE-M3 真实 embedding** → **Milvus 真实入库与检索** →
-> Top-K → Qwen 生成**带来源引用**的回答。
-> 验收：5 篇合成企业制度文档（35 个 chunk）已入 Milvus，5 个真实 query 全部召回正确文档，
-> 全链路无 hardcode 答案 / fake 分数 / fake 来源。
-> 尚未实现：Hybrid RAG（BM25+Rerank）、Neo4j 知识图谱、Claim-Evidence 验证、
-> 评估框架与前端（均为 Phase 2.2 / 3 / 4 / 5 / 6 内容，见 Roadmap）。
-> 本文件与 `docs/` 中的实验指标数值仍为待填充（TBD）。
+> Phase 2.1 已将 RAG 接通（BGE-M3 + 真实 Milvus）；
+> **Phase 2.2 将 RAG 升级为 Hybrid 检索：Dense Retrieval（BGE-M3 → Milvus）
+> + BM25 关键词召回 → RRF 融合 → Top-K → Qwen 生成带来源引用的回答。**
+> 真实实验环境：BGE-M3 + Real Milvus + BM25 + RRF，35 chunks / 10 queries / top_k=5。
+> **实测结果如实记录**（详见下节与 `docs/EVALUATION.md`）：当前小规模语料下
+> Hybrid 与 Dense 指标一致（并未普遍优于 Dense），BM25 在 Recall@5 上达 1.0。
+> 尚未实现：Reranker、Neo4j 知识图谱、Claim-Evidence 验证、评估框架与前端
+> （分别为 Phase 2.3 / 2.4 / 4 / 5 / 6，见 Roadmap）。
 
 ---
 
@@ -65,7 +65,7 @@ AI 数字员工的定位不是"能回答问题的聊天机器人"，而是"能�
 |---|---|---|
 | 意图理解 | 将自然语言任务解析为意图、槽位与约束 | `src/nodes/intent_understanding.py` |
 | 任务自适应路由 | 依据任务类型动态选择工具集合与执行顺序 | `src/nodes/supervisor_router.py` |
-| 企业知识检索 | Dense + BM25 + Metadata Filter + Rerank 混合检索 | `src/nodes/rag_retrieval.py`, `src/tools/rag_tool.py` |
+| 企业知识检索 | Dense + BM25 + RRF 混合检索（Phase 2.2） | `src/nodes/rag_retrieval.py`, `src/tools/rag_tool.py` |
 | 结构化数据查询 | 只读 Text-to-SQL 与安全执行 | `src/nodes/sql_execution.py`, `src/tools/sql_tool.py` |
 | 关系查询 | 基于预定义 Cypher 模板的图谱查询 | `src/tools/kg_tool.py` |
 | 数据分析 | 受控 Pandas / NumPy 统计与分析函数 | `src/tools/analysis_tool.py` |
@@ -165,6 +165,39 @@ AI 数字员工的定位不是"能回答问题的聊天机器人"，而是"能�
 
 详见 [`docs/EVALUATION.md`](docs/EVALUATION.md)。
 
+### Phase 2.2 Hybrid Retrieval 局部实验（真实数值）
+
+Phase 2.2 在**当前真实实验环境**下完成了 Hybrid RAG 的阶段性检索实验：
+
+- Embedding：**BGE-M3**（真实模型）
+- 向量库：**Real Milvus**（`enterprise_knowledge`）
+- 关键词召回：**BM25**
+- 融合：**RRF**（k=60）
+- 语料规模：**35 chunks**；**10 queries**；**top_k = 5**
+
+三种模式在同一 query / 同一语料 / 同一 top_k 下实测：
+
+| Mode | Recall@1 | Recall@3 | Recall@5 | MRR |
+|---|---:|---:|---:|---:|
+| Dense | 0.3833 | 0.8500 | 0.9500 | 0.9500 |
+| BM25 | 0.4500 | 0.7667 | 1.0000 | 0.9500 |
+| Hybrid | 0.3833 | 0.8500 | 0.9500 | 0.9500 |
+
+**如实说明（不做无依据结论）：**
+
+- 在当前 35-chunk 小规模知识库上，**Hybrid 与 Dense 在本次实验上的指标一致，
+  并没有表现出普遍增益**。
+- **BM25 在 Recall@5 上达到 1.0**（高于 Dense 的 0.95），说明关键词匹配
+  对当前制度类小语料具有一定价值。
+- 由于语料小、query 区分度高，无法据此断言 Hybrid 在一般企业知识库上
+  普遍有效；下一阶段扩大语料并引入 Reranker 后再继续评估。
+- 该实验是 **Phase 2.2 的局部检索实验**，**不等价于最终 430 条 Evaluation
+  Benchmark**（后者在 Phase 5 构建）。
+
+完整实验设置、Ground Truth、指标与局限见
+[`docs/EVALUATION.md`](docs/EVALUATION.md) 的 "Phase 2.2 Hybrid Retrieval
+Experiment" 一节；逐 query 结果由 `scripts/run_hybrid_eval.py` 生成。
+
 ## 11. Baseline
 
 | 编号 | 系统 |
@@ -191,8 +224,8 @@ AI 数字员工的定位不是"能回答问题的聊天机器人"，而是"能�
 | LLM | Qwen（统一经 `src/core/llm_client.py` 调用） |
 | Agent 编排 | LangGraph（StateGraph），LangChain 仅作必要基础组件 |
 | Embedding | BGE-M3 |
-| Reranker | BGE-Reranker-v2-M3 |
-| RAG | Dense + BM25 + Metadata Filtering + Rerank（Hybrid） |
+| Reranker | BGE-Reranker-v2-M3（Phase 2.3，未启用） |
+| RAG | Dense + BM25 + RRF（Phase 2.2 已实现；Hybrid） |
 | 向量库 | Milvus |
 | 知识图谱 | Neo4j + Cypher（仅预定义模板） |
 | 业务数据库 | DuckDB（只读） |
@@ -269,7 +302,9 @@ enterprise-ai-employee/
 | Phase 0 | 项目初始化：骨架、文档、配置、边界 | ✅ 已完成 |
 | Phase 1 | 最小 Agent 闭环：Intent → Router → RAG/SQL → Answer | ✅ 已完成 |
 | Phase 2.1 | 真实 RAG：BGE-M3 + Milvus 端到端接通 | ✅ 已完成 |
-| Phase 2.2+ | Hybrid RAG（BM25+Rerank）/ Neo4j KG / Text-to-SQL 完善 | ⬜ 未开始 |
+| Phase 2.2 | Hybrid RAG：Dense + BM25 + RRF | ✅ 已完成 |
+| Phase 2.3 | BGE-Reranker-v2-M3 | ⏳ 未开始 |
+| Phase 2.4 | Neo4j Knowledge Graph | ⏳ 未开始 |
 | Phase 3 | Task-Adaptive Routing | ⬜ 未开始 |
 | Phase 4 | Claim-Evidence Verification | ⬜ 未开始 |
 | Phase 5 | Evaluation：Baseline + Ablation | ⬜ 未开始 |
