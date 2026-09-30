@@ -133,6 +133,13 @@ class AgentState(TypedDict, total=False):
     # --- routing -------------------------------------------------------------
     route: str  # sql | rag | sql_rag | clarification
     route_confidence: float
+    # Phase 3 Task-Adaptive Routing: structured decision + full audit trace.
+    # routing_decision: RoutingDecision.model_dump();
+    # routing_trace: {task_profile, candidates, selected_tools, route_type,
+    #                 reason, confidence, timestamp, latency_ms} — no secrets.
+    routing_decision: dict[str, Any]
+    routing_trace: dict[str, Any]
+    tools_selected: Annotated[list[str], _append]
 
     # --- execution -------------------------------------------------------------
     tool_calls: Annotated[list[ToolCallRecord], _append]
@@ -149,6 +156,10 @@ class AgentState(TypedDict, total=False):
     # --- output -------------------------------------------------------------
     answer: str
     latency: dict[str, float]  # stage name -> ms (observability-owned)
+    status: str  # completed | completed_no_evidence | completed_fallback | ...
+    # Phase 3 multi-tool execution: uniform results from every tool run in
+    # the plan (a failing tool does NOT overwrite earlier successful ones).
+    tool_results: Annotated[list[dict[str, Any]], _append]
 
 
 # ---------------------------------------------------------------------------
@@ -168,6 +179,9 @@ def make_state(user_query: str, *, request_id: str | None = None) -> AgentState:
         "plan": "",
         "route": "",
         "route_confidence": 0.0,
+        "routing_decision": {},
+        "routing_trace": {},
+        "tools_selected": [],
         "tool_calls": [],
         "errors": [],
         "sql": "",
@@ -176,6 +190,8 @@ def make_state(user_query: str, *, request_id: str | None = None) -> AgentState:
         "evidence": [],
         "answer": "",
         "latency": {},
+        "status": "",
+        "tool_results": [],
     }
 
 
