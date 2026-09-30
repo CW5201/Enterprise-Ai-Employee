@@ -304,22 +304,53 @@ Phase 2.4（Neo4j KG，✅）。
 
 ---
 
-## Phase 4 — Claim-Evidence Verification（创新点 3）
+## Phase 4 — Claim-Evidence Verification（创新点 3）✅（2026-09-30）
 
 **目标**：结论在输出前被逐条验证。
 
-内容：
-- `src/nodes/verification.py`：claim 抽取、证据匹配、支持性判定、Pass/Retry/Correct 控制；
-- 统一证据模型与融合（`Result Aggregation`，支撑创新点 2）；
-- 验证结果进入答案引用信息，前端可展开；
-- `verification` 配置项（阈值、重试上限、失败动作）；
-- 验证模块自身的漏判 / 误判测试。
+**已交付**（全部真实实现 + 120 任务评测）：
 
-**完成标准**：每条输出结论都带支持状态；无依据结论被标记而不是静默输出。
+- ✅ **Claim / Evidence 数据模型**：`src/core/verification_types.py`
+  （`Claim` / `Evidence` / `VerificationResult`，Pydantic 强校验 +
+  敏感信息 guard）；
+- ✅ **Claim 提取**：`src/nodes/claim_extraction.py`（LLM structured
+  output + schema validation，失败不 silent fallback）；
+- ✅ **多源 Evidence 归集**：`src/core/evidence_adapter.py` +
+  `src/nodes/evidence_collection.py`（统一 RAG/SQL/KG/Analysis →
+  `Evidence[]`，去重，保留 provenance）；
+- ✅ **分层验证引擎**：`src/core/claim_verifier.py`（exact / rule /
+  semantic 三层 + 阈值读自 `config/settings.yaml`，不写死）；
+- ✅ **Answer Guard**：`src/nodes/answer_guard.py`（supported /
+  unsupported / conflict 分级，critical unsupported 可阻断）；
+- ✅ **LangGraph 集成**：`build_graph(phase4=True)` 追加
+  `claim_extraction → evidence_collection → verification → answer_guard`
+  尾链，不改 Phase 1–3 路由 / 多工具执行；
+- ✅ **API**：`/api/chat` 返回 `sources` / `verification` /
+  `verification_summary` / `guard`（不暴露内部凭证 / stack trace）；
+- ✅ **评测集 + baseline + ablation**：`data/eval/verification_eval.jsonl`
+  （120 任务，GT 独立声明，故意混合 supported / unsupported /
+  conflict）+ `scripts/build_verification_eval.py` +
+  `scripts/run_verification_eval.py`（A No-Verification / B Rule-only /
+  C Full / D LLM-only）；
+- ✅ **实验报告 + 失败分析**：`docs/phase4/EXPERIMENT_REPORT.md` +
+  `docs/phase4/FAILURE_CASES.md`（10 个真实失败案例，负结果保留）；
+- `docs/RESEARCH.md` §14 记录 Phase 4 对 RQ2 的阶段性证据。
+
+**完成标准**：每条输出结论带支持状态；无依据结论被标记而非静默
+输出；无校验基线的 unsupported / critical leakage 可测且显著降低
+（B: hallucinated-claim rate 1.0 → 0.025）。
+
+**本阶段明确不做**（留给 Phase 5）：
+
+- 不做 430 条正式 Enterprise Task Benchmark；
+- 不在线跑 live BGE-M3 / LLM / 真实 RAG-KG 链路（Phase 4 评测为
+  离线确定性 harness，在线表现属 Phase 5 范畴）；
+- 不主张"Verification 消除了 hallucination"，只据实验讨论
+  unsupported-claim leakage 是否降低。
 
 ---
 
-## Phase 5 — Evaluation（Baseline + Ablation）
+## Phase 5 — Evaluation（Baseline + Ablation）— NOT STARTED
 
 **目标**：用真实实验证明模块有效性。
 

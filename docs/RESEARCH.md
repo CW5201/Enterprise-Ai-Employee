@@ -254,3 +254,35 @@ Phase 3 在该研究问题下的阶段性证据（详见
 **不能**证明"多源融合已被证明有效"——多源融合的最终证据需
 Phase 4（Claim-Evidence Verification）与 Phase 5（430 任务正式
 Benchmark）。
+
+---
+
+## 14. Phase 4 Research Evidence（Claim-Evidence Verification 阶段性证据）
+
+**对应研究问题**：
+
+- **RQ2 — 验证**：如何验证 AI 数字员工生成的结论（claim）是否真正
+  有数据 / 文档 / 图谱 / 分析证据支持？
+
+Phase 4 在该研究问题下的阶段性证据（详见
+[`phase4/EXPERIMENT_REPORT.md`](phase4/EXPERIMENT_REPORT.md) 与
+[`phase4/FAILURE_CASES.md`](phase4/FAILURE_CASES.md)）：
+
+1. **无校验基线（A）的 unsupported / critical-claim leakage = 1.0**：
+   120 任务 claim 级评测集上，不接入校验层时所有无依据结论与错值
+   结论全部漏出，证实"不校验则无法约束生成式系统的幻觉"这一假设
+   的可测性；
+2. **exact + rule 两层（B）把 hallucinated-claim rate 从 1.0 降到
+   0.025、unsupported-detection F1 升到 0.78、critical leak 降到 0**：
+   evidence-aware 的结构化校验（读证据、不读 LLM 自身输出）对
+   数值 / 派生 / 关系类 claim 有实质收益；
+3. **离线 lexical 兜底下 full（C）未全面优于 B（负结果，保留）**：
+   semantic 层在缺 live BGE-M3 / LLM 时门控弱于 exact/rule 的
+   确定性匹配；据此**不**外推"full 一定最好"，只据实验结果讨论
+   "是否降低 unsupported claim leakage"——A→B 已显著降低；
+4. **LLM-only（D）不可靠**：无结构化证据接入时 sup F1 = 0.0，
+   证明 RQ2 的关键在 evidence-aware 分层，而非把判定外包给 LLM；
+5. **边界声明**：本阶段为离线确定性 harness（claim 注入 + GT 域
+   合成证据），**未**在线跑 BGE-M3 / live LLM / 真实 RAG-KG 链路；
+   在线表现与端到端 latency 属 Phase 5 正式 Benchmark（430 任务）
+   范畴，本报告不主张"Verification 消除了 hallucination"。

@@ -377,7 +377,7 @@ enterprise-ai-employee/
 | Phase 2.3 | Reranker：知识库扩大 + BGE-Reranker-v2-M3 + 4 模式检索实验 | ✅ 已完成 |
 | Phase 2.4 | Neo4j Knowledge Graph：图谱构建 + KG Tool + 安全 Cypher + 58 任务评测 | ✅ 已完成 |
 | Phase 3 | Task-Adaptive Routing：Task Profile + 动态路由 + 多工具融合 + 100 任务评测 | ✅ 已完成 |
-| Phase 4 | Claim-Evidence Verification | ⬜ 未开始 |
+| Phase 4 | Claim-Evidence Verification：Claim/Evidence 模型 + 分层验证引擎 + Answer Guard + 120 任务评测 | ✅ 已完成 |
 | Phase 5 | Evaluation：Baseline + Ablation | ⬜ 未开始 |
 | Phase 6 | Vue3 工作台 | ⬜ 未开始 |
 | Phase 7 | Docker + CI | ⬜ 未开始 |

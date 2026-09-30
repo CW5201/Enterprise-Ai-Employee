@@ -428,3 +428,67 @@ Phase 3 将固定路由链升级为按任务特征动态选择工具组合（Inn
   兜底"混合策略（本阶段未实现）；
 - 能力标志不携带工具执行优先级，multi_tool 顺序拆解失分（plan EM
   0.520）；KG 模板覆盖缺口（Phase 2.4）直接传导为路由失败。
+
+
+---
+
+## ADR-011: Phase 4 Claim-Evidence Verification 的设计约束
+
+### Context
+
+Phase 4 交付：Claim / Evidence / VerificationResult 数据模型（
+`src/core/verification_types.py`）、分层验证引擎（exact → rule →
+semantic，`src/core/claim_verifier.py`）、Answer Guard
+（`src/nodes/answer_guard.py`）与 LangGraph 尾链集成。本 ADR 记录
+Phase 4 引入的关键设计决策与边界。
+
+### Decision
+
+1. **Verification 是独立"结果校验层"**。它不负责检索、不负责重新
+   生成数据，只做"claim vs. evidence"的判定。LangGraph 接入方式为
+   `build_graph(phase4=True)` 追加
+   `answer_generation → claim_extraction → evidence_collection →
+   verification → answer_guard` 尾链，不改 Phase 1–3 的路由 / 多工具
+   执行逻辑。
+2. **Evidence 必须来自真实工具结果，不允许把 LLM 自生成内容当证据**。
+   `evidence_adapter.py` 只从 `tool_results` / `retrieved_context` /
+   `sql_result` 构造 `Evidence`；`assert_no_secrets` 在序列化边界拒绝
+   携带凭证 / 密码 / API key。
+3. **分层策略**：exact（数值 / 派生值比对，两源不一致 → conflict，
+   不自动选值）→ rule（源类型 / provenance 一致性 + 值 / 实体匹配）→
+   semantic（BGE-M3 或 lexical 门控 + LLM 最终判定；不单独信任
+   embedding 分数）。每层读 `VerificationConfig`（读自
+   `config/settings.yaml`，不写死阈值）。
+4. **Answer Guard 分级策略**：supported 正常输出；unsupported 标
+   "待核实"；conflict 标"数据来源存在冲突"；critical unsupported
+   可阻断最终回答（`guard_decision.block=True`）。本版本不做
+   verification-failure → 自动重新调工具 的 self-healing loop。
+5. **评测 GT 独立。** `data/eval/verification_eval.jsonl`（120 任务）
+   的 expected_supported / expected_conflict / expected_evidence 按
+   claim 语义人工声明，**不由验证器生成**；失败任务保留在分母。
+6. **负结果保留。** 离线 harness（lexical 兜底 + 无 live LLM）下
+   full（C）未全面优于 rule-only（B）；LLM-only（D）表现最差。
+   这些结果如实记录，不外推为"full 一定最好"。
+
+### Alternatives
+
+| 方案 | 未采用原因 |
+|---|---|
+| 把 LLM 自身生成内容作为 evidence | 无证据支持，验证形同虚设 |
+| 在 verification 失败后自动重新调工具 | 第一版保持 simple；self-healing loop 成本高且易循环 |
+| 把 semantic 层结果单独作为最终判定 | 不单独信任 embedding 分数；必须 LLM 做最终判定 |
+| 在 `artifacts/phase4` 提交完整实验输出 | 输出体积大；只提交 `docs/phase4/` 报告与数据集 |
+
+### Consequences
+
+正面：
+- 每条 claim 可追溯到 evidence（provenance 完整）；
+- 无校验 / rule-only / full / LLM-only 四组 baseline 构成干净消融；
+- 阈值配置化，在线实验只需改 `config/settings.yaml`。
+
+负面：
+- 离线 harness 的 lexical 门控弱于在线 BGE-M3，full 收益需 Phase 5
+  在线确认；
+- LLM semantic 判定有额外延迟（在线环境，本阶段未测）；
+- claim 抽取质量（LLM structured output）是新的错误来源，离线
+  harness 用确定性注入绕过，在线实验需专门评估。

@@ -456,3 +456,47 @@ Reranker 在 CPU 上对 20 条候选重排 ~5.7s/query，工程代价显著；
 > 430 条 Evaluation Benchmark（第 1 节，Phase 5 构建），也不能证明
 > "图谱优于 SQL"——多源融合效果留给 Phase 3（Dynamic Routing）与
 > Phase 4（Claim-Evidence Verification）。
+
+
+## 17. Phase 4 Claim-Evidence Verification Experiment
+
+> 完整报告：`docs/phase4/EXPERIMENT_REPORT.md`（指标）与
+> `docs/phase4/FAILURE_CASES.md`（失败案例）。本节为摘要。
+
+### 17.1 Setup
+
+- 数据集：`data/eval/verification_eval.jsonl`（120 任务，GT 独立声明，
+  故意混合 supported / unsupported / conflicting）。
+- 基线：A No-Verification / B Rule+Exact-only / C Full (exact+rule+
+  semantic) / D LLM-only。
+- 指标：support accuracy、supported P/R/F1、unsupported-detection F1、
+  conflict-detection accuracy、evidence-attribution accuracy、
+  hallucinated-claim rate、critical-unsupported leakage rate、latency。
+
+### 17.2 Results（离线确定性 harness，如实记录）
+
+| baseline | support acc | sup F1 | unsup F1 | conflict acc | hallucinated rate | critical leak |
+|---|---|---|---|---|---|---|
+| A No-Verification | 0.667 | 0.800 | 0.000 | 0.000 | 1.000 | 1.000 |
+| B Rule+Exact-only | 0.508 | 0.825 | 0.780 | 0.444 | 0.025 | 0.000 |
+| C Full | 0.492 | 0.837 | 0.768 | 0.444 | 0.050 | 0.032 |
+| D LLM-only | — | 0.000 | 0.500 | 0.000 | 0.000 | 0.000 |
+
+### 17.3 Analysis（如实记录）
+
+- **A → B 收益显著**：hallucination rate 1.0 → 0.025，critical
+  leakage 1.0 → 0；evidence-aware 结构化校验（exact + rule）把
+  无依据结论拦住了。
+- **C 未全面优于 B（负结果保留）**：离线 lexical 兜底下 semantic 层
+  门控弱于确定性匹配，supported 召回略降。据此**不外推**"full 一定
+  最好"；在线 BGE-M3 + live LLM 时 semantic 层预期反转，属 Phase 5
+  在线范畴。
+- **D 最差**：无结构化证据接入时纯 LLM 判定不可靠（sup F1 0.0）。
+- **失败模式**：离线 lexical 门控过严导致的 supported-claim 误拒为
+  主因（harness 特性），cross-source conflict 漏检次之（见
+  FAILURE_CASES §1–§10）。
+
+> **边界**：本实验为离线确定性 harness（claim 注入 + GT 域合成证据），
+> 未在线跑 live BGE-M3 / LLM / 真实 RAG-KG 链路；不主张
+> "Verification 消除了 hallucination"，只据实验讨论
+> unsupported-claim leakage 是否降低（A→B 已显著降低）。

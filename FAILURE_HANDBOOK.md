@@ -242,7 +242,15 @@ _（Phase 3 起填充真实案例）_
 
 ### 案例记录
 
-_（Phase 4 起填充真实案例）_
+- **FH-VER-001**（Phase 4，真实运行）：`ver-031`「本月费用总额为 5000 元」
+  （真实值 4600.50，GT `expected_supported=False`）。B_rule_only 基线在
+  exact 层将 5000 误判为 supported（计入 hallucinated-claim rate）；
+  C_full 基线经 conflict 分支正确拒绝。详见
+  `docs/phase4/FAILURE_CASES.md` §7。
+- **FH-VER-002**（Phase 4，真实运行）：`ver-105`「费用类型共 4 种」
+  （真实 2 种，GT `expected_supported=False`）。C_full 基线 rule 层因
+  表层 token 重合误支持，计入 unsupported-claim leakage。详见
+  `docs/phase4/FAILURE_CASES.md` §8。
 
 ---
 
@@ -258,7 +266,11 @@ _（Phase 4 起填充真实案例）_
 
 ### 案例记录
 
-_（Phase 4 起填充真实案例）_
+- **FH-VER-003**（Phase 4，真实运行）：`ver-064` / `ver-065`「费用增长率
+  30% vs 116%」（两个 analysis 源口径冲突，GT `expected_conflict=True`）。
+  C_full 基线未触发 conflict 分支（cross-source disagreement 未传达到
+  exact 层），计入 conflict-not-detected。详见
+  `docs/phase4/FAILURE_CASES.md` §6。
 
 ---
 

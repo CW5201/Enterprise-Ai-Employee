@@ -8,7 +8,8 @@
 > **Phase 2.4 已实现 Neo4j 知识图谱链路**（图谱构建 + KG Tool + 安全 Cypher，§13），
 > **Phase 3 已实现 Task-Adaptive Routing 动态路由 + 多工具执行融合**
 > （`src/nodes/task_router.py` + `src/nodes/multi_tool_execution.py`，§10/§13）。
-> 其余模块（Claim-Evidence Verification）仍为目标架构占位，尚未实现。
+> Claim-Evidence Verification 已于 Phase 4 实现（`src/core/claim_verifier.py` +
+> `src/nodes/claim_extraction.py` / `evidence_collection.py` / `verification.py` / `answer_guard.py`），见 §16。
 
 ---
 
@@ -274,9 +275,11 @@ Query ─→ Dense + BM25 ─→ RRF ─→ Candidate Top-N (candidate_k=20)
 fusion_score / rerank_score / rerank_rank`（后两者仅 `hybrid_rerank`
 模式填充），并保留 `source / title / text / metadata`。
 
-**当前未实现（Phase 4）**：
+**当前未实现（Phase 4 已交付）**：
 
-- ❌ Claim-Evidence Verification。
+- ✅ Claim-Evidence Verification（`src/core/claim_verifier.py` 分层引擎 +
+  `src/nodes/claim_extraction.py` / `evidence_collection.py` / `verification.py` /
+  `answer_guard.py`，经 `build_graph(phase4=True)` 接入尾链，详见 §16）。
 
 > Phase 2.4 的 Knowledge Graph / 图谱构建 / KG Tool 已在 §13 实现；
 > Phase 3 的 Task-Adaptive Routing 动态路由 + 多工具执行融合已在
