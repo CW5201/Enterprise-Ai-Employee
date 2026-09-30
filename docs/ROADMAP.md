@@ -266,18 +266,41 @@ Phase 2.4（Neo4j KG，✅）。
 
 ---
 
-## Phase 3 — Task-Adaptive Routing（创新点 1）
+## Phase 3 — Task-Adaptive Routing（创新点 1）✅（2026-09-30）
 
 **目标**：路由从"固定链"变成"按任务类型动态选择"。
 
-内容：
-- 完善 `src/nodes/supervisor_router.py`：意图 → 工具集合 → 执行计划；
-- 落地 `config/routing_rules.yaml` 全部策略：优先级、失败接管、证据不足升级；
-- 多工具编排与依赖管理（`src/nodes/tool_invocation.py`）；
-- 记录 `routing_history`，为 Routing Accuracy 评估做准备；
-- 固定流程版本（供消融 A 使用）作为对照配置。
+**已交付**（全部真实实现 + 真实评测）：
 
-**完成标准**：路由决策可解释、可记录、可通过配置切换为固定流程。
+- ✅ **Task Profile / Routing Schema**：`src/core/routing_types.py`
+  （TaskProfile / RoutingDecision / ExecutionStep，Pydantic 强校验）；
+- ✅ **任务分类体系**：`config/routing_rules.yaml` v1.0
+  （10 类 task_type + capability→tool 候选规则 + clarification 策略）；
+- ✅ **Tool Capability Registry**：`config/tool_registry.yaml` v0.2
+  （6 工具能力模型）；
+- ✅ **Dynamic Router**：`src/nodes/task_router.py`（LLM 结构化 TaskProfile
+  提议 + 规则引擎裁决 + 校验 + confidence gate；LLM 失败/畸形输出降级为
+  clarification，绝不静默 fallback）；
+- ✅ **Multi-tool execution + 结果融合**：`src/nodes/multi_tool_execution.py`
+  （按 execution_plan 依赖顺序执行 sql/rag/kg/analysis，失败级联，
+  结果互不覆盖）+ `src/tools/analysis_tool.py`（受控统计，无任意 Python）；
+- ✅ **Routing 评测集 + Baseline**：`data/eval/routing_eval.jsonl`
+  （100 任务，GT 人工声明）+ `src/evaluation/routing_metrics.py` +
+  `scripts/run_routing_eval.py`（A Static RAG / B Static SQL /
+  C Rule-based / D LLM Adaptive）；
+- ✅ **真实实验**：C route_acc 0.630 / D 0.680（A 0.110 / B 0.220）；
+  D tool F1 0.781 / plan EM 0.520 / clarification acc 0.880 /
+  task success 0.520（负结果保留）；
+- ✅ **消融 + 失败分析 + 报告**：`docs/phase3/EXPERIMENT_REPORT.md`
+  （含 E 无校验消融 + 10 个真实失败案例）；
+- `docs/RESEARCH.md` §13 记录 Phase 3 对 RQ1 的阶段性证据。
+
+**本阶段明确不做**（留给 Phase 4 / 5）：
+
+- 不做 Claim-Evidence Verification；
+- 不做 430 条正式 Enterprise Task Benchmark（Phase 5）；
+- 不实现"规则快车道优先 + LLM 兜底"的混合延迟策略；
+- 不把 route_acc 0.68 外推为"动态路由普遍优于静态"或"多源融合已证明有效"。
 
 ---
 

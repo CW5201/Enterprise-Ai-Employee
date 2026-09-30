@@ -374,3 +374,57 @@ Phase 2.4 将 WWI 关系型数据（DuckDB）转换为 Neo4j 知识图谱，并�
   `Sales_OrderLines` 需切换边来源并重建图谱；
 - 复合 / 负例查询受限于预定义模板覆盖，exact match 偏低是
   **模板层**而非图数据库的局限，需 Phase 3 路由 + 模板扩展才能改善。
+
+---
+
+## ADR-010: Phase 3 Task-Adaptive Routing 的设计约束
+
+### Context
+
+Phase 3 将固定路由链升级为按任务特征动态选择工具组合（Innovation 1 / RQ1）。
+需要在"LLM 能力"与"可审计 / 可复现 / 不越权"之间划界：LLM 直接生成
+任意工具组合既不可控也不可通过评测。
+
+### Decision
+
+1. **LLM 提议、规则裁决。** LLM 只产出结构化 TaskProfile（能力标志 +
+   歧义度 + 难度），工具候选与最终 RoutingDecision 由
+   `src/core/routing_rules.py` 规则引擎 + `RoutingDecision.model_validate`
+   强校验产生；LLM 自由文本 / 畸形输出永远进不了决策。
+2. **无静默 fallback。** 工具未知 / route 未知 / 单工具路由带多工具 /
+   clarification 带工具 → 显式 `RoutingDecisionError`；LLM 车道失败或
+   置信度低于 gate 一律降级为 clarification（honest degradation），
+   绝不偷偷改走 RAG。
+3. **confidence 语义固定为"路由决策置信度"**，不是答案正确率；文档与
+   代码注释统一该措辞，避免实验解读混淆。
+4. **执行层不重新路由。** `MultiToolExecutionNode` 只读 RoutingDecision，
+   按 execution_plan 依赖顺序执行；某步不可运行（KG 缺 template、
+   上游失败）记为诚实失败（skipped_no_template / skipped_upstream_failed），
+   不替换为其他工具。
+5. **评测 GT 独立。** `data/eval/routing_eval.jsonl`（100 任务）的
+   expected_route/tools/order 按任务语义人工声明，**不由 router 生成**；
+   失败任务保留在分母。
+6. **负结果保留。** D 的 plan_exact（0.520）低于 route_acc（0.680）、
+   无校验消融 E 在 route_acc 上反超 D 等结果如实记录，不外推为
+   "动态路由普遍优于静态"。
+
+### Alternatives
+
+| 方案 | 未采用原因 |
+|---|---|
+| LLM 直接输出工具组合 + 执行计划 | 不可控 / 不可复现 / 无法白名单校验 |
+| 失败时静默 fallback 到 RAG | 掩盖真实失败模式，污染评测与消融 |
+| 用 router 输出反向构造 GT | 评测污染（ADR-009 第 4 条原则） |
+
+### Consequences
+
+正面：
+- 路由决策可审计（routing_trace）、可复现（规则引擎确定性）、不越权
+  （工具白名单 + 校验器）；
+- 静态 / 规则 / LLM / 无校验四组 baseline 构成干净消融。
+
+负面：
+- LLM 车道延迟 ~8.6 s/任务（p95 ~23 s），生产需"规则快车道 + LLM
+  兜底"混合策略（本阶段未实现）；
+- 能力标志不携带工具执行优先级，multi_tool 顺序拆解失分（plan EM
+  0.520）；KG 模板覆盖缺口（Phase 2.4）直接传导为路由失败。

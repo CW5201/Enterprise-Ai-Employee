@@ -4,9 +4,11 @@
 > 本文档描述系统架构与约束。Phase 2.1 已实现 RAG 真实链路（BGE-M3 + Milvus），
 > Phase 2.2 已实现 Hybrid 检索（Dense + BM25 + RRF），
 > **Phase 2.3 已实现 BGE-Reranker-v2-M3 重排阶段**（默认 `reranker.enabled=false`，
-> 正式实验时开启；candidate-first / rerank-second，Reranker 不参与原始召回）。
-> 其余模块（Neo4j KG / GraphRAG、Claim-Evidence Verification、Task-Adaptive
-> Routing）仍为目标架构占位，尚未实现。
+> 正式实验时开启；candidate-first / rerank-second，Reranker 不参与原始召回），
+> **Phase 2.4 已实现 Neo4j 知识图谱链路**（图谱构建 + KG Tool + 安全 Cypher，§13），
+> **Phase 3 已实现 Task-Adaptive Routing 动态路由 + 多工具执行融合**
+> （`src/nodes/task_router.py` + `src/nodes/multi_tool_execution.py`，§10/§13）。
+> 其余模块（Claim-Evidence Verification）仍为目标架构占位，尚未实现。
 
 ---
 
@@ -272,13 +274,14 @@ Query ─→ Dense + BM25 ─→ RRF ─→ Candidate Top-N (candidate_k=20)
 fusion_score / rerank_score / rerank_rank`（后两者仅 `hybrid_rerank`
 模式填充），并保留 `source / title / text / metadata`。
 
-**当前未实现（Phase 3 / Phase 4）**：
+**当前未实现（Phase 4）**：
 
-- ❌ Task-Adaptive Routing；
 - ❌ Claim-Evidence Verification。
 
-> Phase 2.4 的 Knowledge Graph / 图谱构建 / KG Tool 已在 §13 实现，
-> 不再属于"未实现"清单。
+> Phase 2.4 的 Knowledge Graph / 图谱构建 / KG Tool 已在 §13 实现；
+> Phase 3 的 Task-Adaptive Routing 动态路由 + 多工具执行融合已在
+> `src/nodes/task_router.py` + `src/nodes/multi_tool_execution.py`
+> 实现（`build_graph(phase3=True)`），均不再属于"未实现"清单。
 
 ## 12. SQL
 

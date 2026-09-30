@@ -147,11 +147,74 @@ _（Phase 2 起填充真实案例）_
 
 ### 案例记录
 
+#### FH-ROUTE-001（Phase 3，真实）
+
+- **Problem**：multi_tool 任务（期望 `kg → sql`）被预测为 `sql → kg`，
+  工具集合正确但执行顺序错误（plan_exact_match 失分）。
+- **Trigger**：任务同时需要关系遍历与结构化指标，且 TaskProfile 能力标志
+  不携带"指标优先还是关系优先"的序信息（rt-067/068/070）。
+- **Expected Behavior**：按任务语义拆解出正确的工具执行顺序。
+- **Failure Behavior**：`routing_decision.execution_plan` 顺序颠倒；
+  下游 `MultiToolExecutionNode` 会按错误顺序执行。
+- **Detection**：`routing_eval_results.json` 中 `route_correct=true`
+  但 `plan_exact=false` 的 multi_tool 条目。
+- **Recovery**：在 TaskProfile 增加工具优先级信号（Commit 5 改进项，
+  未实现）；当前保留为已知失分点。
+- **Regression Test**：rt-067/068/070 作为"顺序敏感"锚点留在
+  `routing_eval.jsonl`。
+
+#### FH-ROUTE-002（Phase 3，真实）
+
+- **Problem**：LLM 把结构化 TaskProfile JSON 包在 markdown 围栏
+  （```json …```）里返回，`generate_structured` 解析失败 → 全部任务
+  降级 clarification（基线 D 首轮 100/100 全错）。
+- **Trigger**：provider（Qwen via Agnes）的习惯性围栏输出。
+- **Expected Behavior**：结构化输出被正常解析，路由生效。
+- **Failure Behavior**：`LLMError: Model did not return valid JSON`，
+  任务 100% 落入 clarification。
+- **Detection**：路由 smoke test 中 predicted 全为 clarification 且
+  无 LLM 报错（降级静默）；或 `routing_trace` 中 profile 全为
+  `ambiguous_task/ambiguity=1.0`。
+- **Recovery**：`src/core/llm_client.py::_parse_json_payload` 增加
+  围栏剥离（Commit 4 修复）；修复后 D 基线 route_acc 0.000 → 0.680。
+- **Regression Test**：`tests/unit/test_llm_client.py`（如已存在）
+  或路由 smoke（rt-011 等单源任务应路由到 sql 而非 clarification）。
+
+#### FH-ROUTE-003（Phase 3，真实）
+
+- **Problem**：hard 关系任务（"哪些客户买了供应商 X 的商品"）期望纯
+  KG 路由，但 KG Tool 缺反向模板（Phase 2.4 记录的
+  `supplier_customers` 缺口），路由只能判 multi_tool[kg, sql]
+  补偿，route_acc 失分。
+- **Trigger**：关系查询方向为"供应商 → 客户"（KG 现有模板
+  均为客户/订单/发票正向遍历）。
+- **Expected Behavior**：单 KG 模板回答。
+- **Failure Behavior**：路由决策 multi_tool；若执行，KG 步骤会
+  `skipped_no_template`（MultiToolExecutionNode 的诚实失败）。
+- **Detection**：`routing_eval.jsonl` notes 中
+  "KG-coverage note" 标记 + `routing_eval_results.json` 中
+  对应 rt-037/038/070/071/072 的 route_correct=false。
+- **Recovery**：Commit 5 改进项：补 `supplier_customers` 反向模板
+  （未实现）；当前作为跨阶段 limitation 记录。
+- **Regression Test**：rt-037/038/070/071/072 保留在评测集。
+
+#### FH-ROUTE-004（Phase 3，真实）
+
+- **Problem**：统计/趋势任务（"算增长率"）漏预测 `analysis` 工具，
+  只路由到 `sql`，tool recall 下降。
+- **Trigger**：TaskProfile 的 `requires_statistical_analysis` 对
+  "增长率/环比"措辞的识别不稳定（LLM 车道）。
+- **Expected Behavior**：multi_tool[sql, analysis]。
+- **Failure Behavior**：predicted tools = [sql]，缺派生计算步骤
+  （rt-041/045 等）。
+- **Detection**：`routing_eval_results.json` 中 task_type
+  statistical_analysis/trend_analysis 且 tool_recall < 1.0。
+- **Recovery**：在 routing_rules.yaml 的 capability_rules 增加
+  统计类关键词的强化规则（Commit 5 改进项，未实现）。
+- **Regression Test**：rt-041/045/049/050 作为"必须带 analysis"
+  锚点。
+
 _（Phase 3 起填充真实案例）_
-
----
-
-## 6. Task Planning Error
 
 - **Problem**：多步骤任务的执行顺序或依赖关系错误，导致中间结果不可用或重复计算。
 - **Trigger**：任务需要先检索口径再执行查询；后一步依赖前一步的输出格式。

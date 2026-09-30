@@ -4,23 +4,24 @@
 
 企业 AI 数字员工是一个面向企业数据分析与任务执行的知识增强型 AI Agent 系统，通过任务理解、动态路由、RAG、Text-to-SQL、知识图谱、工具调用和结果验证，将自然语言任务转化为可执行的数据查询、知识检索、分析推理和报告生成流程。
 
-> **项目状态：Phase 2.4 — Neo4j 知识图谱 ✅ 已完成（2026-09-30）。**
+> **项目状态：Phase 3 — Task-Adaptive Routing ✅ 已完成（2026-09-30）。**
 > Phase 0 完成骨架与文档；Phase 1 完成 `Intent → Router → RAG/SQL → Answer` 最小闭环；
 > Phase 2.1 已将 RAG 接通（BGE-M3 + 真实 Milvus）；
 > Phase 2.2 将 RAG 升级为 Hybrid 检索（Dense + BM25 + RRF）；
-> Phase 2.3 在 Hybrid 之上接入 BGE-Reranker-v2-M3 重排阶段：
-> Dense + BM25 → RRF → candidate_k=20 → Reranker → final_k=5，
-> 并完成 4 模式（Dense / BM25 / Hybrid / Hybrid+Reranker）× 56 query 检索实验；
-> **Phase 2.4 接入 Neo4j 知识图谱：WWI → Neo4j 图谱构建 + 预定义 Cypher
-> 模板 KG Tool（禁止 LLM 生成任意 Cypher）+ 58 任务真实评测（GT 经
-> DuckDB SQL 独立核验）+ 失败分析，详见 `docs/phase2.4/EXPERIMENT_REPORT.md`。**
-> 真实实验环境：BGE-M3 + Real Milvus + BM25 + RRF + BGE-Reranker-v2-M3 + Neo4j 5.26。
-> **实测结果如实记录**：Hybrid Recall@5 = 0.9286 高于单一通道；
-> Reranker 改善 MRR（+0.0113）但未改善 Recall@5 / NDCG@5（负结果保留）；
-> 知识图谱 two_hop F1 = 0.825 / path accuracy 0.958，multi-hop 复合查询
-> 为当前模板层瓶颈（负结果保留）。
-> 尚未实现：Task-Adaptive Routing、Claim-Evidence 验证、评估框架与前端
-> （分别为 Phase 3 / 4 / 5 / 6，见 Roadmap）。
+> Phase 2.3 在 Hybrid 之上接入 BGE-Reranker-v2-M3 重排阶段（4 模式 × 56 query 检索实验）；
+> Phase 2.4 接入 Neo4j 知识图谱（WWI → Neo4j 图谱构建 + 预定义 Cypher 模板
+> KG Tool + 58 任务真实评测，GT 经 DuckDB SQL 独立核验）；
+> **Phase 3 实现 Task-Adaptive Routing：任务特征 → 结构化 TaskProfile（LLM 提议）→
+> 候选工具（能力规则）→ 路由决策（RoutingDecision 强校验 + confidence gate）→
+> 多工具执行与结果融合；100 任务真实评测（A/B/C/D 四 baseline），
+> 详见 `docs/phase3/EXPERIMENT_REPORT.md`。**
+> 真实实验环境：BGE-M3 + Real Milvus + BM25 + RRF + BGE-Reranker-v2-M3 +
+> Neo4j 5.26 + Qwen（LLM 路由车道）。
+> **实测结果如实记录**：动态路由（C rule 0.630 / D LLM 0.680）route accuracy
+> 显著高于静态策略（A 0.110 / B 0.220）；multi_tool 顺序拆解（plan EM 0.520）
+> 与 KG 模板覆盖缺口为主要失分点（负结果保留）。
+> 尚未实现：Claim-Evidence 验证、正式 430 任务评估框架与前端
+> （分别为 Phase 4 / 5 / 6，见 Roadmap）。
 
 ---
 
@@ -246,6 +247,28 @@ easy/medium/hard，GT 全部由 DuckDB SQL 独立核验）；
   [`docs/phase2.4/EXPERIMENT_REPORT.md`](docs/phase2.4/EXPERIMENT_REPORT.md) §10 与
   [`FAILURE_HANDBOOK.md`](FAILURE_HANDBOOK.md) §4（FH-KG-001/002/003）。
 
+### Phase 3 任务自适应路由局部实验（真实数值）
+
+100 任务路由评测集（`data/eval/routing_eval.jsonl`，8 route 类型 ×
+10 task_type × easy/medium/hard，GT 人工按任务语义声明）；
+4 baseline：A Static RAG / B Static SQL / C Rule-based / D LLM Adaptive
+（Qwen 经 Agnes 代理）：
+
+| 系统 | Route Acc | Tool F1 | Plan EM | Clarif Acc | Task Success | 延迟 mean |
+|---|---|---|---|---|---|---|
+| A Static RAG | 0.110 | 0.172 | 0.210 | — | 0.110 | 0 ms |
+| B Static SQL | 0.220 | 0.508 | 0.320 | — | 0.220 | 0 ms |
+| C Rule-based | 0.630 | 0.790 | 0.590 | — | 0.570 | 6.5 ms |
+| D LLM Adaptive | 0.680 | 0.781 | 0.520 | 0.880 | 0.520 | 8605 ms |
+
+- 动态路由（C/D）route accuracy 显著高于静态（A/B），验证 RQ1 可行性；
+- LLM 的边际价值在歧义消解（澄清精度 0.880）而非 route_type 本身；
+- multi_tool 顺序拆解不稳定（plan EM 0.520 < route_acc 0.680）；
+- KG 模板覆盖缺口（Phase 2.4 遗留）传导为部分关系任务的路由失败
+  （**负结果保留**）。
+- 完整消融（含 E 无校验消融）与 10 个真实失败案例见
+  [`docs/phase3/EXPERIMENT_REPORT.md`](docs/phase3/EXPERIMENT_REPORT.md)。
+
 ## 11. Baseline
 
 | 编号 | 系统 |
@@ -353,7 +376,7 @@ enterprise-ai-employee/
 | Phase 2.2 | Hybrid RAG：Dense + BM25 + RRF | ✅ 已完成 |
 | Phase 2.3 | Reranker：知识库扩大 + BGE-Reranker-v2-M3 + 4 模式检索实验 | ✅ 已完成 |
 | Phase 2.4 | Neo4j Knowledge Graph：图谱构建 + KG Tool + 安全 Cypher + 58 任务评测 | ✅ 已完成 |
-| Phase 3 | Task-Adaptive Routing | ⬜ 未开始 |
+| Phase 3 | Task-Adaptive Routing：Task Profile + 动态路由 + 多工具融合 + 100 任务评测 | ✅ 已完成 |
 | Phase 4 | Claim-Evidence Verification | ⬜ 未开始 |
 | Phase 5 | Evaluation：Baseline + Ablation | ⬜ 未开始 |
 | Phase 6 | Vue3 工作台 | ⬜ 未开始 |

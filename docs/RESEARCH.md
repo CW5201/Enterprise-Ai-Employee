@@ -224,3 +224,33 @@ Phase 2.4 在该研究问题下的阶段性证据（详见
 Verification 把图谱作为独立证据源接入融合/验证链路。Phase 2.4 只能
 证明"知识图谱作为关系型知识源，可以支撑企业业务实体之间的多跳关系
 查询"（限定于 WWI 样例 + 项目定义 schema）。
+
+## 13. Phase 3 Research Evidence（Task-Adaptive Routing 阶段性证据）
+
+**对应研究问题**（沿用第 3 节编号，未新增 RQ）：
+
+- **RQ1 — 路由**：企业任务能否按任务特征（能力标志 + 歧义度）
+  被动态路由到合适的知识源与工具。
+
+Phase 3 在该研究问题下的阶段性证据（详见
+[`phase3/EXPERIMENT_REPORT.md`](phase3/EXPERIMENT_REPORT.md)）：
+
+1. 在 100 条人工声明 GT 的路由评测集上，**动态路由（规则基 C /
+   LLM 基 D）route accuracy（0.630 / 0.680）显著高于静态策略
+   （A Static RAG 0.110 / B Static SQL 0.220）**——任务特征驱动
+   的候选生成对多类型任务有可测量增益，验证 RQ1 的可行性；
+2. **LLM 的边际价值在歧义消解而非 route_type 本身**：D（0.680）
+   仅略高于 C（0.630），但澄清精度 0.880、对模糊任务稳健性更高；
+   route_type 由能力标志 + 规则引擎确定性导出；
+3. **capability validation 是安全换精度的权衡**：无校验消融 E
+   route_acc 0.720 略高，但失去结构化决策 / 一致性保证 / 澄清安全网；
+4. **multi_tool 顺序拆解是当前主要失分点**：D 的 plan exact
+   match（0.520）低于 route_acc（0.680）；
+5. **KG 模板覆盖缺口（Phase 2.4 遗留）直接传导为路由失败**：
+   "客户-供应商"类关系任务被迫走 multi_tool 补偿。
+
+**边界声明**：本阶段证明"系统能够根据任务特征动态选择不同知识源与
+工具"（限定 100 任务 / WWI 样例 + 项目 schema / 单模型 Qwen 代理），
+**不能**证明"多源融合已被证明有效"——多源融合的最终证据需
+Phase 4（Claim-Evidence Verification）与 Phase 5（430 任务正式
+Benchmark）。
