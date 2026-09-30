@@ -231,9 +231,11 @@ def _merge_relationship_batch(
             "graph": "eae",
         }
         edge_set: list[str] = ["r.__source = $src", "r.__graph = $graph"]
-        for i, (prop_name, src_col) in enumerate(edge_props.items()):
+        for i, (prop_name, _src_col) in enumerate(edge_props.items()):
+            # edge_props maps {edge_property_name: source_column}; the row
+            # already carries the property under its edge-property name.
             param = f"ep{i}"
-            params[param] = _cypher_value(row.get(src_col))
+            params[param] = _cypher_value(row.get(prop_name))
             edge_set.append(f"r.{prop_name} = ${param}")
 
         cypher = (
@@ -263,7 +265,7 @@ def _relationship_rows(con: duckdb.DuckDBPyConnection, spec: dict[str, Any]) -> 
       two tables so each row is (OrderID, StockItemID).
     """
     via = spec.get("via")
-    extra_cols = spec.get("edge_properties", {})
+    edge_props: dict[str, str] = spec.get("edge_properties", {})
 
     if via:
         sql = (
@@ -279,8 +281,9 @@ def _relationship_rows(con: duckdb.DuckDBPyConnection, spec: dict[str, Any]) -> 
             for r in result.fetchall()
         ]
         for row in rows:
-            for src_col, target_col in extra_cols.items():
-                row[target_col] = _cypher_value(row.get(src_col))
+            # edge_properties maps {edge_property_name: source_column}
+            for prop_name, src_col in edge_props.items():
+                row[prop_name] = _cypher_value(row.get(src_col))
         return rows
 
     table_rows = _read_table(con, spec["source_table"], None)
@@ -290,8 +293,8 @@ def _relationship_rows(con: duckdb.DuckDBPyConnection, spec: dict[str, Any]) -> 
             "_from_key": _cypher_value(r.get(spec["from_key"])),
             "_to_key": _cypher_value(r.get(spec["to_key"])),
         }
-        for src_col, target_col in extra_cols.items():
-            row[target_col] = _cypher_value(r.get(src_col))
+        for prop_name, src_col in edge_props.items():
+            row[prop_name] = _cypher_value(r.get(src_col))
         rows.append(row)
     return rows
 

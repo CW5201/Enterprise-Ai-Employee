@@ -180,6 +180,122 @@ _TEMPLATES: dict[str, dict[str, Any]] = {
         ),
         "params": ["name"],
     },
+    "customer_by_id": {
+        "id": "customer_by_id",
+        "name": "Look up a customer by ID",
+        "description": "Entity lookup: the customer node with the given ID.",
+        "cypher": "MATCH (c:Customer {customer_id: $customer_id}) RETURN c",
+        "params": ["customer_id"],
+    },
+    "supplier_by_id": {
+        "id": "supplier_by_id",
+        "name": "Look up a supplier by ID",
+        "description": "Entity lookup: the supplier node with the given ID.",
+        "cypher": "MATCH (s:Supplier {supplier_id: $supplier_id}) RETURN s",
+        "params": ["supplier_id"],
+    },
+    "item_by_id": {
+        "id": "item_by_id",
+        "name": "Look up a stock item by ID",
+        "description": "Entity lookup: the stock item node with the given ID.",
+        "cypher": "MATCH (i:StockItem {stock_item_id: $stock_item_id}) RETURN i",
+        "params": ["stock_item_id"],
+    },
+    "order_by_id": {
+        "id": "order_by_id",
+        "name": "Look up an order by ID",
+        "description": "Entity lookup: the order node with the given ID.",
+        "cypher": "MATCH (o:Order {order_id: $order_id}) RETURN o",
+        "params": ["order_id"],
+    },
+    "invoice_by_id": {
+        "id": "invoice_by_id",
+        "name": "Look up an invoice by ID",
+        "description": "Entity lookup: the invoice node with the given ID.",
+        "cypher": "MATCH (i:Invoice {invoice_id: $invoice_id}) RETURN i",
+        "params": ["invoice_id"],
+    },
+    "invoice_lines": {
+        "id": "invoice_lines",
+        "name": "Stock items shipped on an invoice (with quantity)",
+        "description": "One-hop: the items an invoice ships, with edge quantity/price.",
+        "cypher": (
+            "MATCH (inv:Invoice {invoice_id: $invoice_id})-[l:SHIPPED_ON]->(item:StockItem) "
+            "RETURN item, l.quantity AS quantity, l.extended_price AS extended_price "
+            "ORDER BY item.stock_item_id"
+        ),
+        "params": ["invoice_id"],
+    },
+    "customer_invoices": {
+        "id": "customer_invoices",
+        "name": "Invoices produced by a customer's orders (two-hop)",
+        "description": "Customer -> Order -> Invoice.",
+        "cypher": (
+            "MATCH (c:Customer {customer_id: $customer_id})"
+            "-[:PLACED]->(o:Order)-[:INVOICED]->(inv:Invoice) "
+            "RETURN DISTINCT inv ORDER BY inv.invoice_id"
+        ),
+        "params": ["customer_id"],
+    },
+    "customer_item_suppliers": {
+        "id": "customer_item_suppliers",
+        "name": "Suppliers providing a customer's ordered items (multi-hop)",
+        "description": (
+            "Customer -> Order -> StockItem -> Supplier.  Answers 'which "
+            "suppliers provided the items in customer X's orders' and can be "
+            "aggregated with DISTINCT."
+        ),
+        "cypher": (
+            "MATCH (c:Customer {customer_id: $customer_id})"
+            "-[:PLACED]->(o:Order)-[:HAS_LINE]->(item:StockItem)"
+            "-[:SUPPLIED_BY]->(sup:Supplier) "
+            "RETURN DISTINCT sup ORDER BY sup.supplier_id"
+        ),
+        "params": ["customer_id"],
+    },
+    "supplier_customers": {
+        "id": "supplier_customers",
+        "name": "Customers who bought items supplied by a supplier (cross-entity)",
+        "description": (
+            "Reverse cross-entity: Supplier <- StockItem <- Invoice <- Order "
+            "<- Customer.  Answers 'which customers ever bought something "
+            "supplier X supplies'."
+        ),
+        "cypher": (
+            "MATCH (sup:Supplier {supplier_id: $supplier_id})"
+            "<-[:SUPPLIED_BY]-(item:StockItem)"
+            "<-[:SHIPPED_ON]-(inv:Invoice)<-[:INVOICED]-(o:Order)"
+            "<-[:PLACED]-(c:Customer) "
+            "RETURN DISTINCT c ORDER BY c.customer_id"
+        ),
+        "params": ["supplier_id"],
+    },
+    "group_member_count": {
+        "id": "group_member_count",
+        "name": "Count members of a buying group",
+        "description": "Aggregation: how many customers belong to a buying group.",
+        "cypher": (
+            "MATCH (g:BuyingGroup {buying_group_id: $buying_group_id}) "
+            "OPTIONAL MATCH (c:Customer)-[:BELONGS_TO_GROUP]->(g) "
+            "RETURN count(DISTINCT c) AS member_count"
+        ),
+        "params": ["buying_group_id"],
+    },
+    "invoice_item_suppliers": {
+        "id": "invoice_item_suppliers",
+        "name": "Suppliers providing the items shipped on an invoice",
+        "description": (
+            "Two-hop from an invoice: Invoice -> StockItem (SHIPPED_ON) -> "
+            "Supplier (SUPPLIED_BY).  Answers 'which suppliers provided the "
+            "items on invoice N'."
+        ),
+        "cypher": (
+            "MATCH (inv:Invoice {invoice_id: $invoice_id})"
+            "-[:SHIPPED_ON]->(item:StockItem)-[:SUPPLIED_BY]->(sup:Supplier) "
+            "RETURN DISTINCT sup ORDER BY sup.supplier_id"
+        ),
+        "params": ["invoice_id"],
+    },
     "relationship_exists": {
         "id": "relationship_exists",
         "name": "Check whether a relationship exists between two entities",
