@@ -198,6 +198,20 @@ _SEMANTIC_SYSTEM = """你是企业 AI 数字员工的证据核验模块。
 # ---------------------------------------------------------------------------
 
 
+def _text_tokens(text: str) -> set[str]:
+    """Lower-case CJK chars, CJK bigrams, and ASCII word / digit tokens."""
+    t = text.lower()
+    tokens = set(re.findall(r"[a-z0-9_]+", t))
+    tokens.update(re.findall(r"[一-鿿]", t))
+    tokens.update(_bigrams_cjk(t))
+    return tokens
+
+
+def _bigrams_cjk(text: str) -> set[str]:
+    chars = [c for c in text.lower() if "一" <= c <= "鿿"]
+    return {chars[i] + chars[i + 1] for i in range(len(chars) - 1)}
+
+
 def _to_float(value: Any) -> float | None:
     if value is None:
         return None
@@ -214,6 +228,16 @@ def _to_float(value: Any) -> float | None:
     return None
 
 
+def _structured_values(candidates: list[Evidence]) -> set[float]:
+    """All distinct parseable structured values across candidates."""
+    out: set[float] = set()
+    for ev in candidates:
+        f = _to_float(ev.structured_value)
+        if f is not None:
+            out.add(round(f, 6))
+    return out
+
+
 def verify_exact(
     claim: dict[str, Any],
     candidates: list[Evidence],
@@ -222,7 +246,26 @@ def verify_exact(
     """Layer 1.  Returns a decisive VerificationResult, or ``None`` when the
     claim is not numerically checkable (fall through to Layer 2/3)."""
     if claim.get("claim_type") not in ("numerical", "derived"):
+        # Even non-numeric claims can trigger a conflict when two
+        # structured sources disagree with each other.  Surface that
+        # here so the exact layer owns all conflict detection.
+        distinct = _structured_values(candidates)
+        if len(distinct) > 1:
+            return VerificationResult(
+                claim_id=str(claim.get("claim_id", "")),
+                claim_type=str(claim.get("claim_type", "numerical")),  # type: ignore[arg-type]
+                supported=False,
+                status="conflict",
+                conflict=True,
+                support_score=0.0,
+                evidence_ids=[e.evidence_id for e in candidates if _to_float(e.structured_value) is not None],
+                verifier_type="exact",
+                reason=f"structured sources disagree: {sorted(distinct)}; not auto-picking",
+                computed_value=None,
+                claimed_value=None,
+            )
         return None
+
     claimed = _to_float(claim.get("value"))
     if claimed is None:
         return None
@@ -248,9 +291,10 @@ def verify_exact(
     non_matching = [v for v in values if abs(v - claimed) > cfg.numeric_tolerance * max(1.0, abs(claimed))]
 
     distinct = {round(v, 6) for v in values}
-    # multiple evidence sources disagree with each other AND at least one
-    # matches the claim -> conflict; never silently auto-pick a value.
-    if len(distinct) > 1 and matches and non_matching:
+    # multiple evidence sources disagree with each other -> conflict,
+    # regardless of whether any of them matches the claim.  We never
+    # silently auto-pick a value when two sources contradict each other.
+    if len(distinct) > 1:
         return VerificationResult(
             claim_id=str(claim.get("claim_id", "")),
             claim_type=str(claim.get("claim_type", "numerical")),  # type: ignore[arg-type]
@@ -359,6 +403,53 @@ def verify_rule(
                         evidence_ids=[ev.evidence_id],
                         verifier_type="rule",
                         reason=f"value {value} present in {ev.source_type} evidence {ev.evidence_id}",
+                    )
+        # no numeric value: token-overlap check on the claim text against
+        # evidence content + structured value.  This is a *rule* (not
+        # semantic) check — it catches supported factual / rule_based
+        # claims whose key terms appear verbatim in a compatible source
+        # without requiring an LLM call.
+        #
+        # Safety guard: if the pool also contains a *structured source
+        # with a parseable value that differs from the claim's asserted
+        # value*, we must NOT auto-support via token overlap — the exact
+        # layer (or the conflict branch below) must decide first.
+        has_conflicting_structured = False
+        for ev in candidates:
+            if ev.source_type not in ("sql", "analysis"):
+                continue
+            f = _to_float(ev.structured_value)
+            if f is None:
+                continue
+            # compare against any numeric claim value we can recover
+            claim_num = _to_float(claim.get("value"))
+            if claim_num is not None and abs(f - claim_num) > cfg.numeric_tolerance * max(1.0, abs(claim_num)):
+                has_conflicting_structured = True
+                break
+
+        if has_conflicting_structured:
+            return None  # let the exact / derived layer handle the conflict
+
+        claim_tokens = _text_tokens(str(claim.get("text", "")))
+        if claim_tokens:
+            for ev in candidates:
+                if ev.source_type not in ("rag", "sql", "kg", "analysis"):
+                    continue
+                blob = f"{ev.content or ''} {ev.structured_value if ev.structured_value is not None else ''}"
+                blob_tokens = _text_tokens(blob)
+                overlap = claim_tokens & blob_tokens
+                # require at least 2 overlapping tokens and >=40% of the
+                # claim's tokens present to avoid spurious matches
+                if len(overlap) >= 2 and len(overlap) >= 0.4 * len(claim_tokens):
+                    return VerificationResult(
+                        claim_id=str(claim.get("claim_id", "")),
+                        claim_type=claim_type,  # type: ignore[arg-type]
+                        supported=True,
+                        status="supported",
+                        support_score=0.8,
+                        evidence_ids=[ev.evidence_id],
+                        verifier_type="rule",
+                        reason=f"claim tokens {sorted(overlap)[:4]} present in {ev.source_type} evidence {ev.evidence_id}",
                     )
     return None
 
