@@ -162,6 +162,31 @@ class RagSettings:
 
 
 @dataclass
+class Neo4jSettings:
+    uri: str = "bolt://localhost:7687"
+    username: str = "neo4j"
+    password: str = ""
+    database: str = "neo4j"
+    enabled: bool = False
+    max_connection_pool_size: int = 20
+    query_timeout_seconds: int = 15
+    allow_llm_generated_cypher: bool = False
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> Neo4jSettings:
+        return cls(
+            uri=str(d.get("uri", cls.uri)),
+            username=str(d.get("username", d.get("user", cls.username))),
+            password=str(d.get("password", cls.password)),
+            database=str(d.get("database", cls.database)),
+            enabled=bool(d.get("enabled", cls.enabled)),
+            max_connection_pool_size=int(d.get("max_connection_pool_size", cls.max_connection_pool_size)),
+            query_timeout_seconds=int(d.get("query_timeout_seconds", cls.query_timeout_seconds)),
+            allow_llm_generated_cypher=bool(d.get("allow_llm_generated_cypher", cls.allow_llm_generated_cypher)),
+        )
+
+
+@dataclass
 class Settings:
     """Typed view over config/settings.yaml + routing_rules.yaml."""
 
@@ -170,6 +195,7 @@ class Settings:
     milvus: MilvusSettings = field(default_factory=MilvusSettings)
     rag: RagSettings = field(default_factory=RagSettings)
     duckdb: DuckDBSettings = field(default_factory=DuckDBSettings)
+    neo4j: Neo4jSettings = field(default_factory=Neo4jSettings)
     routing: dict[str, Any] = field(default_factory=dict)
     raw: dict[str, Any] = field(default_factory=dict)
 
@@ -201,6 +227,7 @@ def get_settings(config_dir: Path | None = None) -> Settings:
         milvus=MilvusSettings.from_dict(_section(settings_raw, "milvus")),
         rag=RagSettings.from_dict(_section(settings_raw, "rag")),
         duckdb=DuckDBSettings.from_dict(_section(settings_raw, "duckdb")),
+        neo4j=Neo4jSettings.from_dict(_section(settings_raw, "neo4j")),
         routing=routing_raw,
         raw=settings_raw,
     )
@@ -247,6 +274,7 @@ __all__ = [
     "DuckDBSettings",
     "LLMSettings",
     "MilvusSettings",
+    "Neo4jSettings",
     "RagSettings",
     "RoutingRules",
     "Settings",

@@ -89,14 +89,18 @@ milvus:
     efConstruction: 200
 
 # --- Knowledge graph (Neo4j, predefined Cypher templates ONLY) -------------
+# Phase 2.4.  Credentials live in the environment / .env only; the yaml never
+# holds a password.  ``enabled`` defaults to false so that the kg tool stays
+# dormant until the graph infrastructure is actually running.
 neo4j:
   uri: ${NEO4J_URI:-bolt://localhost:7687}
-  user: ${NEO4J_USER:-neo4j}
-  password: ${NEO4J_PASSWORD:-}
-  database: neo4j
+  username: ${NEO4J_USERNAME:-neo4j}
+  password: ${NEO4J_PASSWORD:-}          # resolved from env; never commit
+  database: ${NEO4J_DATABASE:-neo4j}
+  enabled: false                          # set true when a local Neo4j is up
   max_connection_pool_size: 20
   query_timeout_seconds: 15
-  allow_llm_generated_cypher: false   # must stay false - see ADR-004
+  allow_llm_generated_cypher: false      # must stay false - see ADR-004
 
 # --- DuckDB (read-only business database) ---------------------------------
 duckdb:

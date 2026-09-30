@@ -1,0 +1,212 @@
+# ---------------------------------------------------------------------------
+# Knowledge Graph Schema — Phase 2.4 (Neo4j)
+#
+# Source of truth: data/schemas/database_schema.yaml (WWI, DuckDB dialect)
+# The graph models the core sales/supply chain of WideWorldImporters:
+#
+#   Customer ──PLACED──> Order ──INVOICED──> Invoice
+#      │                    │                    │
+#   BELONGS_TO           HAS_LINE           HAS_LINE
+#      │                    │                    │
+#   BuyingGroup         StockItem          StockItem
+#      ▲                                          │
+#   MEMBER_OF                                 SUPPLIED_BY
+#                                                │
+#                                             Supplier ──IN_CITY──> City
+#
+# Node and relationship definitions are deliberately conservative: only
+# entities that have real business-relation value are modelled.  All nodes
+# carry ``__source`` = "wwi_duckdb" plus their source table and primary key,
+# so any record can be traced back to the row it came from.
+# ---------------------------------------------------------------------------
+
+schema_version: v1.0
+graph_namespace: eae           # every label/key property is namespaced with this
+source_duckdb: ${DUCKDB_PATH:-data/runtime/wwi.duckdb}
+
+# ---------------------------------------------------------------------------
+# Node labels
+# ---------------------------------------------------------------------------
+node_labels:
+
+  - label: Customer
+    key_property: customer_id
+    source_table: Sales_Customers
+    source_key: CustomerID
+    source_columns:
+      - CustomerID        -> customer_id
+      - CustomerName      -> name
+      - CreditLimit       -> credit_limit
+      - PaymentDays       -> payment_days
+      - IsOnCreditHold    -> is_on_credit_hold
+      - AccountOpenedDate -> account_opened_date
+    notes: "BuyingGroup relation is OPTIONAL (BuyingGroupID is nullable in WWI)."
+
+  - label: Order
+    key_property: order_id
+    source_table: Sales_Orders
+    source_key: OrderID
+    source_columns:
+      - OrderID                  -> order_id
+      - CustomerID               -> customer_id
+      - OrderDate                -> order_date
+      - ExpectedDeliveryDate     -> expected_delivery_date
+      - CustomerPurchaseOrderNumber -> purchase_order_number
+      - IsUndersupplyBackordered -> is_undersupply_backordered
+
+  - label: Invoice
+    key_property: invoice_id
+    source_table: Sales_Invoices
+    source_key: InvoiceID
+    source_columns:
+      - InvoiceID -> invoice_id
+      - CustomerID -> customer_id
+      - OrderID   -> order_id          # nullable in WWI; link created only when present
+      - InvoiceDate -> invoice_date
+      - IsCreditNote -> is_credit_note
+
+  - label: StockItem
+    key_property: stock_item_id
+    source_table: Warehouse_StockItems
+    source_key: StockItemID
+    source_columns:
+      - StockItemID -> stock_item_id
+      - StockItemName -> name
+      - UnitPrice   -> unit_price
+      - RecommendedRetailPrice -> recommended_retail_price
+      - TaxRate     -> tax_rate
+      - Brand       -> brand
+      - Barcode     -> barcode
+      - IsChillerStock -> is_chiller_stock
+      - LeadTimeDays  -> lead_time_days
+
+  - label: Supplier
+    key_property: supplier_id
+    source_table: Purchasing_Suppliers
+    source_key: SupplierID
+    source_columns:
+      - SupplierID -> supplier_id
+      - SupplierName -> name
+      - WebsiteURL -> website_url
+      - PhoneNumber -> phone_number
+      - PaymentDays -> payment_days
+      - DeliveryCityID -> delivery_city_id
+
+  - label: BuyingGroup
+    key_property: buying_group_id
+    source_table: Sales_BuyingGroups
+    source_key: BuyingGroupID
+    source_columns:
+      - BuyingGroupID -> buying_group_id
+      - BuyingGroupName -> name
+
+  - label: City
+    key_property: city_id
+    source_table: Application_Cities
+    source_key: CityID
+    source_columns:
+      - CityID -> city_id
+      - CityName -> name
+      - StateProvinceID -> state_province_id
+
+# ---------------------------------------------------------------------------
+# Relationships
+# ---------------------------------------------------------------------------
+relationships:
+
+  - name: PLACED
+    from_label: Customer
+    to_label: Order
+    from_key: customer_id
+    source_table: Sales_Orders
+    source_column: CustomerID
+    to_key: order_id
+    direction: "Customer -> Order (customer places order)"
+
+  - name: INVOICED
+    from_label: Order
+    to_label: Invoice
+    from_key: order_id
+    source_table: Sales_Invoices
+    source_column: OrderID
+    to_key: invoice_id
+    notes: "Invoice.OrderID is nullable; edges only created when it is set."
+    direction: "Order -> Invoice"
+
+  - name: HAS_LINE
+    from_label: Order
+    to_label: StockItem
+    from_key: order_id
+    source_table: Sales_InvoiceLines
+    source_column: InvoiceID
+    to_key: stock_item_id
+    notes: "Sales_OrderLines is EMPTY in this WWI dataset; Order->StockItem links
+             are derived through Sales_Invoices + Sales_InvoiceLines (the only
+             table that carries order-line detail in this sample).  The mapping
+             keeps the business meaning ('order shipped these items') but the
+             edge carries __source to make this derivation explicit."
+    via_tables:
+      - Sales_Invoices      # OrderID -> InvoiceID
+      - Sales_InvoiceLines  # InvoiceID + StockItemID
+    direction: "Order -> StockItem (order line)"
+
+  - name: SHIPPED_ON
+    from_label: Invoice
+    to_label: StockItem
+    from_key: invoice_id
+    source_table: Sales_InvoiceLines
+    source_column: StockItemID
+    to_key: stock_item_id
+    properties:
+      - Quantity -> quantity
+      - ExtendedPrice -> extended_price
+    direction: "Invoice -> StockItem (invoice line)"
+
+  - name: SUPPLIED_BY
+    from_label: StockItem
+    to_label: Supplier
+    from_key: supplier_id
+    source_table: Warehouse_StockItems
+    source_column: SupplierID
+    to_key: supplier_id
+    notes: "StockItem.SupplierID is nullable in WWI; edge only when set."
+    direction: "StockItem -> Supplier"
+
+  - name: BELONGS_TO_GROUP
+    from_label: Customer
+    to_label: BuyingGroup
+    from_key: buying_group_id
+    source_table: Sales_Customers
+    source_column: BuyingGroupID
+    to_key: buying_group_id
+    notes: "BuyingGroupID nullable; edge only when set."
+    direction: "Customer -> BuyingGroup"
+
+  - name: SUPPLIER_IN_CITY
+    from_label: Supplier
+    to_label: City
+    from_key: delivery_city_id
+    source_table: Purchasing_Suppliers
+    source_column: DeliveryCityID
+    to_key: city_id
+    direction: "Supplier -> City (delivery city)"
+
+# ---------------------------------------------------------------------------
+# Constraints & indexes (re-runnable: always use CREATE ... IF NOT EXISTS)
+# ---------------------------------------------------------------------------
+constraints:
+  # Neo4j 5 constraint syntax: CREATE CONSTRAINT ... FOR (n:Label) REQUIRE n.prop IS UNIQUE
+  - CREATE CONSTRAINT customer_key IF NOT EXISTS FOR (n:Customer) REQUIRE n.customer_id IS UNIQUE;
+  - CREATE CONSTRAINT order_key IF NOT EXISTS FOR (n:Order) REQUIRE n.order_id IS UNIQUE;
+  - CREATE CONSTRAINT invoice_key IF NOT EXISTS FOR (n:Invoice) REQUIRE n.invoice_id IS UNIQUE;
+  - CREATE CONSTRAINT stock_item_key IF NOT EXISTS FOR (n:StockItem) REQUIRE n.stock_item_id IS UNIQUE;
+  - CREATE CONSTRAINT supplier_key IF NOT EXISTS FOR (n:Supplier) REQUIRE n.supplier_id IS UNIQUE;
+  - CREATE CONSTRAINT buying_group_key IF NOT EXISTS FOR (n:BuyingGroup) REQUIRE n.buying_group_id IS UNIQUE;
+  - CREATE CONSTRAINT city_key IF NOT EXISTS FOR (n:City) REQUIRE n.city_id IS UNIQUE;
+
+indexes:
+  # Secondary lookups used by the kg tool templates (Commit 3).
+  - CREATE INDEX customer_name_idx IF NOT EXISTS FOR (n:Customer) ON (n.name);
+  - CREATE INDEX stock_item_name_idx IF NOT EXISTS FOR (n:StockItem) ON (n.name);
+  - CREATE INDEX supplier_name_idx IF NOT EXISTS FOR (n:Supplier) ON (n.name);
+  - CREATE INDEX order_date_idx IF NOT EXISTS FOR (n:Order) ON (n.order_date);
