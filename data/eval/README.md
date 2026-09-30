@@ -1,7 +1,16 @@
-# `data/eval/` — 阶段性检索实验集（Phase 2.2 / 2.3）
+## `enterprise_tasks.jsonl`（Phase 5 统一企业任务 Benchmark）
 
-本目录存放各 Phase 的**阶段性检索实验集**，与正式的 ~430 条
-Evaluation Dataset（`data/eval_dataset.jsonl`，Phase 5 构建）**不是一回事**。
+- **~490 条企业任务**（10 类 task_type + easy/medium/hard 难度 + 单/双/三/四工具
+  组合），是**整个项目正式的统一评测集**，驱动 Phase 5 端到端评测
+  （`scripts/run_enterprise_eval.py`）与 Baseline / Ablation；
+- 由 `scripts/build_enterprise_tasks.py` 生成，`scripts/validate_enterprise_tasks.py`
+  校验；完整说明见 [`README_enterprise_tasks.md`](./README_enterprise_tasks.md)；
+- Ground Truth 由**独立** SQL / KB 包含 / 人工声明产生（`provenance.verifier`
+  记录来源），**绝不取自** Router / Verification / Answer 任一系统输出；
+- 本文件不属于上列任何阶段性实验集；阶段性结果不得替代它。
+
+**边界**：正式 430+ 条 Benchmark 已落地；数值型业务结论来自**合成**业务种子
+数据，只用于验证系统流程与 GT 一致性，不得当作真实经营指标对外引用。
 
 ## `hybrid_eval.jsonl`
 
