@@ -5,14 +5,14 @@ The LLM is mocked; the rule engine + validation path is exercised for real.
 
 from __future__ import annotations
 
-from typing import Any, TypeVar
+from typing import TypeVar
 from unittest.mock import MagicMock
 
 import pytest
 
 from src.core.exceptions import LLMError
-from src.core.state import make_state
 from src.core.routing_types import RoutingDecision, TaskProfile
+from src.core.state import make_state
 from src.nodes.task_router import (
     RoutingDecisionError,
     TaskProfileProposal,

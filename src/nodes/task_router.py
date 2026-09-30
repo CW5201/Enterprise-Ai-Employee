@@ -45,7 +45,8 @@ from pydantic import BaseModel, Field
 from src.core.exceptions import LLMError
 from src.core.llm_client import LLMClient
 from src.core.observability import observe
-from src.core.routing_rules import RoutingPolicy, decide as _decide_rule, generate_candidates
+from src.core.routing_rules import RoutingPolicy, generate_candidates
+from src.core.routing_rules import decide as _decide_rule
 from src.core.routing_types import RoutingDecision, TaskProfile
 from src.core.state import AgentState, ErrorRecord
 
