@@ -15,6 +15,7 @@ maps to):
 - :class:`KnowledgeBaseError`      KB document access failure
 - :class:`RetrievalError`          RAG retrieval failure
 - :class:`EmbeddingUnavailableError` BGE-M3 model cannot be loaded
+- :class:`RerankerUnavailableError` BGE-Reranker-v2-M3 cannot be loaded
 - :class:`ValidationError`         claim-evidence verification rejection
 """
 
@@ -96,6 +97,17 @@ class EmbeddingUnavailableError(RetrievalError):
     code = "embedding_unavailable"
 
 
+class RerankerUnavailableError(RetrievalError):
+    """The BGE-Reranker-v2-M3 model could not be loaded.
+
+    Raised ONLY when the formal (non-test) mode cannot produce a real
+    cross-encoder relevance score.  A fake / hash / random scorer is
+    test-mode only and must never be a silent substitute for the model.
+    """
+
+    code = "reranker_unavailable"
+
+
 class ValidationError(AppError):
     """Claim-evidence verification rejected the answer."""
 
@@ -111,5 +123,6 @@ __all__ = [
     "KnowledgeBaseError",
     "RetrievalError",
     "EmbeddingUnavailableError",
+    "RerankerUnavailableError",
     "ValidationError",
 ]

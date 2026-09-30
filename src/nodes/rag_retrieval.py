@@ -2,7 +2,7 @@
 
 Reads ``state.user_query`` and retrieves via the unified
 :class:`HybridRetriever` (Dense + BM25 + RRF, ``retrieval_mode`` in
-``dense | bm25 | hybrid``), then writes the top-k chunks to:
+``dense | bm25 | hybrid | hybrid_rerank``), then writes the top-k chunks to:
 
 - ``state["retrieved_context"]`` — :class:`RetrievedChunk` list, source
   always preserved;
@@ -10,8 +10,8 @@ Reads ``state.user_query`` and retrieves via the unified
   node treats RAG and SQL evidence uniformly.
 
 The node only calls the RAG tool / hybrid retriever interface; it never
-touches Milvus or the BM25 index internals.  Reranker, knowledge graph and
-claim-evidence verification remain out of scope (Phase 2.3+ / Phase 4).
+touches Milvus or the BM25 index internals.  Knowledge graph and
+claim-evidence verification remain out of scope (Phase 2.4 / Phase 4).
 """
 
 from __future__ import annotations

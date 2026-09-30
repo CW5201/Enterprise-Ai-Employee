@@ -48,7 +48,13 @@ class RankedHit:
 
 @dataclass
 class HybridHit:
-    """Fused result across two ranked channels, with context preserved."""
+    """Fused result across two ranked channels, with context preserved.
+
+    Phase 2.3 adds the optional cross-encoder fields ``rerank_score`` /
+    ``rerank_rank``; they are only populated by the ``hybrid_rerank`` mode
+    and stay at their defaults (-1.0 / 0 = absent) for ``dense`` /
+    ``bm25`` / ``hybrid`` so existing behaviour is unchanged.
+    """
 
     chunk_id: str
     dense_score: float = -1.0
@@ -56,6 +62,8 @@ class HybridHit:
     bm25_score: float = 0.0
     bm25_rank: int = 0
     fusion_score: float = 0.0
+    rerank_score: float = -1.0
+    rerank_rank: int = 0
     text: str = ""
     source: str = ""
     title: str = ""
@@ -71,6 +79,8 @@ class HybridHit:
             "bm25_score": self.bm25_score,
             "bm25_rank": self.bm25_rank,
             "fusion_score": self.fusion_score,
+            "rerank_score": self.rerank_score,
+            "rerank_rank": self.rerank_rank,
             "text": self.text,
             "source": self.source,
             "title": self.title,

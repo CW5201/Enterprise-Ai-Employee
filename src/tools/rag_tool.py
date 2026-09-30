@@ -22,6 +22,7 @@ from typing import Any
 
 from src.core.hybrid_retriever import HybridRetriever
 from src.core.observability import observe
+from src.core.reranker import Reranker
 from src.core.retrieval_types import HybridHit
 from src.core.vector_store import VectorStore
 
@@ -89,7 +90,7 @@ def _chunk_records(
                 )
         return records
 
-_VALID_MODES = ("dense", "bm25", "hybrid")
+_VALID_MODES = ("dense", "bm25", "hybrid", "hybrid_rerank")
 
 
 @dataclass
@@ -120,7 +121,7 @@ class RAGTool:
     input_schema: dict[str, Any] = {
         "query": "str",
         "top_k": "int (default 5)",
-        "retrieval_mode": "str in {dense, bm25, hybrid} (default hybrid)",
+        "retrieval_mode": "str in {dense, bm25, hybrid, hybrid_rerank} (default hybrid)",
     }
     timeout: int = 20
 
@@ -131,6 +132,9 @@ class RAGTool:
         store: VectorStore | None = None,
         backend: str | None = None,
         retrieval_mode: str = "hybrid",
+        reranker: Reranker | None = None,
+        candidate_k: int = 20,
+        final_k: int = 5,
     ) -> None:
         if retrieval_mode not in _VALID_MODES:
             raise ValueError(f"retrieval_mode must be one of {_VALID_MODES}, got {retrieval_mode!r}")
@@ -138,7 +142,13 @@ class RAGTool:
         if retriever is not None:
             self._retriever = retriever
         else:
-            self._retriever = HybridRetriever(vector_store=store, backend=backend)
+            self._retriever = HybridRetriever(
+                vector_store=store,
+                backend=backend,
+                reranker=reranker,
+                candidate_k=candidate_k,
+                final_k=final_k,
+            )
 
     @observe("rag_retrieval")
     def run(self, *, query: str, top_k: int = 5, retrieval_mode: str | None = None) -> dict[str, Any]:
@@ -155,7 +165,7 @@ class RAGTool:
         top_k = max(1, int(top_k))
         hits: list[HybridHit] = self._retriever.search(query, top_k=top_k, mode=mode)
         results = [self._hit_to_payload(h) for h in hits]
-        return {
+        out = {
             "tool": self.name,
             "ok": True,
             "results": results,
@@ -163,6 +173,15 @@ class RAGTool:
             "retrieval_mode": mode,
             "index_size": self.index_size,
         }
+        # Phase 2.3: surface the rerank latency when the rerank stage ran, so
+        # callers can record rerank_latency_ms without a monitoring stack.
+        if mode == "hybrid_rerank":
+            rr = getattr(self._retriever, "reranker", None)
+            if rr is not None:
+                scorer = getattr(rr, "_scorer", None)
+                if scorer is not None and hasattr(scorer, "rerank_latency_ms"):
+                    out["rerank_latency_ms"] = round(scorer.rerank_latency_ms, 2)
+        return out
 
     # -- helpers --------------------------------------------------------------
 
@@ -182,6 +201,9 @@ class RAGTool:
             "bm25_score": hit.bm25_score,
             "bm25_rank": hit.bm25_rank,
             "fusion_score": hit.fusion_score,
+            # Phase 2.3 cross-encoder fields (-1.0 / 0 when no rerank ran)
+            "rerank_score": hit.rerank_score,
+            "rerank_rank": hit.rerank_rank,
             # Phase 2.1 compatibility: the primary score is the fusion value.
             "score": hit.fusion_score,
         }
