@@ -377,3 +377,82 @@ Reranker 在 CPU 上对 20 条候选重排 ~5.7s/query，工程代价显著；
 - **实验范围**：仅检索层，未接入 Answer Generation / Verification；
 - **本实验是 Phase 2.3 局部检索实验**，**不等价于**最终 430 条
   Evaluation Benchmark（第 1 节，Phase 5 构建）。
+
+## 16. Phase 2.4 Knowledge Graph Experiment
+
+> **定位**：Phase 2.4 的**局部知识图谱实验**。在同一 Neo4j 实例
+> （4,723 节点 / 3,880 关系，由 `scripts/build_kg.py` 构建）上，
+> 用 58 条 SQL 独立核验的任务评测 `KGTool` 预定义 Cypher 模板，
+> 验证"图谱作为关系型知识源可支撑多跳关系查询"。
+
+### 16.1 Experimental Setup
+
+- **图谱**：Neo4j 5.26（本地容器 `eae-neo4j`），由
+  `scripts/build_kg.py` 从 `data/runtime/wwi.duckdb` 构建；
+  7 节点（Customer / Order / Invoice / StockItem / Supplier /
+  BuyingGroup / City）+ 7 关系（PLACED / INVOICED / SHIPPED_ON /
+  HAS_LINE / SUPPLIED_BY / BELONGS_TO_GROUP / SUPPLIER_IN_CITY）。
+- **任务**：`data/eval/kg_eval.jsonl`（58 条，8 task_type ×
+  easy/medium/hard）；GT 全部由 DuckDB SQL 独立核验，**先于**
+  图谱查询生成。
+- **被评系统**：`src/tools/kg_tool.py` 预定义模板（经
+  `src/core/cypher_validator.py` read-only 校验）+
+  `scripts/run_kg_eval.py` 路由。
+
+### 16.2 Metrics
+
+| 指标 | 定义 |
+|---|---|
+| Exact Match | 预测与 SQL 核验答案是否一致（标量归一化 / 集合相等） |
+| Precision / Recall / F1 | 预测实体 ID 集合 vs 期望 ID 集合 |
+| Path Accuracy | 期望关系跳被模板实际遍历的比例（仅声明 `expected_relations` 的任务） |
+| Latency | 每次 KGTool 调用墙钟时间（mean / p50 / p95） |
+
+失败任务（unroutable / 工具错误）**不剔除分母**。
+
+### 16.3 Results（真实运行）
+
+| 指标 | 值 |
+|---|---|
+| Exact Match（overall） | 0.2931 |
+| Avg Precision / Recall / F1 | 0.6257 / 0.4993 / 0.5167 |
+| Path Accuracy | 0.9238 |
+| 失败（unroutable，保留在分母） | 5 |
+| 延迟 mean / p50 / p95 | 3.36 / 1.98 / 3.22 ms |
+
+按 task_type（`by_task_type`，摘录）：
+
+| task_type | 任务数 | Exact | F1 | Path Acc | 失败 |
+|---|---|---|---|---|---|
+| two_hop | 8 | 0.625 | 0.825 | 0.958 | 0 |
+| aggregation | 8 | 0.625 | 0.333 | 0.813 | 0 |
+| entity_lookup | 8 | 0.625 | 0.314 | 1.000 | 0 |
+| one_hop | 9 | 0.111 | 0.659 | 1.000 | 0 |
+| multi_hop | 8 | 0.000 | 0.733 | 0.844 | 0 |
+| existence | 9 | 0.111 | 0.333 | 1.000 | 3 |
+| cross_entity | 8 | 0.000 | 0.424 | 0.917 | 2 |
+
+按 difficulty：easy 0.474 → medium 0.316 → hard 0.100（exact，单调下降）。
+
+### 16.4 Analysis（如实记录）
+
+- **two_hop 最好**（exact 0.625 / F1 0.825 / path 0.958）：一跳/两跳
+  遍历是模板最擅长的形态；
+- **multi_hop exact=0 但 P=1.0 / F1=0.733**：预测的供应商集合正确，
+  失分在"expected_entities 只列终点实体"的口径（030/032 期望同时
+  含城市，模板只返回供应商）；
+- **cross_entity exact=0**：054/055 无集合交集/双边聚合模板
+  （unroutable），056 复合答案超单模板返回能力；
+- **existence exact=0.111**：正/负例在字符串 exact 下区分度低，
+  path 全部 1.0（关系跳遍历正确）；
+- **Path Accuracy（0.924）显著高于 Exact Match（0.293）**：
+  图遍历可靠，瓶颈在远端实体集合精确匹配与复合答案口径，
+  **非 Neo4j 数据层缺陷**；
+- **失败案例**（6 个，真实）：kg-rq-006 / 041 / 042 / 054 / 055 / 056，
+  见 `docs/phase2.4/EXPERIMENT_REPORT.md` §10 与
+  `FAILURE_HANDBOOK.md` §4（FH-KG-001/002/003）。
+
+> **边界**：本实验为 Phase 2.4 局部图谱实验，**不等价于**最终
+> 430 条 Evaluation Benchmark（第 1 节，Phase 5 构建），也不能证明
+> "图谱优于 SQL"——多源融合效果留给 Phase 3（Dynamic Routing）与
+> Phase 4（Claim-Evidence Verification）。

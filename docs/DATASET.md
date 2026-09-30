@@ -69,6 +69,26 @@
   人工核验，**禁止**用待评估系统（Dense / BM25 / Hybrid / Reranker）
   的输出反向构造。
 
+### 0.1 Phase 2.4 知识图谱评测集（`data/eval/kg_eval.jsonl`）
+
+| 项 | Phase 2.4 |
+|---|---|
+| 文件 | `data/eval/kg_eval.jsonl` |
+| 任务数 | **58**（8 类 task_type：entity_lookup / one_hop / two_hop / multi_hop / aggregation / existence / cross_entity × easy/medium/hard） |
+| 图谱 | Neo4j（4,723 节点 / 3,880 关系，`scripts/build_kg.py` 构建） |
+| 生成 | `scripts/build_kg_eval.py` |
+| 指标计算 | `scripts/run_kg_eval.py` + `src/evaluation/kg_metrics.py` |
+| Ground Truth | **全部由 DuckDB SQL 独立核验**（`data/runtime/wwi.duckdb`），**先于**图谱查询生成；含 3 条负结果任务（kg-rq-016b / 048b / 051 / 054，正确答案为空集） |
+
+**边界（重要）**：
+
+- 这是**图谱局部实验集**，不属于正式 430 条 Evaluation Dataset（Phase 5）；
+- 不得把 58 任务 exact match（0.2931）外推为"图谱优于 SQL"——它只证明
+  "图谱作为关系型知识源可支撑多跳关系查询"（限定 WWI 样例 + 项目 schema）；
+- **Ground Truth 生成红线**：`expected_entities` / `expected_relations`
+  必须来自对 DuckDB 的独立 SQL 核验，**禁止**用待评估的 Neo4j / KGTool
+  输出反向构造。
+
 ---
 
 ## 1. 数据来源总览

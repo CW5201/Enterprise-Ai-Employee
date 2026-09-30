@@ -4,19 +4,23 @@
 
 企业 AI 数字员工是一个面向企业数据分析与任务执行的知识增强型 AI Agent 系统，通过任务理解、动态路由、RAG、Text-to-SQL、知识图谱、工具调用和结果验证，将自然语言任务转化为可执行的数据查询、知识检索、分析推理和报告生成流程。
 
-> **项目状态：Phase 2.3 — Reranker（BGE-Reranker-v2-M3）✅ 已完成（2026-09-30）。**
+> **项目状态：Phase 2.4 — Neo4j 知识图谱 ✅ 已完成（2026-09-30）。**
 > Phase 0 完成骨架与文档；Phase 1 完成 `Intent → Router → RAG/SQL → Answer` 最小闭环；
 > Phase 2.1 已将 RAG 接通（BGE-M3 + 真实 Milvus）；
 > Phase 2.2 将 RAG 升级为 Hybrid 检索（Dense + BM25 + RRF）；
-> **Phase 2.3 在 Hybrid 之上接入 BGE-Reranker-v2-M3 重排阶段：
+> Phase 2.3 在 Hybrid 之上接入 BGE-Reranker-v2-M3 重排阶段：
 > Dense + BM25 → RRF → candidate_k=20 → Reranker → final_k=5，
-> 并完成 4 模式（Dense / BM25 / Hybrid / Hybrid+Reranker）× 56 query 检索实验。**
-> 真实实验环境：BGE-M3 + Real Milvus + BM25 + RRF + BGE-Reranker-v2-M3，
-> 190 chunks / 56 queries / top_k=5（详见下节与 `docs/EVALUATION.md` §15）。
+> 并完成 4 模式（Dense / BM25 / Hybrid / Hybrid+Reranker）× 56 query 检索实验；
+> **Phase 2.4 接入 Neo4j 知识图谱：WWI → Neo4j 图谱构建 + 预定义 Cypher
+> 模板 KG Tool（禁止 LLM 生成任意 Cypher）+ 58 任务真实评测（GT 经
+> DuckDB SQL 独立核验）+ 失败分析，详见 `docs/phase2.4/EXPERIMENT_REPORT.md`。**
+> 真实实验环境：BGE-M3 + Real Milvus + BM25 + RRF + BGE-Reranker-v2-M3 + Neo4j 5.26。
 > **实测结果如实记录**：Hybrid Recall@5 = 0.9286 高于单一通道；
-> Reranker 改善 MRR（+0.0113）但未改善 Recall@5 / NDCG@5（负结果保留）。
-> 尚未实现：Neo4j 知识图谱、Task-Adaptive Routing、Claim-Evidence 验证、
-> 评估框架与前端（分别为 Phase 2.4 / 3 / 4 / 5 / 6，见 Roadmap）。
+> Reranker 改善 MRR（+0.0113）但未改善 Recall@5 / NDCG@5（负结果保留）；
+> 知识图谱 two_hop F1 = 0.825 / path accuracy 0.958，multi-hop 复合查询
+> 为当前模板层瓶颈（负结果保留）。
+> 尚未实现：Task-Adaptive Routing、Claim-Evidence 验证、评估框架与前端
+> （分别为 Phase 3 / 4 / 5 / 6，见 Roadmap）。
 
 ---
 
@@ -70,7 +74,7 @@ AI 数字员工的定位不是"能回答问题的聊天机器人"，而是"能�
 | 任务自适应路由 | 依据任务类型动态选择工具集合与执行顺序 | `src/nodes/supervisor_router.py` |
 | 企业知识检索 | Dense + BM25 + RRF 混合检索 + BGE-Reranker-v2-M3 重排（Phase 2.3） | `src/nodes/rag_retrieval.py`, `src/tools/rag_tool.py`, `src/core/reranker.py` |
 | 结构化数据查询 | 只读 Text-to-SQL 与安全执行 | `src/nodes/sql_execution.py`, `src/tools/sql_tool.py` |
-| 关系查询 | 基于预定义 Cypher 模板的图谱查询 | `src/tools/kg_tool.py` |
+| 关系查询 | 基于预定义 Cypher 模板的图谱查询（Phase 2.4，禁止 LLM 生成任意 Cypher） | `src/tools/kg_tool.py`, `src/core/cypher_validator.py`, `src/core/neo4j_client.py` |
 | 数据分析 | 受控 Pandas / NumPy 统计与分析函数 | `src/tools/analysis_tool.py` |
 | 多源证据融合 | 统一证据模型与去重、加权 | `src/nodes/answer_generation.py` |
 | 结论验证 | Claim 抽取 → 证据匹配 → 支持性判定 → Pass/Retry/Correct | `src/nodes/verification.py` |
@@ -219,6 +223,29 @@ Ground Truth 上，对比 4 种检索模式（同一 query / 同一语料 / 同�
   [`docs/EVALUATION.md`](docs/EVALUATION.md) §15 与
   [`docs/phase2.3/EXPERIMENT_REPORT.md`](docs/phase2.3/EXPERIMENT_REPORT.md)。
 
+### Phase 2.4 知识图谱局部实验（真实数值）
+
+58 任务评测集（`data/eval/kg_eval.jsonl`，8 类 task_type ×
+easy/medium/hard，GT 全部由 DuckDB SQL 独立核验）；
+真实 Neo4j 5.26 + `KGTool` 预定义模板（禁止 LLM 生成任意 Cypher）：
+
+| 指标 | 值 |
+|---|---|
+| Exact Match（overall） | 0.2931 |
+| Avg Precision / Recall / F1 | 0.6257 / 0.4993 / 0.5167 |
+| Path Accuracy（已定义任务） | 0.9238 |
+| 失败（unroutable，保留在分母） | 5 |
+| 延迟 mean / p50 / p95 | 3.36 / 1.98 / 3.22 ms |
+
+- two_hop 表现最好（exact 0.625 / F1 0.825 / path 0.958）；
+- multi-hop / cross-entity 复合查询（集合交集 / 双边聚合）是
+  当前模板层瓶颈，exact 为 0（**负结果保留**）；
+- Path Accuracy 显著高于 Exact Match：图遍历可靠，失分集中在
+  远端实体集合精确匹配与复合答案口径。
+- 完整失败分析（6 个真实案例）见
+  [`docs/phase2.4/EXPERIMENT_REPORT.md`](docs/phase2.4/EXPERIMENT_REPORT.md) §10 与
+  [`FAILURE_HANDBOOK.md`](FAILURE_HANDBOOK.md) §4（FH-KG-001/002/003）。
+
 ## 11. Baseline
 
 | 编号 | 系统 |
@@ -325,7 +352,7 @@ enterprise-ai-employee/
 | Phase 2.1 | 真实 RAG：BGE-M3 + Milvus 端到端接通 | ✅ 已完成 |
 | Phase 2.2 | Hybrid RAG：Dense + BM25 + RRF | ✅ 已完成 |
 | Phase 2.3 | Reranker：知识库扩大 + BGE-Reranker-v2-M3 + 4 模式检索实验 | ✅ 已完成 |
-| Phase 2.4 | Neo4j Knowledge Graph | ⏳ 未开始 |
+| Phase 2.4 | Neo4j Knowledge Graph：图谱构建 + KG Tool + 安全 Cypher + 58 任务评测 | ✅ 已完成 |
 | Phase 3 | Task-Adaptive Routing | ⬜ 未开始 |
 | Phase 4 | Claim-Evidence Verification | ⬜ 未开始 |
 | Phase 5 | Evaluation：Baseline + Ablation | ⬜ 未开始 |

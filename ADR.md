@@ -323,3 +323,54 @@ Reranker 在检索链路中的位置、候选规模、默认开关、fake backen
 负面：
 - 候选扩大带来推理延迟（CPU 上 ~5.7s/query），生产需按设备选型；
 - `candidate_k` / `final_k` 是经验值，正式 Benchmark（Phase 5）需分配置重测。
+---
+
+## ADR-009: Phase 2.4 Knowledge Graph 的设计约束
+
+### Context
+
+Phase 2.4 将 WWI 关系型数据（DuckDB）转换为 Neo4j 知识图谱，并提供
+预定义 Cypher 模板的只读查询能力。ADR-004 已确立"只允许预定义模板、
+禁止 LLM 生成任意 Cypher"的方向；本 ADR 记录 Phase 2.4 落地时
+追加的工程约束与负结果纪律。
+
+### Decision
+
+1. **凭证只走环境变量。** Neo4j 密码 / 用户名 / URI 由
+   `.env` / 环境变量注入，`config/settings.yaml` 与 yaml schema
+   文件**不存密码**；异常消息做 credential-safe 映射，不泄露
+   bolt URI / 密码 / 堆栈给 API 调用方。
+2. **命名空间隔离。** 图谱节点 / 关系均打 `__graph='eae'` 标记；
+   `--reset` 只删该命名空间，**绝不**无条件删除整个 Neo4j 数据库，
+   避免污染共享实例。
+3. **派生关系显式溯源。** `Sales_OrderLines` 在 WWI 样例中为空，
+   Order→StockItem 经 `Sales_Invoices` + `Sales_InvoiceLines` 派生
+   （HAS_LINE 边），`__source` 标记 `derived:Sales_InvoiceLines`，
+   不得伪装成原生 Sales_OrderLines 边。
+4. **评测 GT 独立于图谱输出。** `data/eval/kg_eval.jsonl` 的
+   ground truth 全部由 DuckDB SQL 独立核验、**先于** Neo4j 查询
+   生成，避免"用待评估系统输出当答案"的评测污染；负结果任务
+   （空集答案）保留，不因指标难看而删除。
+5. **保留负结果与瓶颈声明。** 58 任务 exact match 仅 0.2931，
+   multi-hop / cross-entity 复合查询是**当前模板层瓶颈**，如实记录；
+   不得外推为"图谱全面优于 SQL"——那需 Phase 3 / 4 才能证明。
+
+### Alternatives
+
+| 方案 | 未采用原因 |
+|---|---|
+| 让 LLM 直接生成任意 Cypher | ADR-004 已否决：不可控、越权、不可复现 |
+| `--reset` 直接 `MATCH () DETACH DELETE` 清空全库 | 破坏共享实例中其他数据；改用命名空间标记 |
+| 用 Neo4j 查询输出反向构造 GT | 评测污染；GT 必须独立（DuckDB SQL） |
+
+### Consequences
+
+正面：
+- 图谱可复现构建（幂等 + 命名空间 + 溯源），评测口径干净；
+- 只读模板 + 校验器使 KG 工具可安全暴露给 agent 而不具备写能力。
+
+负面：
+- 派生关系（HAS_LINE）语义依赖 invoice 表，若将来 WWI 数据补全
+  `Sales_OrderLines` 需切换边来源并重建图谱；
+- 复合 / 负例查询受限于预定义模板覆盖，exact match 偏低是
+  **模板层**而非图数据库的局限，需 Phase 3 路由 + 模板扩展才能改善。

@@ -83,6 +83,54 @@ _（Phase 2 起填充真实案例）_
 
 ### 案例记录
 
+#### FH-KG-001（Phase 2.4，真实）
+
+- **Problem**：存在性任务（"Did customer 2 place order 502?"）被 runner
+  路由到 `customer_orders`（返回订单列表），无法把"负例无订单"判为正确
+  的 no；KGTool 已有 `relationship_exists` 模板但未被启用。
+- **Trigger**：existence 类任务 + 负例期望（正确答案为"no"）。
+- **Expected Behavior**：走 `relationship_exists` 模板，返回
+  `exists: true/false`，负例判为 no 即正确。
+- **Failure Behavior**：路由到列表型模板，`predicted_ids` 非空（该客户
+  的其他订单），exact match 判错。
+- **Detection**：`kg_eval_results.json` 中 `error="unroutable"` 且
+  task_type=existence 的条目。
+- **Recovery**：runner 对 existence 任务优先路由到 `relationship_exists`
+  （Commit 5 改进项；当前保留为已知缺口）。
+- **Regression Test**：`tests/integration/test_kg_tool.py::test_relation_existence`
+  已覆盖 `relationship_exists` 的正/负例；existence 路由待补 runner 用例。
+
+#### FH-KG-002（Phase 2.4，真实）
+
+- **Problem**：跨实体复合问题（"Which customers ordered **both** items
+  supplier 1 supplies?"，正确答案为空集）无对应模板——单模板只能做
+  单个供应商×单个客户的过滤，不能做两个 item 集合的交集。
+- **Trigger**：cross_entity hard 任务，期望为"两个实体集合的交集"或
+  "空集"。
+- **Expected Behavior**：返回正确交集/空集，判为 correct。
+- **Failure Behavior**：`error="unroutable"`（`kg-rq-054`），记为失败
+  （保留在分母，不剔除）。
+- **Detection**：`kg_eval_results.json` 中 task_type=cross_entity 且
+  含 "both items" 措辞的条目。
+- **Recovery**：新增 `customer_items_via_supplier` 的"双 item 交集"
+  变体模板，或允许 runner 组合两次单模板调用求交集（Commit 5 改进项）。
+- **Regression Test**：`kg-rq-051`（空集）与 `kg-rq-052`（单 item 命中）
+  在 `data/eval/kg_eval.jsonl` 中作为负例/正例锚点。
+
+#### FH-KG-003（Phase 2.4，真实）
+
+- **Problem**：多跳/跨实体复合答案需同时返回两组实体（如 056 期望
+  同时给 supplier 与 city），单模板只返回一组，exact match 失分。
+- **Trigger**：期望答案含多组实体 ID（supplier 组 + city 组）。
+- **Expected Behavior**：返回全部期望实体组，exact match 通过。
+- **Failure Behavior**：`predicted_ids` 只含一组（F1 0.667，exact=False，
+  见 `kg-rq-030`/`032`）。
+- **Detection**：`avg_f1` 在 multi_hop/cross_entity 低于 two_hop；
+  `path_accuracy` 接近 1 而 `exact_match` 为 0 的条目。
+- **Recovery**：复合问题拆成多次单模板调用后在 runner 侧合并实体组
+  （Commit 5 改进项）。
+- **Regression Test**：`kg-rq-056` 作为"多组实体"锚点。
+
 _（Phase 2 起填充真实案例）_
 
 ---

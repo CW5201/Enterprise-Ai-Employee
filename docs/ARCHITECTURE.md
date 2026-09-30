@@ -272,11 +272,13 @@ Query ─→ Dense + BM25 ─→ RRF ─→ Candidate Top-N (candidate_k=20)
 fusion_score / rerank_score / rerank_rank`（后两者仅 `hybrid_rerank`
 模式填充），并保留 `source / title / text / metadata`。
 
-**当前未实现（Phase 2.4 / Phase 3 / Phase 4）**：
+**当前未实现（Phase 3 / Phase 4）**：
 
-- ❌ Knowledge Graph / GraphRAG（Neo4j）；
 - ❌ Task-Adaptive Routing；
 - ❌ Claim-Evidence Verification。
+
+> Phase 2.4 的 Knowledge Graph / 图谱构建 / KG Tool 已在 §13 实现，
+> 不再属于"未实现"清单。
 
 ## 12. SQL
 
@@ -298,6 +300,40 @@ fusion_score / rerank_score / rerank_rank`（后两者仅 `hybrid_rerank`
   且模板化后查询语义可被评估与复现。
 - 适用范围：组织与汇报关系、客户-订单-产品关系、部门-岗位关系、实体路径。
 - 输出进入统一证据模型（`source_type = "neo4j"`，`source_ref` 记录模板 ID 与路径）。
+
+**Phase 2.4 已实现的图谱链路**：
+
+```
+DuckDB (wwi.duckdb)  ──scripts/build_kg.py──▶  Neo4j（4,723 节点 / 3,880 关系）
+                                                   │
+                                                   ▼
+                              src/core/cypher_validator.py（read-only 白名单）
+                                                   │
+                                                   ▼
+                              src/tools/kg_tool.py（预定义模板，参数化 Cypher）
+```
+
+- **`src/core/neo4j_client.py`**：唯一持有 Neo4j driver 的模块；
+  凭证来自环境变量（`NEO4J_PASSWORD` 等），异常映射为
+  credential-safe 的 `Neo4jError` 子类；read-only 路径
+  （`execute_readonly`）在进网络前做语句白名单校验（MATCH / RETURN /
+  WITH 开头，禁写关键字）。
+- **`src/core/neo4j_schema.py`** + `config/neo4j_schema.yaml`：幂等
+  约束/索引 DDL（Neo4j 5 `FOR ... REQUIRE` 语法），可重复执行。
+- **`scripts/build_kg.py`** + `data/schemas/kg_mapping.yaml`：DuckDB →
+  实体/关系抽取 → Neo4j MERGE；幂等、`--reset` 只清 `__graph='eae'`
+  命名空间（不删库中其他数据）；所有节点/关系带 `__source` 溯源。
+- **`src/core/cypher_validator.py`**：纯函数读-only 校验器，KGTool 的
+  每个模板在导入期即通过校验；构造型语句（`relationship_exists`）
+  在执行前二次校验。
+- **`src/tools/kg_tool.py`**：20+ 预定义业务模板（实体查找 / 一跳 /
+  两跳 / 多跳 / 聚合 / 跨实体 / 关系存在性），统一结果封装
+  `{success, data, rows, source, query_type, latency_ms}`；失败路径
+  不泄露密码/连接串/堆栈。
+- **数据事实**：`Sales_OrderLines` 在 WWI 样例中为空，Order→StockItem
+  经 `Sales_Invoices` + `Sales_InvoiceLines` 派生（HAS_LINE 边，
+  `__source` 标记 `derived`）；null FK 不建边。
+
 
 ## 14. Tool Calling
 

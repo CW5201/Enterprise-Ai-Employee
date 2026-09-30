@@ -201,9 +201,38 @@ Qwen 生成带来源的回答。本阶段使用**真实** BGE-M3 与 **真实** 
 
 ---
 
-## Phase 2.4 — Neo4j Knowledge Graph ⏳
+## Phase 2.4 — Neo4j Knowledge Graph ✅（2026-09-30）
 
 **目标**：关系型知识走 Neo4j（预定义 Cypher 模板），与 RAG / SQL 职责不混用。
+
+**已交付**（全部真实实现 + 真实 Neo4j 实验）：
+
+- ✅ **Neo4j 基础设施**：`src/core/neo4j_client.py`（连接 / health /
+  read-only guard / 异常映射，密码走环境变量）、
+  `src/core/neo4j_schema.py`（幂等约束/索引 DDL runner）；
+- ✅ **图谱 Schema**：`config/neo4j_schema.yaml`（7 节点 / 8 关系 /
+  7 约束 / 4 索引，以 WWI 真实 DuckDB schema 为准）；
+- ✅ **图谱构建**：`scripts/build_kg.py` + `data/schemas/kg_mapping.yaml`
+  （幂等 MERGE、`--reset` 只清 `__graph='eae'` 命名空间）；真实导入
+  4,723 节点 / 3,880 关系，与 DuckDB 交叉核验通过；
+- ✅ **KG Tool + 安全 Cypher**：`src/tools/kg_tool.py`（预定义模板，
+  全部经 `src/core/cypher_validator.py` 校验，禁止 LLM 生成任意 Cypher）；
+- ✅ **评测数据集 + 框架**：`data/eval/kg_eval.jsonl`（58 任务，
+  GT 全部由 DuckDB SQL 独立核验）+ `src/evaluation/kg_metrics.py` +
+  `scripts/run_kg_eval.py`；
+- ✅ **真实实验 + 失败分析 + 阶段报告**：
+  `docs/phase2.4/EXPERIMENT_REPORT.md`（exact match 29.31% / P 0.626 /
+  R 0.499 / F1 0.517 / path accuracy 0.924；失败全部为模板路由/覆盖
+  缺口与评测口径，**非 Neo4j 缺陷**；负结果保留）；
+- `docs/RESEARCH.md` §12 记录 Phase 2.4 对 RQ3 的阶段性证据；
+  `FAILURE_HANDBOOK.md` §4 登记 FH-KG-001/002/003 三条真实案例。
+
+**本阶段明确不做**（留给 Phase 3 / 4）：
+
+- 不做 Dynamic Routing（KGTool 由人工指定模板调用，agent 不自主选源）；
+- 不做 Claim-Evidence Verification（图谱尚未作为融合证据源接入验证链路）；
+- 不把"图谱 exact match 29.31%"外推为"图谱优于 SQL"——本实验只能证明
+  "图谱作为关系型知识源可支撑多跳关系查询"。
 
 ---
 
@@ -213,7 +242,7 @@ Qwen 生成带来源的回答。本阶段使用**真实** BGE-M3 与 **真实** 
 
 Phase 2 已按子阶段推进：Phase 2.1（真实 RAG，✅）→ Phase 2.2
 （Hybrid RAG = Dense + BM25 + RRF，✅）→ Phase 2.3（Reranker，✅）→
-Phase 2.4（Neo4j KG，⏳）。
+Phase 2.4（Neo4j KG，✅）。
 
 内容：
 - `src/core/embedder.py`（BGE-M3）、`vector_store.py`（Milvus）—— ✅ Phase 2.1；
@@ -225,8 +254,8 @@ Phase 2.4（Neo4j KG，⏳）。
 - `src/nodes/rag_retrieval.py`：Phase 2.2 已实现 Dense + BM25 + RRF；
   Rerank 留给 Phase 2.3；
 - `src/nodes/sql_execution.py`：Text-to-SQL（Schema + 数据字典 + Few-shot）+ 安全校验；
-- `src/tools/kg_tool.py`：预定义 Cypher 模板（禁止 LLM 生成任意 Cypher）—— Phase 2.4；
-- 知识图谱构建：从 WideWorldImporters 抽取实体与关系导入 Neo4j —— Phase 2.4；
+- `src/tools/kg_tool.py`：预定义 Cypher 模板（禁止 LLM 生成任意 Cypher）—— ✅ Phase 2.4；
+- 知识图谱构建：从 WideWorldImporters 抽取实体与关系导入 Neo4j —— ✅ Phase 2.4；
 - `src/core/tool_registry.py`：工具白名单与权限校验；
 - 验证 `data/schemas/*.yaml` 与真实数据库一致，并修正声明。
 
