@@ -124,9 +124,17 @@ tools:
   registry_file: config/tool_registry.yaml
 
 # --- Verification ----------------------------------------------------------
+# Phase 4 Claim-Evidence Verification.  Thresholds are read by
+# src/core/claim_verifier.py (VerificationConfig.from_section); business
+# code must never hardcode them.
 verification:
   enabled: true
   min_support_score: 0.6
+  support_threshold: 0.6          # Layer-3 semantic support cut-off
+  semantic_threshold: 0.5        # minimum similarity for a semantic candidate
+  numeric_tolerance: 0.01        # relative tolerance for exact value match
+  require_evidence: true         # a claim with zero candidates is unsupported
+  max_semantic_candidates: 5     # top-K candidates sent to the LLM judge
   max_retry: 2
   on_failure: retry        # retry | correct | pass_with_warning
 

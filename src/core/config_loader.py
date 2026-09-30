@@ -187,6 +187,40 @@ class Neo4jSettings:
 
 
 @dataclass
+class VerificationSettings:
+    """Tunable knobs for the Phase 4 claim-evidence verification engine.
+
+    Mirrors the ``verification`` section of settings.yaml; consumed by
+    :class:`src.core.claim_verifier.VerificationConfig`.  Thresholds must
+    live here (config), never in business code.
+    """
+
+    enabled: bool = True
+    min_support_score: float = 0.6
+    support_threshold: float = 0.6
+    semantic_threshold: float = 0.5
+    numeric_tolerance: float = 0.01
+    require_evidence: bool = True
+    max_semantic_candidates: int = 5
+    max_retry: int = 2
+    on_failure: str = "retry"  # retry | correct | pass_with_warning
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> VerificationSettings:
+        return cls(
+            enabled=bool(d.get("enabled", cls.enabled)),
+            min_support_score=float(d.get("min_support_score", d.get("support_threshold", cls.min_support_score))),
+            support_threshold=float(d.get("support_threshold", cls.support_threshold)),
+            semantic_threshold=float(d.get("semantic_threshold", cls.semantic_threshold)),
+            numeric_tolerance=float(d.get("numeric_tolerance", cls.numeric_tolerance)),
+            require_evidence=bool(d.get("require_evidence", cls.require_evidence)),
+            max_semantic_candidates=int(d.get("max_semantic_candidates", cls.max_semantic_candidates)),
+            max_retry=int(d.get("max_retry", cls.max_retry)),
+            on_failure=str(d.get("on_failure", cls.on_failure)),
+        )
+
+
+@dataclass
 class Settings:
     """Typed view over config/settings.yaml + routing_rules.yaml."""
 
@@ -197,6 +231,7 @@ class Settings:
     duckdb: DuckDBSettings = field(default_factory=DuckDBSettings)
     neo4j: Neo4jSettings = field(default_factory=Neo4jSettings)
     routing: dict[str, Any] = field(default_factory=dict)
+    verification: VerificationSettings = field(default_factory=VerificationSettings)
     raw: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -229,6 +264,7 @@ def get_settings(config_dir: Path | None = None) -> Settings:
         duckdb=DuckDBSettings.from_dict(_section(settings_raw, "duckdb")),
         neo4j=Neo4jSettings.from_dict(_section(settings_raw, "neo4j")),
         routing=routing_raw,
+        verification=VerificationSettings.from_dict(_section(settings_raw, "verification")),
         raw=settings_raw,
     )
 
@@ -278,6 +314,7 @@ __all__ = [
     "RagSettings",
     "RoutingRules",
     "Settings",
+    "VerificationSettings",
     "get_routing_rules",
     "get_settings",
 ]
