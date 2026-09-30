@@ -12,6 +12,16 @@
 **边界**：正式 430+ 条 Benchmark 已落地；数值型业务结论来自**合成**业务种子
 数据，只用于验证系统流程与 GT 一致性，不得当作真实经营指标对外引用。
 
+## 端到端评测（Phase 5）
+
+- `scripts/run_enterprise_eval.py`：驱动统一 Benchmark 上各系统
+  （A 完整 / B 去验证 / C 静态无验证 / B1–B4 基线 / 组件消融），
+  写 `artifacts/phase5/`（不进 Git）；
+- `src/evaluation/enterprise_metrics.py`：分层指标（route / tool / answer /
+  evidence + unsupported-leakage + latency 百分位 + LLM 调用计数）；
+- `src/evaluation/enterprise_systems.py`：系统/消融矩阵（dataclass，确定性枚举）；
+- 指标与系统说明见 `docs/EVALUATION.md` Phase 5 节。
+
 ## `hybrid_eval.jsonl`
 
 - **10 个 query**，覆盖：精确关键词 / 中文短问题 / 中文长问题 / 多关键词 /
