@@ -93,3 +93,4 @@ artifacts/evaluation/*.csv
 # --- Phase 2.3 experiment artifacts (full runs stay local; docs only) ------
 artifacts/phase2.3/
 artifacts/phase2.2/
+artifacts/phase2.4/

@@ -1,0 +1,203 @@
+# ---------------------------------------------------------------------------
+# Knowledge Graph mapping — Phase 2.4 (WWI DuckDB -> Neo4j)
+#
+# This file is the machine-readable companion to config/neo4j_schema.yaml.
+# It drives scripts/build_kg.py: which DuckDB tables feed which node labels,
+# which joins create which relationship types, and which properties are
+# copied onto edges (optional).
+#
+# ``target_key`` is the stable business key used as the node's unique
+# constraint property (see config/neo4j_schema.yaml constraints).  Every
+# node and relationship additionally carries ``__source`` so any record can
+# be traced back to its origin table.
+#
+# Notes on this dataset (WideWorldImporters sample):
+# - Sales_OrderLines is EMPTY in this sample; the Order->StockItem link is
+#   therefore derived through Sales_Invoices + Sales_InvoiceLines (the only
+#   tables that carry order-line detail).  The derivation is explicit and the
+#   edge carries a __source note so it is not mistaken for a native
+#   Sales_OrderLines link.
+# - Several FK columns are nullable in WWI (BuyingGroupID, SupplierID,
+#   OrderID on Invoices); relationships are only created when the FK is set.
+# ---------------------------------------------------------------------------
+
+version: v1.0
+source_database: "${DUCKDB_PATH:-data/runtime/wwi.duckdb}"
+graph_namespace: eae
+
+# ---------------------------------------------------------------------------
+# Nodes
+# ---------------------------------------------------------------------------
+nodes:
+
+  - target_label: Customer
+    target_key: customer_id
+    source_table: Sales_Customers
+    source_key: CustomerID
+    properties:
+      CustomerID: customer_id
+      CustomerName: name
+      CreditLimit: credit_limit
+      PaymentDays: payment_days
+      IsOnCreditHold: is_on_credit_hold
+      AccountOpenedDate: account_opened_date
+
+  - target_label: Order
+    target_key: order_id
+    source_table: Sales_Orders
+    source_key: OrderID
+    properties:
+      OrderID: order_id
+      CustomerID: customer_id
+      OrderDate: order_date
+      ExpectedDeliveryDate: expected_delivery_date
+      CustomerPurchaseOrderNumber: purchase_order_number
+      IsUndersupplyBackordered: is_undersupply_backordered
+
+  - target_label: Invoice
+    target_key: invoice_id
+    source_table: Sales_Invoices
+    source_key: InvoiceID
+    properties:
+      InvoiceID: invoice_id
+      CustomerID: customer_id
+      OrderID: order_id
+      InvoiceDate: invoice_date
+      IsCreditNote: is_credit_note
+
+  - target_label: StockItem
+    target_key: stock_item_id
+    source_table: Warehouse_StockItems
+    source_key: StockItemID
+    properties:
+      StockItemID: stock_item_id
+      StockItemName: name
+      UnitPrice: unit_price
+      RecommendedRetailPrice: recommended_retail_price
+      TaxRate: tax_rate
+      Brand: brand
+      Barcode: barcode
+      IsChillerStock: is_chiller_stock
+      LeadTimeDays: lead_time_days
+      SupplierID: supplier_id
+
+  - target_label: Supplier
+    target_key: supplier_id
+    source_table: Purchasing_Suppliers
+    source_key: SupplierID
+    properties:
+      SupplierID: supplier_id
+      SupplierName: name
+      WebsiteURL: website_url
+      PhoneNumber: phone_number
+      PaymentDays: payment_days
+      DeliveryCityID: delivery_city_id
+
+  - target_label: BuyingGroup
+    target_key: buying_group_id
+    source_table: Sales_BuyingGroups
+    source_key: BuyingGroupID
+    properties:
+      BuyingGroupID: buying_group_id
+      BuyingGroupName: name
+
+  - target_label: City
+    target_key: city_id
+    source_table: Application_Cities
+    source_key: CityID
+    properties:
+      CityID: city_id
+      CityName: name
+      StateProvinceID: state_province_id
+
+# ---------------------------------------------------------------------------
+# Relationships
+#
+# Each entry declares the join that produces the edge:
+#   from_label -[:relationship]-> to_label, using source_table's columns.
+# ``from_key`` / ``to_key`` are the column names on source_table that carry
+# the two endpoint business keys.  Rows where either FK is NULL are counted
+# as skipped (they represent absent relations in the source data).
+# Edge properties: ``edge_properties`` maps source column -> edge property.
+# ---------------------------------------------------------------------------
+relationships:
+
+  - relationship: PLACED
+    from_label: Customer
+    to_label: Order
+    source_table: Sales_Orders
+    from_key: CustomerID
+    to_key: OrderID
+    notes: "Customer places an order (Sales_Orders.CustomerID -> OrderID)."
+
+  - relationship: INVOICED
+    from_label: Order
+    to_label: Invoice
+    source_table: Sales_Invoices
+    from_key: OrderID
+    to_key: InvoiceID
+    nullable_fk: true
+    notes: "Order is billed via an invoice (Sales_Invoices: OrderID -> InvoiceID);
+            OrderID is nullable in WWI — edges only when set."
+
+  - relationship: SHIPPED_ON
+    from_label: Invoice
+    to_label: StockItem
+    source_table: Sales_InvoiceLines
+    from_key: InvoiceID
+    to_key: StockItemID
+    edge_properties:
+      quantity: Quantity
+      extended_price: ExtendedPrice
+    notes: "Invoice line: which items (and how many) an invoice ships."
+
+  - relationship: HAS_LINE
+    from_label: Order
+    to_label: StockItem
+    source_table: Sales_InvoiceLines
+    from_key: InvoiceID
+    to_key: StockItemID
+    via:
+      - Sales_Invoices        # OrderID -> InvoiceID
+      - Sales_InvoiceLines    # InvoiceID + StockItemID
+    notes: "Derived link: Sales_OrderLines is empty in this sample, so the
+            order->item link is materialised through invoices + invoice lines.
+            Edge carries __source='derived:Sales_InvoiceLines'."
+
+  - relationship: SUPPLIED_BY
+    from_label: StockItem
+    to_label: Supplier
+    source_table: Warehouse_StockItems
+    from_key: StockItemID
+    to_key: SupplierID
+    nullable_fk: true
+    notes: "StockItem is supplied by a supplier (Warehouse_StockItems:
+            StockItemID -> SupplierID); SupplierID nullable — edge only when set."
+
+  - relationship: BELONGS_TO_GROUP
+    from_label: Customer
+    to_label: BuyingGroup
+    source_table: Sales_Customers
+    from_key: CustomerID
+    to_key: BuyingGroupID
+    nullable_fk: true
+    notes: "Customer belongs to a buying group (Sales_Customers:
+            CustomerID -> BuyingGroupID); BuyingGroupID nullable — edge only when set."
+
+  - relationship: SUPPLIER_IN_CITY
+    from_label: Supplier
+    to_label: City
+    source_table: Purchasing_Suppliers
+    from_key: SupplierID
+    to_key: DeliveryCityID
+    notes: "Supplier's delivery city (Purchasing_Suppliers: SupplierID ->
+            DeliveryCityID, which references Application_Cities.CityID)."
+
+# ---------------------------------------------------------------------------
+# Reset scope
+# ---------------------------------------------------------------------------
+# --reset only removes nodes/relationships under this namespace so that a
+# re-build never wipes unrelated data that may exist in the same instance.
+# Every node/relationship created by build_kg.py carries __graph='eae'.
+reset:
+  namespace: eae
