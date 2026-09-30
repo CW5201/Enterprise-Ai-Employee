@@ -188,8 +188,9 @@ def _run_graph_system(
 
     categories: list[str] = []
     for e in state.get("errors") or []:
-        msg = str(e.get("message", "")).lower()
-        stage = str(e.get("stage", ""))
+        e_dict = e if isinstance(e, dict) else e.model_dump()
+        msg = str(e_dict.get("message", "")).lower()
+        stage = str(e_dict.get("stage", ""))
         if "429" in msg or "rate" in msg:
             categories.append("llm_429")
         elif "timeout" in msg or "timed out" in msg:
@@ -217,7 +218,11 @@ def _run_graph_system(
         "guard": guard,
         "any_error": bool(state.get("errors")) or route == "" ,
         "failure_categories": categories,
-        "errors": [f"{e.get('stage')}: {e.get('message')}" for e in (state.get("errors") or [])][:5],
+        "errors": [
+            f"{(e if isinstance(e, dict) else e.model_dump()).get('stage')}: "
+            f"{(e if isinstance(e, dict) else e.model_dump()).get('message')}"
+            for e in (state.get("errors") or [])
+        ][:5],
         "llm_calls": llm_calls,
         "latency_ms": _stage_latencies(state, t_total),
     }
@@ -334,6 +339,10 @@ def _run_static_tool(config: SystemConfig, task: dict[str, Any]) -> dict[str, An
         state["errors"] = [f"baseline tool error: {exc}"]
 
     t_total = time.perf_counter() - t0
+    err_lines = []
+    for e in (state.get("errors") or []):
+        e_dict = e if isinstance(e, dict) else (e.model_dump() if hasattr(e, "model_dump") else {"message": str(e)})
+        err_lines.append(f"{e_dict.get('stage')}: {e_dict.get('message')}")
     pred = {
         "route": tool,
         "tools": [tool],
@@ -344,7 +353,7 @@ def _run_static_tool(config: SystemConfig, task: dict[str, Any]) -> dict[str, An
         "guard": None,
         "any_error": bool(categories),
         "failure_categories": categories,
-        "errors": [str(e) for e in (state.get("errors") or [])][:5],
+        "errors": err_lines[:5],
         "llm_calls": llm_calls,
         "latency_ms": {"routing": 0.0, "tool_execution": round((t_total) * 1000, 2),
                        "verification": 0.0, "total": round(t_total * 1000, 2)},
@@ -453,10 +462,13 @@ def _make_graph_runner(config: SystemConfig, force_offline: bool) -> Any:
         from src.core.routing_rules import decide as _decide_rule
         from src.nodes.answer_generation import AnswerGenerationNode
         from src.nodes.multi_tool_execution import MultiToolExecutionNode
+        from src.nodes.sql_execution import SQLExecutionNode
         from src.tools.rag_tool import RAGTool
 
         policy = RoutingPolicy.load()
         answer_node = AnswerGenerationNode(llm=LLMClient())
+        sql_node = SQLExecutionNode(llm=LLMClient())
+        rag_tool = RAGTool(backend=backend, retrieval_mode=config.retrieval_mode)
         kg_tool = None if config.enable_kg else _DisabledKG()
 
         def runner(query: str) -> dict[str, Any]:
@@ -476,8 +488,7 @@ def _make_graph_runner(config: SystemConfig, force_offline: bool) -> Any:
                 state["status"] = "clarification"
                 return state
             executor = MultiToolExecutionNode(
-                rag_tool=RAGTool(retrieval_mode=config.retrieval_mode),
-                kg_tool=kg_tool,
+                sql_node=sql_node, rag_tool=rag_tool, kg_tool=kg_tool, llm=LLMClient(),
             )
             ex = dict(executor.run(state))
             state.update(ex)
