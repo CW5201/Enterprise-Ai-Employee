@@ -204,11 +204,16 @@ def _pool() -> list[Evidence]:
 
 class TestLinking:
     def test_explicit_source_ref_wins(self) -> None:
+        # when an explicit ref actually resolves against the pool, the
+        # linker returns ONLY that record (explicit refs are authoritative
+        # and must not be diluted with other candidates)
+        pool = _pool()
+        sql_id = next(e.evidence_id for e in pool if e.source_type == "sql")
         claim = {"claim_id": "c1", "text": "金额为 4600.5", "claim_type": "numerical",
-                 "source_refs": ["ev-sql"], "value": 4600.5, "entities": []}
-        ids, reason = candidate_evidence(claim, _pool())
+                 "source_refs": [sql_id], "value": 4600.5, "entities": []}
+        ids, reason = candidate_evidence(claim, pool)
         assert reason == "explicit_source_refs"
-        assert ids
+        assert ids == [sql_id]
 
     def test_entity_overlap_multi_source(self) -> None:
         claim = {"claim_id": "c2", "text": "差旅报销上限为 800 元", "claim_type": "rule_based",

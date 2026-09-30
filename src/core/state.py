@@ -160,6 +160,9 @@ class AgentState(TypedDict, total=False):
     claims: Annotated[list[dict[str, Any]], _append]
     evidence_v4: Annotated[list[dict[str, Any]], _append]
     verification_results: Annotated[list[dict[str, Any]], _append]
+    # verification_summary is a derived dict written by the verification
+    # node; last-write-wins (not appendable).
+    verification_summary: dict[str, Any]
     # answer_guard verdict written last (Phase 4 commit 4)
     guard_decision: dict[str, Any]
 
@@ -201,6 +204,7 @@ def make_state(user_query: str, *, request_id: str | None = None) -> AgentState:
         "claims": [],
         "evidence_v4": [],
         "verification_results": [],
+        "verification_summary": {},
         "guard_decision": {},
         "answer": "",
         "latency": {},

@@ -122,8 +122,12 @@ def adapt_sql(payload: dict[str, Any], *, evidence_id: str = "", database: str =
         "row_count": row_count,
     }
     content = f"SQL: {sql}\nRows ({row_count}): {rows[:10]}"
+    # a stable, unique id derived from the query so distinct SQL steps
+    # do not collide in the verification pool
+    import hashlib
+    digest = hashlib.md5(sql.encode("utf-8")).hexdigest()[:8]
     return Evidence(
-        evidence_id=evidence_id or "ev-sql",
+        evidence_id=evidence_id or f"ev-sql-{digest}",
         source_type=normalize_source_type("sql"),
         source_ref=f"sql:{sql}",
         content=content,

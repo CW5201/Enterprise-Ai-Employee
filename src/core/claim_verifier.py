@@ -248,7 +248,8 @@ def verify_exact(
     non_matching = [v for v in values if abs(v - claimed) > cfg.numeric_tolerance * max(1.0, abs(claimed))]
 
     distinct = {round(v, 6) for v in values}
-    # multiple evidence sources disagree with each other -> conflict, never pick
+    # multiple evidence sources disagree with each other AND at least one
+    # matches the claim -> conflict; never silently auto-pick a value.
     if len(distinct) > 1 and matches and non_matching:
         return VerificationResult(
             claim_id=str(claim.get("claim_id", "")),
@@ -280,20 +281,24 @@ def verify_exact(
             claimed_value=claimed,
         )
 
-    # a single consistent value that is simply wrong -> conflict
-    return VerificationResult(
-        claim_id=str(claim.get("claim_id", "")),
-        claim_type=str(claim.get("claim_type", "numerical")),  # type: ignore[arg-type]
-        supported=False,
-        status="conflict",
-        conflict=True,
-        support_score=0.0,
-        evidence_ids=[eid for v in values for eid in value_evidence.get(round(v, 6), [])],
-        verifier_type="exact",
-        reason=f"claimed {claimed} but evidence says {non_matching[0]}",
-        computed_value=non_matching[0],
-        claimed_value=claimed,
-    )
+    if non_matching:
+        # at least one source contradicts the claim -> conflict
+        return VerificationResult(
+            claim_id=str(claim.get("claim_id", "")),
+            claim_type=str(claim.get("claim_type", "numerical")),  # type: ignore[arg-type]
+            supported=False,
+            status="conflict",
+            conflict=True,
+            support_score=0.0,
+            evidence_ids=[eid for v in non_matching for eid in value_evidence.get(round(v, 6), [])],
+            verifier_type="exact",
+            reason=f"claimed {claimed} but evidence says {non_matching[0]}",
+            computed_value=non_matching[0],
+            claimed_value=claimed,
+        )
+
+    # no values parseable from candidates -> inconclusive, fall through
+    return None
 
 
 # ---------------------------------------------------------------------------

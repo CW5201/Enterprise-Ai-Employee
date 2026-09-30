@@ -53,18 +53,25 @@ def collect_evidence(state: AgentState) -> list[Evidence]:
             evidence.append(ev)
 
     # 1. Phase 3 multi-tool results (richest provenance)
+    step_index = 0
     for tr in (state.get("tool_results") or []):
         tool = str(tr.get("tool", ""))
         if not tr.get("success"):
             continue
+        step_index += 1
+        step_id = tr.get("step", step_index)
         data = tr.get("data") or {}
         if tool == "sql":
+            sql_text = str(tr.get("sql") or "").strip()
+            rows = data.get("rows") or []
             add([adapt_sql(
-                {"sql": tr.get("sql") or "", "columns": data.get("columns") or [],
-                 "rows": data.get("rows") or [], "row_count": len(data.get("rows") or [])},
+                {"sql": sql_text, "columns": data.get("columns") or [],
+                 "rows": rows, "row_count": len(rows)},
+                evidence_id=f"ev-tool-sql-{step_id}",
             )])
         elif tool == "rag":
-            add([adapt_rag(h) for h in (tr.get("results") or data.get("hits") or [])])
+            hits = tr.get("results") or data.get("hits") or []
+            add([adapt_rag(h) for h in hits])
         elif tool == "kg":
             add(adapt_tool_result("kg", {
                 "success": tr.get("success"),

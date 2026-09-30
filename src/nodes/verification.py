@@ -86,7 +86,7 @@ class VerificationNode:
             pool[ev.evidence_id] = ev
         evidence_list = list(pool.values())
 
-        link = link_claims_to_evidence(claims, evidence_list)
+        link = link_claims_to_evidence(claims, evidence_list, max_candidates=10)
         results = verify_all(
             claims, link, pool, cfg,
             scorer=self._make_scorer(),
@@ -96,3 +96,9 @@ class VerificationNode:
             "verification_results": [r.model_dump() for r in results],
             "verification_summary": summarize(results),
         }
+
+    def run_without_summary(self, state: AgentState) -> AgentState:
+        """Diagnostic variant that does NOT overwrite the summary channel."""
+        out = self.run(state)
+        out.pop("verification_summary", None)
+        return out

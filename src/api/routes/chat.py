@@ -42,6 +42,11 @@ class ChatResponse(BaseModel):
     tool_calls: list[dict[str, Any]]
     status: str
     latency: dict[str, float]
+    # Phase 4 Claim-Evidence Verification
+    sources: list[dict[str, Any]] = []
+    verification: list[dict[str, Any]] = []
+    verification_summary: dict[str, Any] = {}
+    guard: dict[str, Any] = {}
 
 
 router = APIRouter(tags=["chat"])
@@ -74,6 +79,13 @@ def chat(request: Request, body: ChatRequest) -> dict[str, Any]:
         "tool_calls": [tc.model_dump() for tc in (final.get("tool_calls") or [])],
         "status": final.get("status", ""),
         "latency": final.get("latency", {}),
+        # Phase 4: user-safe citations + verification verdicts.  The guard
+        # has already stripped internal credentials / stack traces; only
+        # doc titles, chunk refs, table names and KG templates are exposed.
+        "sources": final.get("answer_sources") or [],
+        "verification": final.get("verification_results") or [],
+        "verification_summary": final.get("verification_summary") or {},
+        "guard": final.get("guard_decision") or {},
     }
 
 
