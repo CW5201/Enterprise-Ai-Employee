@@ -4,16 +4,19 @@
 
 企业 AI 数字员工是一个面向企业数据分析与任务执行的知识增强型 AI Agent 系统，通过任务理解、动态路由、RAG、Text-to-SQL、知识图谱、工具调用和结果验证，将自然语言任务转化为可执行的数据查询、知识检索、分析推理和报告生成流程。
 
-> **项目状态：Phase 2.2 — Hybrid RAG（Dense + BM25 + RRF）✅ 已完成（2026-09-30）。**
+> **项目状态：Phase 2.3 — Reranker（BGE-Reranker-v2-M3）✅ 已完成（2026-09-30）。**
 > Phase 0 完成骨架与文档；Phase 1 完成 `Intent → Router → RAG/SQL → Answer` 最小闭环；
 > Phase 2.1 已将 RAG 接通（BGE-M3 + 真实 Milvus）；
-> **Phase 2.2 将 RAG 升级为 Hybrid 检索：Dense Retrieval（BGE-M3 → Milvus）
-> + BM25 关键词召回 → RRF 融合 → Top-K → Qwen 生成带来源引用的回答。**
-> 真实实验环境：BGE-M3 + Real Milvus + BM25 + RRF，35 chunks / 10 queries / top_k=5。
-> **实测结果如实记录**（详见下节与 `docs/EVALUATION.md`）：当前小规模语料下
-> Hybrid 与 Dense 指标一致（并未普遍优于 Dense），BM25 在 Recall@5 上达 1.0。
-> 尚未实现：Reranker、Neo4j 知识图谱、Claim-Evidence 验证、评估框架与前端
-> （分别为 Phase 2.3 / 2.4 / 4 / 5 / 6，见 Roadmap）。
+> Phase 2.2 将 RAG 升级为 Hybrid 检索（Dense + BM25 + RRF）；
+> **Phase 2.3 在 Hybrid 之上接入 BGE-Reranker-v2-M3 重排阶段：
+> Dense + BM25 → RRF → candidate_k=20 → Reranker → final_k=5，
+> 并完成 4 模式（Dense / BM25 / Hybrid / Hybrid+Reranker）× 56 query 检索实验。**
+> 真实实验环境：BGE-M3 + Real Milvus + BM25 + RRF + BGE-Reranker-v2-M3，
+> 190 chunks / 56 queries / top_k=5（详见下节与 `docs/EVALUATION.md` §15）。
+> **实测结果如实记录**：Hybrid Recall@5 = 0.9286 高于单一通道；
+> Reranker 改善 MRR（+0.0113）但未改善 Recall@5 / NDCG@5（负结果保留）。
+> 尚未实现：Neo4j 知识图谱、Task-Adaptive Routing、Claim-Evidence 验证、
+> 评估框架与前端（分别为 Phase 2.4 / 3 / 4 / 5 / 6，见 Roadmap）。
 
 ---
 
@@ -65,7 +68,7 @@ AI 数字员工的定位不是"能回答问题的聊天机器人"，而是"能�
 |---|---|---|
 | 意图理解 | 将自然语言任务解析为意图、槽位与约束 | `src/nodes/intent_understanding.py` |
 | 任务自适应路由 | 依据任务类型动态选择工具集合与执行顺序 | `src/nodes/supervisor_router.py` |
-| 企业知识检索 | Dense + BM25 + RRF 混合检索（Phase 2.2） | `src/nodes/rag_retrieval.py`, `src/tools/rag_tool.py` |
+| 企业知识检索 | Dense + BM25 + RRF 混合检索 + BGE-Reranker-v2-M3 重排（Phase 2.3） | `src/nodes/rag_retrieval.py`, `src/tools/rag_tool.py`, `src/core/reranker.py` |
 | 结构化数据查询 | 只读 Text-to-SQL 与安全执行 | `src/nodes/sql_execution.py`, `src/tools/sql_tool.py` |
 | 关系查询 | 基于预定义 Cypher 模板的图谱查询 | `src/tools/kg_tool.py` |
 | 数据分析 | 受控 Pandas / NumPy 统计与分析函数 | `src/tools/analysis_tool.py` |
@@ -161,21 +164,19 @@ AI 数字员工的定位不是"能回答问题的聊天机器人"，而是"能�
 5. Evidence Support Rate
 6. Average Latency
 
-> 当前**没有任何实验数值**。所有指标在 Phase 5 由 `src/evaluation/runner.py` 真实运行产生。
+> 最终系统级指标（Task Success Rate 等）在 Phase 5 由 `src/evaluation/runner.py`
+> 真实运行产生；在 Phase 5 之前**没有系统级实验数值**。
+> 检索层的阶段性实验数值（Recall@K / MRR / NDCG@5）由
+> `scripts/run_hybrid_eval.py`（Phase 2.2）与 `scripts/run_retrieval_eval.py`
+> （Phase 2.3）生成，结果写入 `artifacts/`（本地保留，不进 Git）。
 
 详见 [`docs/EVALUATION.md`](docs/EVALUATION.md)。
 
 ### Phase 2.2 Hybrid Retrieval 局部实验（真实数值）
 
-Phase 2.2 在**当前真实实验环境**下完成了 Hybrid RAG 的阶段性检索实验：
-
-- Embedding：**BGE-M3**（真实模型）
-- 向量库：**Real Milvus**（`enterprise_knowledge`）
-- 关键词召回：**BM25**
-- 融合：**RRF**（k=60）
-- 语料规模：**35 chunks**；**10 queries**；**top_k = 5**
-
-三种模式在同一 query / 同一语料 / 同一 top_k 下实测：
+Phase 2.2 在**当前真实实验环境**下完成了 Hybrid RAG 的阶段性检索实验
+（35 chunks / 10 queries，后续语料扩大后重跑结果见
+`docs/EVALUATION.md` §14）：
 
 | Mode | Recall@1 | Recall@3 | Recall@5 | MRR |
 |---|---:|---:|---:|---:|
@@ -185,18 +186,38 @@ Phase 2.2 在**当前真实实验环境**下完成了 Hybrid RAG 的阶段性检
 
 **如实说明（不做无依据结论）：**
 
-- 在当前 35-chunk 小规模知识库上，**Hybrid 与 Dense 在本次实验上的指标一致，
-  并没有表现出普遍增益**。
-- **BM25 在 Recall@5 上达到 1.0**（高于 Dense 的 0.95），说明关键词匹配
-  对当前制度类小语料具有一定价值。
-- 由于语料小、query 区分度高，无法据此断言 Hybrid 在一般企业知识库上
-  普遍有效；下一阶段扩大语料并引入 Reranker 后再继续评估。
+- 在 35-chunk 小规模语料上，**Hybrid 与 Dense 指标一致，未表现出普遍增益**；
+  语料扩大后（190 chunks / 56 queries）重测，Hybrid 已优于单一通道（§15）。
 - 该实验是 **Phase 2.2 的局部检索实验**，**不等价于最终 430 条 Evaluation
   Benchmark**（后者在 Phase 5 构建）。
 
 完整实验设置、Ground Truth、指标与局限见
 [`docs/EVALUATION.md`](docs/EVALUATION.md) 的 "Phase 2.2 Hybrid Retrieval
 Experiment" 一节；逐 query 结果由 `scripts/run_hybrid_eval.py` 生成。
+
+### Phase 2.3 Reranker 局部实验（真实数值）
+
+Phase 2.3 在扩大后的知识库（**27 docs / 190 chunks**）与 56 条人工核验
+Ground Truth 上，对比 4 种检索模式（同一 query / 同一语料 / 同一 final_k=5）：
+
+| Mode | Recall@1 | Recall@3 | Recall@5 | MRR | NDCG@5 |
+|---|---:|---:|---:|---:|---:|
+| Dense | 0.5908 | 0.8259 | 0.8988 | 0.9062 | 0.8657 |
+| BM25 | 0.6473 | 0.8705 | 0.9077 | 0.9345 | 0.8965 |
+| Hybrid (Dense+BM25+RRF) | 0.6622 | 0.8735 | 0.9286 | 0.9500 | 0.9120 |
+| **Hybrid + Reranker** | **0.6711** | 0.8646 | 0.9271 | **0.9613** | 0.9087 |
+
+**如实说明（保留负结果，不做普遍化结论）：**
+
+- 在本 190-chunk 合成企业语料上，**Hybrid 的 Recall@5 / NDCG@5 高于单一
+  Dense 与 BM25**，RRF 融合有稳定收益。
+- **Reranker 提高了 MRR（+0.0113），但未提高 Recall@5（−0.0015）与
+  NDCG@5（−0.0033）**——说明其作用是改善候选排序位置，而非扩大召回覆盖。
+- hard 难度 query 上 Reranker 未表现出稳定净收益；CPU 环境下
+  Reranker 单 query 延迟约 5.7s（工程指标，不替代检索质量）。
+- 完整设置、按类型/难度切片与失败案例分析见
+  [`docs/EVALUATION.md`](docs/EVALUATION.md) §15 与
+  [`docs/phase2.3/EXPERIMENT_REPORT.md`](docs/phase2.3/EXPERIMENT_REPORT.md)。
 
 ## 11. Baseline
 
@@ -224,8 +245,8 @@ Experiment" 一节；逐 query 结果由 `scripts/run_hybrid_eval.py` 生成。
 | LLM | Qwen（统一经 `src/core/llm_client.py` 调用） |
 | Agent 编排 | LangGraph（StateGraph），LangChain 仅作必要基础组件 |
 | Embedding | BGE-M3 |
-| Reranker | BGE-Reranker-v2-M3（Phase 2.3，未启用） |
-| RAG | Dense + BM25 + RRF（Phase 2.2 已实现；Hybrid） |
+| Reranker | BGE-Reranker-v2-M3（Phase 2.3 已实现，默认 `reranker.enabled=false`，正式实验时开启） |
+| RAG | Dense + BM25 + RRF + Reranker（Phase 2.2 Hybrid；Phase 2.3 重排） |
 | 向量库 | Milvus |
 | 知识图谱 | Neo4j + Cypher（仅预定义模板） |
 | 业务数据库 | DuckDB（只读） |
@@ -303,7 +324,7 @@ enterprise-ai-employee/
 | Phase 1 | 最小 Agent 闭环：Intent → Router → RAG/SQL → Answer | ✅ 已完成 |
 | Phase 2.1 | 真实 RAG：BGE-M3 + Milvus 端到端接通 | ✅ 已完成 |
 | Phase 2.2 | Hybrid RAG：Dense + BM25 + RRF | ✅ 已完成 |
-| Phase 2.3 | BGE-Reranker-v2-M3 | ⏳ 未开始 |
+| Phase 2.3 | Reranker：知识库扩大 + BGE-Reranker-v2-M3 + 4 模式检索实验 | ✅ 已完成 |
 | Phase 2.4 | Neo4j Knowledge Graph | ⏳ 未开始 |
 | Phase 3 | Task-Adaptive Routing | ⬜ 未开始 |
 | Phase 4 | Claim-Evidence Verification | ⬜ 未开始 |

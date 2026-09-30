@@ -1,6 +1,6 @@
 # 数据集与数据来源（DATASET）
 
-> 状态：Phase 2.2 已更新（2026-09-30）。
+> 状态：Phase 2.3 已更新（2026-09-30）。
 >
 > **当前仓库数据资产（已入库）**：
 > - `data/raw/wwi_ddl/` — WideWorldImporters 官方 T-SQL DDL 与种子脚本
@@ -12,15 +12,25 @@
 >   Few-shot 状态为 `verified`，即已在真实数据库上执行验证）；
 > - `data/knowledge_base/*/` — 企业知识库文档，全部为**合成语料**（synthetic），
 >   文档头部显式标注"非真实企业制度"，**不得描述为任何真实企业的内部数据**。
->   Phase 2.1 新增 `hr/hr-0001-remote-work-policy.md`（员工远程办公管理办法），
->   与 finance / operations / security 文档一同由 `scripts/build_kb.py`
->   切分、BGE-M3 嵌入后写入 Milvus（`enterprise_knowledge` collection，
->   当前 5 篇文档、35 个 chunk，`entity_count > 0`）；
+>   Phase 2.1 引入首批文档（`hr-0001` 等），Phase 2.3 扩大至 **27 篇文档 /
+>   190 个 chunk**（`entity_count = 190`）：
+>   - hr：远程办公、请假、考勤加班、招聘入职、绩效晋升、薪酬福利；
+>   - finance：差旅报销制度 + 操作指引、预算、供应商付款、发票税务、资金银行；
+>   - operations：库存供应链、采购、仓储、物流配送、质量、安全设备、供应链风险；
+>   - security：信息安全制度、安管操作细则、数据保护、权限管理；
+>   - business：订单管理、CRM 客户、销售预测、合同开票；
+>   全部由 `scripts/build_kb.py` 切分、BGE-M3 嵌入后写入 Milvus
+>   （`enterprise_knowledge` collection）；
 > - `data/eval/hybrid_eval.jsonl` — Phase 2.2 Hybrid Retrieval 的**局部实验集**
 >   （10 个 query + 人工核验的 `expected_chunk_ids`），由
->   `scripts/build_hybrid_eval.py` 生成，**仅用于 35-chunk 语料上的
->   Dense / BM25 / Hybrid 对比**，**不是**最终 430 条 Evaluation Dataset
->   （后者在 Phase 5 由 `data/eval_dataset.jsonl` 构建）。
+>   `scripts/build_hybrid_eval.py` 生成；
+> - `data/eval/retrieval_eval.jsonl` — Phase 2.3 Reranker 的**局部实验集**
+>   （**56 个 query**，8 类 × easy/medium/hard + 人工核验的 `expected_chunk_ids`），
+>   由 `scripts/build_retrieval_eval.py` 生成，**用于 190-chunk 语料上的
+>   Dense / BM25 / Hybrid / Hybrid+Reranker 四模式对比**；
+>
+> 两者均为**阶段性检索实验集**，**不是**最终 430 条 Evaluation Dataset
+> （后者在 Phase 5 由 `data/eval_dataset.jsonl` 构建）。
 >
 > **合成数据红线**：
 > - `generate_synthetic_seed.py` 生成的 Sales_Customers / Purchasing_Suppliers /
@@ -35,23 +45,29 @@
 
 ---
 
-## 0. Phase 2.2 局部检索实验集（`data/eval/`）
+## 0. Phase 2.2 / 2.3 局部检索实验集（`data/eval/`）
 
-| 项 | 说明 |
-|---|---|
-| 文件 | `data/eval/hybrid_eval.jsonl`（10 query + `expected_chunk_ids`） |
-| 语料 | 当前企业知识库（35 chunks，`data/knowledge_base/*.md`） |
-| 用途 | 仅用于 Phase 2.2 的 Hybrid Retrieval 阶段实验（Dense / BM25 / Hybrid 对比） |
-| 生成 | `scripts/build_hybrid_eval.py`；指标由 `scripts/run_hybrid_eval.py` 计算 |
-| Ground Truth | 人工核验的 `expected_chunk_ids`，**不因实验结果而修改** |
+| 项 | Phase 2.2 | Phase 2.3 |
+|---|---|---|
+| 文件 | `data/eval/hybrid_eval.jsonl` | `data/eval/retrieval_eval.jsonl` |
+| Query 数 | 10 | **56** |
+| 语料 | 35 chunks（Phase 2.2 时期语料） | **190 chunks / 27 docs**（Phase 2.3 扩大后） |
+| 用途 | Dense / BM25 / Hybrid 对比 | Dense / BM25 / Hybrid / **Hybrid+Reranker** 四模式对比 |
+| Query 类型 | 7 类（关键词/同义/多词/长问/数字规则/跨句/混排） | 8 类（+多实体/易混淆）× difficulty (easy/medium/hard) |
+| 生成 | `scripts/build_hybrid_eval.py` | `scripts/build_retrieval_eval.py` |
+| 指标计算 | `scripts/run_hybrid_eval.py` | `scripts/run_retrieval_eval.py` |
+| Ground Truth | 人工核验的 `expected_chunk_ids`，**不因实验结果而修改** | 同左；**独立于任何检索系统输出**（不得来自 Dense/BM25/Hybrid/Reranker） |
 
 **边界（重要）**：
 
-- 这只是 **Hybrid Retrieval 的阶段性实验集**（10 query），
-  **不属于正式 430 条 Evaluation Dataset**；
-- 正式 430 条 Evaluation Dataset 在 **Phase 5** 由 `data/eval_dataset.jsonl`
-  构建（见第 11 节）；
-- 不得把 10-query 的召回指标当作最终系统性能对外引用。
+- 这两个文件都只是**阶段性检索实验集**，**不属于正式 430 条
+  Evaluation Dataset**；
+- 正式 430 条 Evaluation Dataset 在 **Phase 5** 由
+  `data/eval_dataset.jsonl` 构建（见第 11 节）；
+- 不得把 10-query / 56-query 的召回指标当作最终系统性能对外引用；
+- **Ground Truth 生成红线**：`expected_chunk_ids` 必须来自对 chunk 语料的
+  人工核验，**禁止**用待评估系统（Dense / BM25 / Hybrid / Reranker）
+  的输出反向构造。
 
 ---
 
@@ -61,7 +77,7 @@
 |---|---|---|---|
 | 业务数据（主） | WideWorldImporters | DuckDB、Text-to-SQL、Analysis、KG 构建基础 | 已导入 DuckDB（`data/runtime/wwi.duckdb`，本地生成，不入库） |
 | 业务数据（辅） | AdventureWorks | 补充表结构与任务多样性 | 未下载 |
-| 企业知识库 | Public Enterprise Policy Corpus | RAG 语料（Milvus） | 未收集 |
+| 企业知识库 | Public Enterprise Policy Corpus | RAG 语料（Milvus） | 已入库（27 docs / 190 chunks，synthetic） |
 | Text-to-SQL | Spider | 能力对照 | 未下载 |
 | Text-to-SQL | BIRD | 能力对照 | 未下载 |
 | RAG / Evidence | HotpotQA | 检索与证据对照 | 未下载 |
@@ -70,6 +86,7 @@
 | Agent | GAIA | 复杂任务对照 | 未下载 |
 | 自建评估集 | Enterprise AI Employee Task Dataset | 主评估集（约 430 条） | 未构建（Phase 5） |
 | Phase 2.2 局部检索实验集 | `data/eval/hybrid_eval.jsonl` | 35-chunk 语料上 Dense/BM25/Hybrid 对比 | 已生成（10 query，已入库） |
+| Phase 2.3 局部检索实验集 | `data/eval/retrieval_eval.jsonl` | 190-chunk 语料上 4 模式（+Reranker）对比 | 已生成（56 query，已入库） |
 
 许可证与署名要求统一登记于 [`THIRD_PARTY_LICENSES.md`](../THIRD_PARTY_LICENSES.md)。
 

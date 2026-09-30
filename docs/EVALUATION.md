@@ -343,19 +343,30 @@ Reranker 在 CPU 上对 20 条候选重排 ~5.7s/query，工程代价显著；
    Reranker 后 Recall@5 回到 0.5（相关 chunk `kb-7811234316` 被拉回
    前 5）——**Reranker 在此 query 上修复了 RRF 的候选截断损失**。
 
-### 15.10 Findings（基于真实数据）
+### 15.10 Findings（基于真实数据，仅限本实验数据集）
 
-1. **Hybrid 优于单一通道**：Hybrid Recall@5 = 0.9286 高于 Dense 0.8988
-   与 BM25 0.9077；RRF 融合在 56-query 规模上稳定带来收益。
-2. **Reranker 改善 MRR 但不改善 Recall@5/NDCG@5**：MRR +0.0113 说明
-   Reranker 能把相关 chunk 排得更靠前（MRR 关注首位命中位置），
-   但 Recall@5 / NDCG@5 几乎不变甚至略降——**说明 Hybrid 在 Top-5 内
-   召回的候选本身已较完整，Reranker 主要做的是"重排"而非"补充召回"**。
-3. **在 hard query 上 Reranker 收益有限甚至为负**：hard 难度 Recall@5
-   0.9583 → 0.9470，NDCG@5 0.9305 → 0.9180。当前 190-chunk 语料上
-   最难问题对 Reranker 没有正收益。
-4. **负结果如实保留**：Reranker 在部分 query（rq-49 等）上确实把
-   相关 chunk 排到更后，**不得因此修改 Ground Truth 或挑选 query**。
+1. **Dense 与 BM25 均能完成基本企业知识检索**：两者 Recall@5 分别为
+   0.8988 / 0.9077，在该 190-chunk 合成语料上均已具备可用的基本检索能力。
+2. **Hybrid 在本数据集上优于单一通道**：Hybrid Recall@5 = 0.9286、
+   NDCG@5 = 0.9120，均高于单一 Dense 与 BM25；RRF 融合在本数据集上
+   表现出稳定的召回收益。
+3. **Reranker 提高了 MRR，改善了首个相关结果的位置**：MRR 由 0.9500
+   （Hybrid）升至 0.9613（Hybrid+Rerank），说明重排使首位命中的相关
+   chunk 位置整体靠前。
+4. **Reranker 未提高 Recall@5，也未提高 NDCG@5**：Recall@5 由 0.9286
+   略降至 0.9271，NDCG@5 由 0.9120 略降至 0.9087。
+5. 因此当前实验更支持**"Reranker 主要改善候选排序，而非扩大召回覆盖率"**：
+   Hybrid 在 Top-5 内召回的候选本身已较完整，Reranker 做的是重排而非补召。
+6. **在 hard query 上 Reranker 未表现出稳定净收益**：hard 难度 Recall@5
+   由 0.9583（Hybrid）降至 0.9470（Hybrid+Rerank），NDCG@5 由 0.9305
+   降至 0.9180。
+7. **CPU 环境下 Reranker 显著增加 latency**（单 query 约 5.7s）。
+
+> 以上均为**本实验现象总结**，不是对 Reranker 模型的普遍性结论，也不得
+> 写成"Reranker 显著提升了检索性能"。所有结论限定于
+> "在本实验数据集 / 当前 190-chunk synthetic enterprise corpus 上"。
+> 负结果（Recall@5 / NDCG@5 未提升、hard 难度无净收益、rq-49 等负向案例）
+> **如实保留**，不得修改 Ground Truth、挑选 query 或换表述掩盖。
 
 ### 15.11 Limitations
 

@@ -168,3 +168,29 @@ Baseline 与 Ours 使用**同一 LLM、同一 Embedding、同一评估集、同�
 - 业务数据来自公开示例库（WideWorldImporters / AdventureWorks），规模小于真实企业；
 - 评估集部分由受控生成得到，需说明生成规则与人工校验比例；
 - 单机环境的延迟指标不能直接外推到生产部署条件。
+
+## 11. Phase 2.3 Research Evidence（Retrieval Quality 阶段性证据）
+
+**对应研究问题**（沿用第 3 节编号，未新增 RQ）：
+
+- **RQ3 — 协同 / 检索机制**：在多源（多通道）知识检索场景下，
+  不同检索机制（Dense / BM25 / 混合 RRF / 混合 + Reranker）
+  对**召回质量**与**排序质量**的影响。
+
+Phase 2.3 在该研究问题下的阶段性证据（详见
+[`EVALUATION.md`](EVALUATION.md) §15 与
+[`phase2.3/EXPERIMENT_REPORT.md`](phase2.3/EXPERIMENT_REPORT.md)）：
+
+1. 在 190-chunk 合成企业语料、56 条人工核验 query 上，
+   **Hybrid（Dense + BM25 + RRF）的 Recall@5 / NDCG@5 高于单一
+   Dense 与 BM25**——多通道协同在本数据集上有稳定召回收益；
+2. 在 Hybrid 基础上加入 **BGE-Reranker-v2-M3 重排**后，
+   **MRR 提升（0.9500 → 0.9613）**而 **Recall@5 与 NDCG@5 未提升
+   （0.9286 → 0.9271 / 0.9120 → 0.9087）**——重排主要改善
+   "首个相关结果的位置"（排序），而非扩大召回覆盖；
+3. 在 **hard 难度 query** 上 Reranker 未表现出稳定净收益
+   （Recall@5 0.9583 → 0.9470），负结果如实保留；
+4. 上述结论**仅限本实验数据集（190-chunk synthetic enterprise
+   corpus / 56 queries / CPU 推理）**，不外推为 Reranker 在一般
+   企业知识库上的普遍结论；更大语料与 430 条正式 Benchmark
+   的验证留给 Phase 5。

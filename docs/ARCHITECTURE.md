@@ -1,10 +1,12 @@
 # 系统架构设计（ARCHITECTURE）
 
-> 状态：Phase 2.2 已更新（2026-09-30）。
+> 状态：Phase 2.3 已更新（2026-09-30）。
 > 本文档描述系统架构与约束。Phase 2.1 已实现 RAG 真实链路（BGE-M3 + Milvus），
-> Phase 2.2 已实现 Hybrid 检索（Dense + BM25 + RRF）。
-> 其余模块（BGE-Reranker、Neo4j KG / GraphRAG、Claim-Evidence Verification）
-> 仍为目标架构占位，尚未实现。
+> Phase 2.2 已实现 Hybrid 检索（Dense + BM25 + RRF），
+> **Phase 2.3 已实现 BGE-Reranker-v2-M3 重排阶段**（默认 `reranker.enabled=false`，
+> 正式实验时开启；candidate-first / rerank-second，Reranker 不参与原始召回）。
+> 其余模块（Neo4j KG / GraphRAG、Claim-Evidence Verification、Task-Adaptive
+> Routing）仍为目标架构占位，尚未实现。
 
 ---
 
@@ -117,7 +119,7 @@ BM25 与 Milvus 共用同一批 chunk（`chunk_id` 对齐），BM25 只是对 Mi
 | 向量库接口 | `src/core/vector_store.py` | 统一封装 Milvus（Dense 召回） |
 | 关键词召回 | `src/core/bm25_store.py` | 统一封装 BM25（Sparse 召回，与 Milvus chunk 对齐） |
 | 混合检索 | `src/core/hybrid_retriever.py`, `src/core/retrieval_types.py` | Dense + BM25 + RRF（k=60）统一接口 |
-| Reranker | （Phase 2.3，未启用） | BGE-Reranker-v2-M3 仅保留配置项 |
+| Reranker | `src/core/reranker.py` | BGE-Reranker-v2-M3 重排（Phase 2.3 已实现，默认关闭） |
 | SQL 执行器 | `src/core/sql_executor.py` | 只读、语句白名单、行数上限、超时 |
 | 配置加载 | `src/core/config_loader.py` | 读取 `config/*.yaml`；密钥来自环境变量 |
 | 工具注册 | `src/core/tool_registry.py` | 白名单与权限校验 |
@@ -235,19 +237,45 @@ Query ───────────┤                                      
   的结果融合：`RRF(d) = Σ_c 1/(k + rank_c(d))`。**不直接相加 Dense / BM25 的
   原始 score**（两者量纲不可比），缺失通道的 chunk 该项记 0。
 
+**Phase 2.3 已实现的 Reranker 重排链路（BGE-Reranker-v2-M3）**：
+
+```
+Query ─→ Dense + BM25 ─→ RRF ─→ Candidate Top-N (candidate_k=20)
+                                 │
+                                 ▼
+                        BGE-Reranker-v2-M3（仅对候选重排）
+                                 │
+                                 ▼
+                        Final Top-K (final_k=5)
+```
+
+- **Reranker 是重排阶段（reranking stage），不是召回阶段（retrieval
+  stage）**：它只接收 RRF 融合后的候选列表并重新排序，**绝不参与**
+  Dense / BM25 的原始召回，也绝不扫描整个知识库；
+- 输入：query + 候选 chunk（`candidate_k` 条）；输出：按 cross-encoder
+  相关性分重排后的 `final_k` 条，携带 `rerank_score / rerank_rank`，
+  并原样保留 `dense_score / dense_rank / bm25_score / bm25_rank /
+  fusion_score / source / title / text / metadata`；
+- 默认配置 `reranker.enabled=false`（legacy dense / bm25 / hybrid 行为不变）；
+  正式实验时置 `true`。模型加载失败时**抛出** `RerankerUnavailableError`，
+  **禁止**静默降级到 fake / 随机打分（fake backend 仅限单元测试）。
+
 实现位置：`src/core/bm25_store.py`（BM25）、`src/core/retrieval_types.py`
 （RRF 与统一结果类型）、`src/core/hybrid_retriever.py`（统一接口
-`search_dense / search_bm25 / hybrid_search`，`retrieval_mode` 支持
-`dense | bm25 | hybrid`）。上层（`rag_tool` / `rag_retrieval` 节点 /
-答案生成）只调用该统一接口，**不直接操作 Milvus 或 BM25 内部实现**。
+`search_dense / search_bm25 / hybrid_search / hybrid_rerank_search`，
+`retrieval_mode` 支持 `dense | bm25 | hybrid | hybrid_rerank`）、
+`src/core/reranker.py`（Reranker 封装与 batch scoring）。
+上层（`rag_tool` / `rag_retrieval` 节点 / 答案生成）只调用该统一接口，
+**不直接操作 Milvus、BM25 或 Reranker 内部实现**。
 
 统一结果携带：`chunk_id / dense_score / dense_rank / bm25_score / bm25_rank /
-fusion_score`，并保留 `source / title / text / metadata`。
+fusion_score / rerank_score / rerank_rank`（后两者仅 `hybrid_rerank`
+模式填充），并保留 `source / title / text / metadata`。
 
-**当前未实现（Phase 2.3+ / Phase 2.4 / Phase 4）**：
+**当前未实现（Phase 2.4 / Phase 3 / Phase 4）**：
 
-- ❌ Reranker（BGE-Reranker-v2-M3 仅保留配置项，未启用）；
 - ❌ Knowledge Graph / GraphRAG（Neo4j）；
+- ❌ Task-Adaptive Routing；
 - ❌ Claim-Evidence Verification。
 
 ## 12. SQL

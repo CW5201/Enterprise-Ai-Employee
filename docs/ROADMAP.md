@@ -1,6 +1,6 @@
 # 开发路线图（ROADMAP）
 
-> 状态：Phase 2.2 完成（2026-09-30）；Phase 2.1 / Phase 1 完成并通过验收（2026-09-29）。
+> 状态：Phase 2.3 完成（2026-09-30）；Phase 2.2 / 2.1 / Phase 1 完成并通过验收。
 > 阶段顺序固定，不跳阶段。每个阶段有明确的完成标准，未达标不进入下一阶段。
 
 ---
@@ -157,17 +157,47 @@ Qwen 生成带来源的回答。本阶段使用**真实** BGE-M3 与 **真实** 
 
 ---
 
-## Phase 2.3 — Reranker（BGE-Reranker-v2-M3）⏳
+## Phase 2.3 — Reranker（BGE-Reranker-v2-M3）✅
 
-**目标**：在 Hybrid 结果上加入 cross-encoder 重排。
+**目标**：在 Hybrid 结果上加入 cross-encoder 重排，并完成 4 模式检索实验。
 
-内容：
-- `src/core/reranker.py`：BGE-Reranker-v2-M3 封装（Phase 2.3）；
-- `config/settings.yaml` 的 `reranker.enabled` 置 true，RAG 链路在 RRF
-  之后接 Rerank → Top-K；
-- 在扩大语料后重跑 Dense / BM25 / Hybrid / Hybrid+Rerank 对比。
+内容（全部已实现）：
+- 知识库扩大：`data/knowledge_base/` 5 → **27 篇文档 / 190 chunks**
+  （全部合成，登记 source/license/document_id/category），
+  重新入库 `enterprise_knowledge`（BGE-M3，1024-dim）；
+- 检索实验集：`data/eval/retrieval_eval.jsonl`（**56 queries**，
+  8 类 × easy/medium/hard + 人工核验 `expected_chunk_ids`），
+  `scripts/build_retrieval_eval.py` 生成；
+- `src/core/reranker.py`：BGE-Reranker-v2-M3 封装（真实模型加载、
+  batch scoring、`score` / `rerank` 接口）；模型不可用时抛出
+  `RerankerUnavailableError`，**无静默 fallback**（fake 仅限单元测试）；
+- `src/core/hybrid_retriever.py`：`retrieval_mode` 新增 `hybrid_rerank`
+  （Dense + BM25 → RRF → candidate_k → Reranker → final_k），
+  原 dense / bm25 / hybrid 行为不变；`HybridHit` 新增
+  `rerank_score / rerank_rank`；
+- 配置：`config/settings.yaml` 的 `reranker`（**默认 `enabled=false`**，
+  正式实验时置 true；candidate_k=20 / final_k=5 / batch_size=8）；
+- 实验：`src/evaluation/retrieval_metrics.py`（Recall@K / MRR / NDCG@5）+
+  `scripts/run_retrieval_eval.py`（4 模式 × 56 queries，指标由程序计算，
+  结果写入 `artifacts/phase2.3/`，不进 Git）；
+- 测试：`tests/unit/test_reranker_core.py`、`tests/unit/test_retrieval_metrics.py`；
+- 文档：`docs/EVALUATION.md` §15、`docs/phase2.3/EXPERIMENT_REPORT.md`。
 
-**不做**：Neo4j、Verification、动态路由。
+**完成标准**：
+- ✅ 27 docs / 190 chunks 真实入库（`entity_count = 190`）；
+- ✅ 56 条人工核验 Ground Truth（独立于任何检索系统输出）；
+- ✅ BGE-Reranker-v2-M3 真实加载与 batch 重排（候选 → 最终 Top-K）；
+- ✅ Dense / BM25 / Hybrid / Hybrid+Reranker 四模式同语料同 query 对比，
+  56/56 全部完成，指标无 NaN（详见 `docs/EVALUATION.md` §15）；
+- ✅ 实测结果如实记录，**保留负结果**：Reranker 改善 MRR（+0.0113）
+  但未改善 Recall@5（−0.0015）/ NDCG@5（−0.0033）；hard 难度上无净收益；
+- ✅ 单测 + 集成测试通过，ruff 全绿。
+
+**本阶段明确不做**（留给 Phase 2.4+）：
+- 不做 Neo4j / GraphRAG；
+- 不做 Claim-Evidence Verification；
+- 不做 Task-Adaptive Routing（动态路由）；
+- 不把 56-query 局部实验当作最终 430 条 Benchmark。
 
 ---
 
@@ -182,13 +212,15 @@ Qwen 生成带来源的回答。本阶段使用**真实** BGE-M3 与 **真实** 
 **目标**：三种知识源的专用能力到位，职责边界不混用。
 
 Phase 2 已按子阶段推进：Phase 2.1（真实 RAG，✅）→ Phase 2.2
-（Hybrid RAG = Dense + BM25 + RRF，✅）→ Phase 2.3（Reranker，⏳）→
+（Hybrid RAG = Dense + BM25 + RRF，✅）→ Phase 2.3（Reranker，✅）→
 Phase 2.4（Neo4j KG，⏳）。
 
 内容：
 - `src/core/embedder.py`（BGE-M3）、`vector_store.py`（Milvus）—— ✅ Phase 2.1；
 - `src/core/bm25_store.py` + `src/core/retrieval_types.py` +
   `src/core/hybrid_retriever.py`（BM25 + RRF 混合检索）—— ✅ Phase 2.2；
+- `src/core/reranker.py` + `hybrid_retriever.hybrid_rerank_search`
+  （BGE-Reranker-v2-M3 重排）—— ✅ Phase 2.3；
 - `scripts/build_kb.py`：知识库切分、元数据写入、向量入库 —— ✅；
 - `src/nodes/rag_retrieval.py`：Phase 2.2 已实现 Dense + BM25 + RRF；
   Rerank 留给 Phase 2.3；

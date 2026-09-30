@@ -281,3 +281,45 @@ Prompt 变更后结果不可比、无法追溯某个数字怎么来的。
 - 前期投入大，Phase 5 之前无法产出任何指标；
 - 框架本身的正确性也需要维护（指标实现错误会污染所有结论）；
 - 逐条落盘带来存储开销。
+
+---
+
+## ADR-008: Reranker 阶段的设计约束（Phase 2.3）
+
+### Context
+
+Phase 2.3 在 Hybrid 检索之上接入 BGE-Reranker-v2-M3。需要明确：
+Reranker 在检索链路中的位置、候选规模、默认开关、fake backend 边界，
+以及负结果的记录纪律。
+
+### Decision
+
+1. **Reranker is a reranking stage, not a retrieval stage.**
+   Reranker 只接收 RRF 融合后的候选（`candidate_k` 条），对候选重排，
+   **不参与** Dense / BM25 的原始召回，也不扫描整个知识库。
+   流程严格为：`Dense + BM25 → RRF → candidate_k → Rerank → final_k`。
+2. **候选规模 `candidate_k=20` / `final_k=5`。**
+   20 条候选给 Reranker 足够多样性以纠正 RRF 排序，同时控制推理成本；
+   5 条与其余模式的最终 top-k 对齐，保证指标可比。
+3. **默认 `reranker.enabled=false`。**
+   生产默认关闭以保持 legacy dense / bm25 / hybrid 行为不变；
+   正式实验时显式置 `true`。模型不可用时抛出
+   `RerankerUnavailableError`，**禁止静默 fallback** 到 fake / 随机打分。
+4. **Fake backend 仅限单元测试。**
+   `FakeVectorStore` 与 `FakeScorer`（词法重叠打分）显式标注
+   `backend="fake"`，只允许在测试 / 离线场景使用，
+   绝不作为正式模型加载失败的替身。
+5. **保留负结果。**
+   实验若显示 Reranker 未改善（甚至略降）某指标，如实记录，
+   不得修改 Ground Truth、挑选 query 或调参后只留最优结果。
+
+### Consequences
+
+正面：
+- "先召回、后重排"的职责边界清晰，Reranker 不会掩盖召回缺陷；
+- 默认关闭使 Phase 2.2 的三模式行为零改动，向后兼容；
+- 负结果保留使论文结论可被审计与复现。
+
+负面：
+- 候选扩大带来推理延迟（CPU 上 ~5.7s/query），生产需按设备选型；
+- `candidate_k` / `final_k` 是经验值，正式 Benchmark（Phase 5）需分配置重测。

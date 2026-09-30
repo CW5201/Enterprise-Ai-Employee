@@ -7,7 +7,7 @@ Phase 2.1 formal behaviour:
 
 - ``bge-m3`` backend: loads a **real** BGE-M3 model (sentence-transformers)
   from ``EMBEDDING_MODEL`` — an HF repo id or a local model directory
-  (e.g. ``D:/mode/bge-m3-safetensors``).  The output dimension is measured
+  (e.g. a local model directory).  The output dimension is measured
   from the model itself (never hardcoded), and vectors are L2-normalised.
 - When the model cannot be loaded (missing weights, broken runtime) the
   factory raises :class:`EmbeddingUnavailableError` with a clear message.

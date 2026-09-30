@@ -52,7 +52,7 @@ embedding:
 # falls back to fake / random scores.
 reranker:
   enabled: false
-  model_path: ${RERANKER_MODEL:-}      # e.g. D:/mode/bge-reranker-v2-m3 or BAAI/bge-reranker-v2-m3
+  model_path: ${RERANKER_MODEL:-}      # e.g. a local model directory or BAAI/bge-reranker-v2-m3
   device: ${RERANKER_DEVICE:-cpu}
   candidate_k: 20
   final_k: 5
