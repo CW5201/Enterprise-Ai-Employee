@@ -27,7 +27,13 @@ from src.core.retrieval_types import HybridHit
 from src.core.vector_store import VectorStore
 
 _KB_ROOT = Path(__file__).resolve().parent.parent.parent / "data" / "knowledge_base"
-_CHUNKS_CACHE: list[dict[str, Any]] | None = None
+_CHUNKS_CACHE: dict[tuple, list[dict[str, Any]]] = {}
+
+
+def _chunk_records_cache_key(
+    kb_root: Path | None, chunk_size: int, chunk_overlap: int
+) -> tuple:
+    return (None if kb_root is None else str(kb_root), chunk_size, chunk_overlap)
 
 
 def _chunk_records(
@@ -42,9 +48,9 @@ def _chunk_records(
     back to a fresh compute.  This keeps the helper import-safe even when
     invoked before the repo root is on ``sys.path`` (e.g. from a test).
     """
-    global _CHUNKS_CACHE
-    if kb_root is None and chunk_size == 512 and chunk_overlap == 64 and _CHUNKS_CACHE is not None:
-        return _CHUNKS_CACHE
+    cache_key = _chunk_records_cache_key(kb_root, chunk_size, chunk_overlap)
+    if cache_key in _CHUNKS_CACHE:
+        return _CHUNKS_CACHE[cache_key]
     try:
         import importlib
 
@@ -65,9 +71,6 @@ def _chunk_records(
                         "metadata": doc.metadata,
                     }
                 )
-        if kb_root is None and chunk_size == 512 and chunk_overlap == 64:
-            _CHUNKS_CACHE = records
-        return records
     except ModuleNotFoundError:
         # Fall back to the in-module chunking (legacy behaviour) when the
         # scripts package is not importable.  Chunk ids may diverge from
@@ -88,7 +91,8 @@ def _chunk_records(
                         "metadata": doc.metadata,
                     }
                 )
-        return records
+    _CHUNKS_CACHE[cache_key] = records
+    return records
 
 _VALID_MODES = ("dense", "bm25", "hybrid", "hybrid_rerank")
 

@@ -237,3 +237,132 @@ hybrid 内部融合窗口（更宽的候选池）已在输出中记录。
   最终系统性能**；正式系统级指标仍以 Phase 5 的真实运行为准。
 - 单点 MRR=0.95 在三模式上相同，主要由 query 区分度高导致，非模型能力的
   全面指标。
+
+## 15. Phase 2.3 Reranker Experiment
+
+> **定位**：Phase 2.3 的**局部 Reranker 检索实验**。在同一 190-chunk
+> 语料、56 条人工核验 Ground Truth 上对比
+> Dense / BM25 / Hybrid / Hybrid+Reranker 四种检索模式，验证
+> BGE-Reranker-v2-M3 是否能在 Hybrid 已完成初步召回的前提下进一步
+> 改善最终排序质量。所有指标由 `scripts/run_retrieval_eval.py` 真实运行
+> 产生，**禁止手填**；结果如实记录，包含负向结论。
+
+### 15.1 Experimental Objective
+
+**研究问题**：在 Hybrid (Dense + BM25 + RRF) 已完成初步召回之后，
+BGE-Reranker-v2-M3 是否能进一步改善最终 Top-K 排序质量？
+
+### 15.2 Experimental Setup
+
+| 项 | 取值 |
+|---|---|
+| 语料 | 当前企业知识库，**27 docs / 190 chunks**（`data/knowledge_base/*.md`） |
+| Queries | **56**（`data/eval/retrieval_eval.jsonl`，8 类 × easy/medium/hard） |
+| 最终 Top-K | **5**（四模式统一） |
+| Dense | **BGE-M3**（真实模型，1024 维）+ **Milvus**（`enterprise_knowledge`） |
+| Lexical | **BM25**（in-process，与 Milvus 同一批 chunk，`chunk_id` 对齐） |
+| Fusion | **RRF**，k = 60（基于 rank，不直接相加原始 score） |
+| Reranker | **BGE-Reranker-v2-M3**（本地路径，CPU，batch_size=8） |
+| Rerank candidate_k / final_k | **20 / 5** |
+| 生成脚本 | `scripts/run_retrieval_eval.py` |
+
+四种模式使用**相同的 query、相同的语料、相同的 final_k**。
+Reranker **只重排** RRF 候选（candidate_k=20），不参与原始召回。
+
+### 15.3 Compared Methods
+
+1. **Dense** — BGE-M3 + Milvus，Top-5
+2. **BM25** — 关键词召回，Top-5
+3. **Hybrid (Dense + BM25 + RRF)** — RRF 融合，Top-5
+4. **Hybrid + Reranker** — RRF candidate_k=20 → BGE-Reranker-v2-M3 → final_k=5
+
+### 15.4 Metrics
+
+- **Recall@K** = |Relevant ∩ Retrieved@K| / |Relevant|（单条 query），56 条求均值；
+- **MRR** = 所有 query 的 1/rank(首个命中) 均值；
+- **NDCG@5** = 标准二值相关性 DCG@5 / IDCG@5（单条相关 chunk 自动正确）。
+
+### 15.5 Overall Results（真实运行）
+
+| Method | Recall@1 | Recall@3 | Recall@5 | MRR | NDCG@5 |
+|---|---:|---:|---:|---:|---:|
+| Dense | 0.5908 | 0.8259 | 0.8988 | 0.9062 | 0.8657 |
+| BM25 | 0.6473 | 0.8705 | 0.9077 | 0.9345 | 0.8965 |
+| Hybrid (Dense+BM25+RRF) | 0.6622 | 0.8735 | 0.9286 | 0.9500 | 0.9120 |
+| Hybrid + Reranker | 0.6711 | 0.8646 | 0.9271 | 0.9613 | 0.9087 |
+
+**Reranker 相对 Hybrid 的差值**：Recall@5 **−0.0015**，MRR **+0.0113**，
+NDCG@5 **−0.0033**。
+
+### 15.6 Latency
+
+| Method | Avg(ms) | P50(ms) | P95(ms) |
+|---|---:|---:|---:|
+| Dense | 178 | 182 | 201 |
+| BM25 | 4 | 4 | 5 |
+| Hybrid | 180 | 187 | 201 |
+| Hybrid + Reranker | 5713 | 5731 | 6515 |
+
+Reranker 在 CPU 上对 20 条候选重排 ~5.7s/query，工程代价显著；
+延迟是**工程指标**，不替代检索质量指标。
+
+### 15.7 Query Type Analysis（按 8 类，Recall@5 / MRR / NDCG@5）
+
+详见 `artifacts/phase2.3/retrieval_eval_summary.md`。摘要：
+- **Hybrid 在 `confusable` 类 Recall@5=1.0、MRR=1.0**，是最强的单一类别；
+- **Reranker 在 `long_question` 类 MRR 从 0.93（Hybrid）升至 1.0（+Rerank）**，
+  排序改善明显；在 `synonym` 类 MRR 从 0.92 降至 0.83（负向）；
+- 类别级波动大，**不能据此断言 Reranker 在所有类型上都有效**。
+
+### 15.8 Difficulty Analysis（easy / medium / hard）
+
+| Method | easy R@5 | medium R@5 | hard R@5 |
+|---|---:|---:|---:|
+| Dense | 0.8611 | 0.9133 | 0.8977 |
+| BM25 | 0.8611 | 0.8933 | 0.9432 |
+| Hybrid | 0.8611 | 0.9267 | 0.9583 |
+| Hybrid + Rerank | 0.8611 | 0.9333 | 0.9470 |
+
+- **Reranker 在 medium 难度上 Recall@5 小幅改善**（0.9267 → 0.9333）；
+- **在 hard 难度上 Recall@5 轻微下降**（0.9583 → 0.9470）——rerank 对
+  最难 query 并未产生正收益，反而略降。
+
+### 15.9 Failure / Divergence Analysis
+
+代表性案例（由脚本自动挖掘，见 `artifacts/phase2.3/retrieval_failure_cases.md`）：
+
+1. **rq-35（hard, cross_sentence）**：Dense 与 BM25 单通道均未将相关
+   chunk 排入 Top-5，Hybrid RRF 将 `kb-d96806441a` 拉到第 5 位；
+   Reranker 进一步将其提升至第 3 位——**Rerank 确实改善了该 query**。
+2. **rq-10（medium, long_question）**：Dense/BM25 各自命中不同相关 chunk，
+   Hybrid 融合后相关 chunk 在第 2 位；Reranker 将其提至第 1 位。
+3. **rq-49（medium, synonym）**：Hybrid 已将相关 chunk 排第 1，Reranker
+   反而把它推到第 2 位——**Reranker 在此 query 上产生负向影响**。
+4. **rq-04（medium, multi_keyword）**：Dense 与 BM25 各自召回
+   Recall@5=0.5 / 0.33；Hybrid 融合后 0.33（相关 chunk 被挤出前 5）；
+   Reranker 后 Recall@5 回到 0.5（相关 chunk `kb-7811234316` 被拉回
+   前 5）——**Reranker 在此 query 上修复了 RRF 的候选截断损失**。
+
+### 15.10 Findings（基于真实数据）
+
+1. **Hybrid 优于单一通道**：Hybrid Recall@5 = 0.9286 高于 Dense 0.8988
+   与 BM25 0.9077；RRF 融合在 56-query 规模上稳定带来收益。
+2. **Reranker 改善 MRR 但不改善 Recall@5/NDCG@5**：MRR +0.0113 说明
+   Reranker 能把相关 chunk 排得更靠前（MRR 关注首位命中位置），
+   但 Recall@5 / NDCG@5 几乎不变甚至略降——**说明 Hybrid 在 Top-5 内
+   召回的候选本身已较完整，Reranker 主要做的是"重排"而非"补充召回"**。
+3. **在 hard query 上 Reranker 收益有限甚至为负**：hard 难度 Recall@5
+   0.9583 → 0.9470，NDCG@5 0.9305 → 0.9180。当前 190-chunk 语料上
+   最难问题对 Reranker 没有正收益。
+4. **负结果如实保留**：Reranker 在部分 query（rq-49 等）上确实把
+   相关 chunk 排到更后，**不得因此修改 Ground Truth 或挑选 query**。
+
+### 15.11 Limitations
+
+- **语料规模**：190 chunk 偏小，Reranker 在更大语料上的表现不可外推；
+- **query 数量**：56 条，单条异常对均值影响偏大；
+- **合成企业知识**：非真实企业内部文档，结论仅限合成语料；
+- **设备**：CPU 推理（~5.7s/query），正式 GPU 环境下延迟会显著降低；
+- **实验范围**：仅检索层，未接入 Answer Generation / Verification；
+- **本实验是 Phase 2.3 局部检索实验**，**不等价于**最终 430 条
+  Evaluation Benchmark（第 1 节，Phase 5 构建）。
