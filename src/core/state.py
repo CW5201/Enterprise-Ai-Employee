@@ -153,6 +153,16 @@ class AgentState(TypedDict, total=False):
     # --- evidence -------------------------------------------------------------
     evidence: Annotated[list[EvidenceItem], _append]
 
+    # --- Phase 4 claim-evidence verification (append channels, no overwrite)
+    # claims: Claims extracted from the generated answer (claim_extraction).
+    # evidence_v4: normalised Phase 4 Evidence records (evidence_collection).
+    # verification_results: one VerificationResult per claim (verification).
+    claims: Annotated[list[dict[str, Any]], _append]
+    evidence_v4: Annotated[list[dict[str, Any]], _append]
+    verification_results: Annotated[list[dict[str, Any]], _append]
+    # answer_guard verdict written last (Phase 4 commit 4)
+    guard_decision: dict[str, Any]
+
     # --- output -------------------------------------------------------------
     answer: str
     latency: dict[str, float]  # stage name -> ms (observability-owned)
@@ -188,6 +198,10 @@ def make_state(user_query: str, *, request_id: str | None = None) -> AgentState:
         "sql_result": None,
         "retrieved_context": [],
         "evidence": [],
+        "claims": [],
+        "evidence_v4": [],
+        "verification_results": [],
+        "guard_decision": {},
         "answer": "",
         "latency": {},
         "status": "",
