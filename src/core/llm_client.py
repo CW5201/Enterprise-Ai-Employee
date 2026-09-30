@@ -172,6 +172,28 @@ class _OfflineBackend(_BaseBackend):
         return model.model_validate(payload)
 
 
+def _parse_json_payload(text: Any) -> Any:
+    """Parse an LLM completion into a JSON value.
+
+    Accepts a pre-parsed dict, a plain JSON string, or a JSON string wrapped
+    in markdown `` ```json ... ``` `` fences (common provider behaviour).
+    Fences are stripped *before* parsing so that fenced-but-valid output is
+    not misreported as a parse failure.  Raises
+    ``json.JSONDecodeError`` for genuinely unparsable content.
+    """
+    if isinstance(text, dict):
+        return text
+    raw = str(text).strip()
+    if raw.startswith("```"):
+        # opening fence, optional language tag
+        first_nl = raw.find("\n")
+        body = raw[first_nl + 1:] if first_nl != -1 else raw[3:]
+        if body.rstrip().endswith("```"):
+            body = body.rstrip()[:-3]
+        raw = body.strip()
+    return json.loads(raw)
+
+
 class _QwenOpenAIBackend(_BaseBackend):
     """OpenAI-compatible chat-completions endpoint (Qwen)."""
 
@@ -246,14 +268,9 @@ class _QwenOpenAIBackend(_BaseBackend):
             "max_tokens": self.max_tokens,
         }
         text = self._post(body).get("choices", [{}])[0].get("message", {}).get("content", "")
-        try:
-            # Some OpenAI-compatible providers return the JSON block already
-            # parsed into a dict; accept both str and pre-parsed dict.
-            raw = json.loads(text) if isinstance(text, str) else text
-            if raw is None:
-                raise LLMError("Model returned empty JSON body", retryable=True)
-        except json.JSONDecodeError as exc:
-            raise LLMError(f"Model did not return valid JSON: {str(text)[:300]}", retryable=True) from exc
+        raw = _parse_json_payload(text)
+        if raw is None:
+            raise LLMError("Model returned empty JSON body", retryable=True)
         try:
             return model.model_validate(raw)
         except ValidationError as exc:
