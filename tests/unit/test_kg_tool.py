@@ -56,7 +56,8 @@ class TestToolFailures:
         assert result["success"] is False
         assert result["error"]["code"] == "neo4j_error"
         assert "bolt" not in str(result)
-        assert "eae_local_2026" not in str(result)
+        # No credential-looking token may leak into the returned payload.
+        assert "secret" not in str(result).lower()
 
     def test_success_envelope_shape(self) -> None:
         from src.core.neo4j_client import Neo4jResult
