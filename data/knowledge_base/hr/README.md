@@ -29,4 +29,4 @@ effective_date: <生效日期>
 language: zh
 ```
 
-当前阶段仅建立目录，不放入任何实际文档。
+当前阶段已录入合成企业制度文档（见 `synthetic: true` 标记）；正式评估语料在 Phase 5 引入。
