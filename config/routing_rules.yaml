@@ -1,101 +1,123 @@
 # ---------------------------------------------------------------------------
-# Task-Adaptive Routing rules (Innovation 1).
+# Task-Adaptive Routing — task taxonomy + capability->tool rules (Phase 3).
 #
-# This file declares the routing policy that src/nodes/supervisor_router.py
-# will consume in Phase 3. It contains POLICY ONLY - no executable code.
+# Consumed by src/core/routing_rules.py (router + baselines).  This file is
+# POLICY ONLY: it declares task categories, capability->tool candidate
+# rules and the route vocabulary.  Nothing here executes a tool.
 #
-# Design intent: routing is driven by (a) the detected intent, (b) the tools
-# that intent may use, and (c) a priority order used when several tools are
-# eligible. The research question is whether this dynamic policy beats a fixed
-# pipeline (see docs/RESEARCH.md, ablation A).
+# Design intent (docs/RESEARCH.md RQ1): routing is driven by task
+# *capability requirements*, not by free-text intent labels.  The LLM
+# produces a TaskProfile; the rule engine turns capability flags into
+# candidate tools; the final RoutingDecision is validated and structured.
 # ---------------------------------------------------------------------------
 
-version: v0.1
+version: v1.0
 
+# Legacy Phase 1 routing policy (still read by src/core/config_loader.py and
+# the Phase 1 SupervisorRouterNode fast path).  Phase 3 policy lives in the
+# sections below; the two coexist so existing tests keep working.
 route:
-  # Fallback when no rule matches: never guess silently, ask the user.
   default_strategy: clarify
-  max_tools_per_task: 4
-  allow_multi_tool: true
-  # If the router confidence is below this value, route to the clarification node.
   min_confidence: 0.6
-  # Number of hops allowed before the graph must terminate.
-  max_iterations: 8
-
-# --- Intent taxonomy -------------------------------------------------------
-# Each intent maps to the tool set that is eligible for it, in priority order.
 intent:
-  - name: information_query
-    description: Look up a fact from structured business data (single table or join).
-    tools: [sql]
   - name: knowledge_qa
-    description: Answer from enterprise policy / manual / procedure documents.
+    description: Look up a fact from enterprise documents.
     tools: [rag]
   - name: text_to_sql
-    description: Aggregate or filter business data expressed in natural language.
-    tools: [sql, analysis]
-  - name: data_analysis
-    description: Trend, comparison, distribution or correlation analysis.
-    tools: [sql, analysis, chart]
-  - name: relation_query
-    description: Entity relationships, paths and organisational structure.
-    tools: [kg, sql]
-  - name: multi_source_reasoning
-    description: Requires combining documents, data and relations.
-    tools: [rag, sql, kg, analysis]
-  - name: complex_agent_task
-    description: Multi-step task with intermediate results and a final report.
-    tools: [rag, sql, kg, analysis, chart, report]
-  - name: chitchat_or_out_of_scope
-    description: Not an enterprise task; refuse politely and explain scope.
-    tools: []
+    description: Query structured business data.
+    tools: [sql]
 
-# --- Tools available to the router ----------------------------------------
-tools:
-  rag:
-    enabled: true
-    cost: medium
-    latency_class: medium
-  sql:
-    enabled: true
-    cost: low
-    latency_class: low
-  kg:
-    enabled: true
-    cost: medium
-    latency_class: medium
-  analysis:
-    enabled: true
-    cost: low
-    latency_class: low
-  chart:
-    enabled: true
-    cost: low
-    latency_class: low
-  report:
-    enabled: true
-    cost: medium
-    latency_class: medium
+# --- Task taxonomy ---------------------------------------------------------
+# task_type values (match src/core/routing_types.py::TaskType)
+task_types:
+  knowledge_lookup:
+    description: "Document / policy / procedure / standard question."
+    primary_signals: [requires_unstructured_knowledge]
+  structured_lookup:
+    description: "Exact fact from a business table."
+    primary_signals: [requires_structured_data]
+  aggregation:
+    description: "COUNT / SUM / AVG / GROUP BY over business data."
+    primary_signals: [requires_structured_data]
+  relationship_query:
+    description: "Entity traversal / multi-hop / cross-entity relations."
+    primary_signals: [requires_relationship_reasoning]
+  statistical_analysis:
+    description: "Compute a derived statistic (rate, ratio, distribution)."
+    primary_signals: [requires_statistical_analysis]
+  trend_analysis:
+    description: "Time-series change / growth over periods."
+    primary_signals: [requires_statistical_analysis, requires_structured_data]
+  comparison:
+    description: "Side-by-side / ranking across entities or periods."
+    primary_signals: [requires_structured_data, requires_statistical_analysis]
+  report_generation:
+    description: "Formatted multi-part output aggregating findings."
+    primary_signals: [requires_multi_source]
+  multi_source_analysis:
+    description: "Task that genuinely combines >= 2 knowledge sources."
+    primary_signals: [requires_multi_source]
+  ambiguous_task:
+    description: "Cannot be resolved without clarification."
+    primary_signals: []
 
-# --- Priority policy -------------------------------------------------------
-# Higher number wins when two eligible tools could answer the same sub-goal.
-priority:
-  order: [sql, kg, rag, analysis, chart, report]
-  tie_breaker: cheapest_first
-  # Structured data beats documents for numeric questions, and vice versa.
-  numeric_question_prefers: sql
-  definitional_question_prefers: rag
-  relationship_question_prefers: kg
+# --- Capability -> candidate tool rules -----------------------------------
+# Each rule: when the TaskProfile flag is true, the tool becomes a
+# candidate.  The router aggregates candidates; final selection respects
+# route_type and consistency validation (see RoutingDecision).
+capability_rules:
+  - flag: requires_structured_data
+    tool: sql
+    weight: 1.0
+  - flag: requires_unstructured_knowledge
+    tool: rag
+    weight: 1.0
+  - flag: requires_relationship_reasoning
+    tool: kg
+    weight: 1.0
+  - flag: requires_statistical_analysis
+    tool: analysis
+    weight: 1.0
+  - flag: requires_visualization
+    tool: chart
+    weight: 0.5        # chart is an optional companion, not a source
+  - flag: requires_multi_source
+    tool: report
+    weight: 0.3        # report aggregates; the real work is the sources
 
-# --- Escalation / fallback -------------------------------------------------
-fallback:
-  on_empty_result: try_next_tool
-  on_tool_error: record_and_continue
-  on_low_evidence: escalate_to_multi_tool
+# A task requiring two or more distinct capability sources flags itself
+# requires_multi_source=true and routes to multi_tool.
+multi_tool_trigger_flags:
+  - requires_structured_data
+  - requires_unstructured_knowledge
+  - requires_relationship_reasoning
+  - requires_statistical_analysis
 
-# --- Guardrails ------------------------------------------------------------
-guardrails:
-  forbidden_tools: []
-  require_verification_for: [text_to_sql, data_analysis, multi_source_reasoning, complex_agent_task]
-  max_sql_rows: 1000
-  max_retrieved_chunks: 20
+# --- Route vocabulary ------------------------------------------------------
+route_types:
+  - rag
+  - sql
+  - kg
+  - analysis
+  - multi_tool
+  - clarification
+
+# --- Clarification policy ---------------------------------------------------
+# When ambiguity exceeds this, or a decisive capability flag is missing,
+# the router must NOT guess: route to clarification.
+clarification:
+  max_ambiguity: 0.6
+  # If zero capability flags are set, the task is under-specified.
+  require_at_least_one_flag: true
+  # These task types are inherently clarifiable (user asked vaguely).
+  auto_clarify_task_types: [ambiguous_task]
+
+# --- Confidence -------------------------------------------------------------
+# confidence = routing-decision confidence (how sure the router is the
+# chosen tools/plan fit the task profile), NOT answer correctness.
+# A decision whose best-candidate tool has weight >= strong_threshold and
+# the profile is low-ambiguity gets high confidence.
+confidence:
+  strong_single_tool_weight: 1.0   # one clear capability source
+  multi_tool_penalty: 0.15         # multi_tool decisions are inherently less certain
+  ambiguity_penalty_factor: 0.5    # confidence *= (1 - ambiguity * factor)
