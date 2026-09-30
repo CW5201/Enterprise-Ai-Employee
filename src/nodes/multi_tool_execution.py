@@ -172,6 +172,7 @@ class MultiToolExecutionNode:
                 {"chunk_id": h.get("chunk_id"), "source": h.get("source"), "score": h.get("score")}
                 for h in hits[:3]
             ]},
+            "results": hits,
             "error": None if ok else str(res.get("error")),
             "error_details": {},
             "evidence": [

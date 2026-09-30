@@ -251,7 +251,7 @@ def _count_graph_llm_calls(state: dict[str, Any], config: SystemConfig) -> int:
     decision = state.get("routing_decision") or {}
     if decision and config.router == "dynamic":
         n += 1  # LLM task-profile proposal
-    if state.get("sql") or any(tc.get("tool") == "sql_tool" for tc in state.get("tool_calls") or []):
+    if state.get("sql") or any(getattr(tc, "tool", "") == "sql_tool" for tc in state.get("tool_calls") or []):
         n += 1  # text-to-sql
     if state.get("answer"):
         n += 1  # answer generation
@@ -443,8 +443,6 @@ def _plain_answer(raw: str) -> str:
 
 def _make_graph_runner(config: SystemConfig, force_offline: bool) -> Any:
     """Build the graph pipeline for a config and return ``query -> state``."""
-    from src.graph.builder import DigitalEmployee
-
     backend = "fake" if force_offline else None
     if config.router == "rule":
         # Deterministic keyword profile (no LLM task profile): build the graph
@@ -489,23 +487,81 @@ def _make_graph_runner(config: SystemConfig, force_offline: bool) -> Any:
 
         return runner
 
-    # dynamic / supervisor: build the real graph
+    # dynamic / supervisor: build the real graph.
+    # When enable_kg=False (the w/o-KG ablation / System C), replace the
+    # orchestrator's KG tool with an honest _DisabledKG so any kg step is
+    # recorded as a skipped/failed step instead of silently falling back.
     kwargs = config.build_kwargs()
-    employee = DigitalEmployee(
-        backend=backend,
-        retrieval_mode=config.retrieval_mode,
-        phase3=kwargs["phase3"],
-        phase4=kwargs["phase4"],
+    from src.graph.builder import build_graph
+    from src.nodes.multi_tool_execution import MultiToolExecutionNode
+    from src.nodes.sql_execution import SQLExecutionNode
+    from src.tools.rag_tool import RAGTool
+
+    llm = LLMClient()
+    rag_tool = RAGTool(backend=backend, retrieval_mode=config.retrieval_mode)
+    sql_node = SQLExecutionNode(llm=llm)
+    kg_tool = None if config.enable_kg else _DisabledKG()
+    executor = MultiToolExecutionNode(
+        sql_node=sql_node, rag_tool=rag_tool, kg_tool=kg_tool, llm=llm,
     )
-    # KG-disable ablation: strip kg from the orchestrator when enable_kg=False
-    if not config.enable_kg:
-        _disable_kg_on_employee(employee)
+    if kwargs["phase3"]:
+        from src.nodes.task_router import TaskRouterNode
+
+        router_node = TaskRouterNode(llm=llm)
+        employee_graph = build_graph(
+            backend=backend, rag_top_k=5, retrieval_mode=config.retrieval_mode,
+            phase3=True, phase4=kwargs["phase4"],
+            router_node=router_node, executor_node=executor,
+        )
+    else:
+        from src.nodes.supervisor_router import SupervisorRouterNode
+
+        router_node = SupervisorRouterNode()
+        employee_graph = build_graph(
+            backend=backend, rag_top_k=5, retrieval_mode=config.retrieval_mode,
+            phase3=False, phase4=kwargs["phase4"],
+            router_node=router_node, executor_node=executor,
+        )
 
     def runner(query: str) -> dict[str, Any]:
-        state = employee.run(query)
-        return state
+        from src.core.observability import set_task_latencies
+        from src.core.state import make_state
+        from src.nodes.rag_retrieval import RAGRetrievalNode
 
+        state = make_state(query)
+        set_task_latencies(state["latency"])
+        out = employee_graph.invoke(state)
+        # The phase3 orchestrator's RAG step returns the hit list in the
+        # uniform tool_results payload; surface it into retrieved_context /
+        # evidence so the answer + verification nodes see RAG evidence even
+        # when the dense backend is the fake (offline) one.
+        rag_hits = _rag_hits_from_tool_results(out.get("tool_results") or [])
+        if rag_hits:
+            node = RAGRetrievalNode(tool=rag_tool)
+            state["user_query"] = query
+            rag_out = dict(node.run(state))
+            out["retrieved_context"] = list(out.get("retrieved_context") or []) + list(
+                rag_out.get("retrieved_context") or [])
+            out["evidence"] = list(out.get("evidence") or []) + list(rag_out.get("evidence") or [])
+        return out
+
+    # Expose the compiled graph so the runner can drive it directly.
+    runner._graph = employee_graph  # type: ignore[attr-defined]
     return runner
+
+
+def _rag_hits_from_tool_results(tool_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Lift the RAG tool's hit dicts out of the orchestrator's uniform payload.
+
+    The orchestrator's ``_run_rag`` stores the full hit list under ``results``;
+    this returns it so the runner can re-feed it through the real
+    RAGRetrievalNode (which produces ``retrieved_context`` + evidence).
+    Empty when no RAG step ran — the runner then leaves evidence untouched.
+    """
+    for tr in tool_results:
+        if tr.get("tool") == "rag" and tr.get("success"):
+            return list(tr.get("results") or [])
+    return []
 
 
 def _keyword_profile(query: str):
@@ -562,14 +618,6 @@ class _DisabledKG:
     def close(self) -> None:
         return None
 
-
-def _disable_kg_on_employee(employee: Any) -> None:
-    """No-op hook: KG-disable ablation is recorded via config.enable_kg; the
-    orchestrator honestly skips kg steps when the template is absent.  We
-    mark it so the artifact can report the ablation was applied."""
-    import contextlib
-    with contextlib.suppress(Exception):
-        employee._kg_disabled = True  # type: ignore[attr-defined]
 
 
 # ---------------------------------------------------------------------------
