@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from src.core.exceptions import FeedbackError
 from src.core.state import AgentState
@@ -26,7 +26,7 @@ class FeedbackLearningNode:
     for future improvement.
     """
 
-    def __init__(self, feedback_dir: Optional[Path] = None):
+    def __init__(self, feedback_dir: Path | None = None):
         """
         Initialize the feedback learning node.
 
@@ -58,12 +58,16 @@ class FeedbackLearningNode:
             The same state (this node doesn't modify the state for downstream
             processing, but it persists feedback for future use)
         """
+        import logging
+
+        # Don't let feedback processing break the main flow; log instead of
+        # silently swallowing the exception so failures are diagnosable.
         try:
             self._process_feedback(state)
-        except Exception as e:
-            # Don't let feedback processing break the main flow
-            # In a real system, we might want to log this error
-            pass
+        except Exception as exc:
+            logging.getLogger("eae.feedback").warning(
+                "feedback processing failed: %s", exc
+            )
         return state
 
     def _process_feedback(self, state: AgentState) -> None:
@@ -122,19 +126,19 @@ class FeedbackLearningNode:
         # Check for critical errors that would indicate failure
         errors = state.get("errors", [])
         for error in errors:
-            if error.get("stage") in ["answer_guard", "verification"]:
-                # If the answer guard or verification marked it as unsupported/critical
-                if error.get("message", "").lower().find("unsupported") != -1:
-                    return False
+            if (
+                error.get("stage") in ["answer_guard", "verification"]
+                and "unsupported" in error.get("message", "").lower()
+            ):
+                # The answer guard / verification marked a critical claim
+                # as unsupported.
+                return False
 
-        # Check if the route was clarification (might indicate inability to answer)
-        if state.get("route") == "clarification":
-            # Clarification might be success if it was honest, but for simplicity
-            # we'll treat it as not a full success
-            # In a more sophisticated system, we'd check if clarification was appropriate
-            return False
-
-        return True
+        # Check if the route was clarification (might indicate inability to
+        # answer).  A clarification can be an honest, correct outcome, but
+        # for this simple success heuristic it is not counted as a full
+        # success.
+        return state.get("route") != "clarification"
 
     def _classify_failure(self, state: AgentState) -> str:
         """
@@ -181,7 +185,7 @@ class FeedbackLearningNode:
             return errors[0].get("message", "Unknown error")
         return "No error information available"
 
-    def _append_to_jsonl(self, file_path: Path, data: Dict[str, Any]) -> None:
+    def _append_to_jsonl(self, file_path: Path, data: dict[str, Any]) -> None:
         """
         Append a dictionary as a JSON line to a file.
 

@@ -11,10 +11,7 @@ design decisions behind it.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Union
-
-from src.core.exceptions import ToolError
-from src.tools.base import ToolResult
+from typing import Any
 
 
 class ReportTool:
@@ -32,7 +29,7 @@ class ReportTool:
         """Initialize the report tool."""
         pass
 
-    def run(self, *, answer: str, evidence: List[Dict[str, Any]], charts: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    def run(self, *, answer: str, evidence: list[dict[str, Any]], charts: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         """
         Assemble the final report.
 
@@ -71,7 +68,7 @@ class ReportTool:
                 "metadata": {}
             }
 
-    def _assemble_report(self, answer: str, evidence: List[Dict[str, Any]], charts: List[Dict[str, Any]]) -> str:
+    def _assemble_report(self, answer: str, evidence: list[dict[str, Any]], charts: list[dict[str, Any]]) -> str:
         """Assemble the report in markdown format."""
         lines = []
 

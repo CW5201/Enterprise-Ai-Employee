@@ -11,10 +11,7 @@ design decisions behind it.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Union
-
-from src.core.exceptions import ToolError
-from src.tools.base import ToolResult
+from typing import Any
 
 
 class ChartTool:
@@ -32,7 +29,7 @@ class ChartTool:
         """Initialize the chart tool."""
         pass
 
-    def run(self, *, chart_type: str, dataframe_ref: Any, mapping: Dict[str, Any]) -> Dict[str, Any]:
+    def run(self, *, chart_type: str, dataframe_ref: Any, mapping: dict[str, Any]) -> dict[str, Any]:
         """
         Build an ECharts-ready data payload.
 
@@ -67,7 +64,7 @@ class ChartTool:
                 "metadata": {}
             }
 
-    def _build_chart_option(self, chart_type: str, dataframe_ref: Any, mapping: Dict[str, Any]) -> Dict[str, Any]:
+    def _build_chart_option(self, chart_type: str, dataframe_ref: Any, mapping: dict[str, Any]) -> dict[str, Any]:
         """Build the ECharts option based on chart type and data."""
         # Handle different dataframe formats
         data = self._extract_data(dataframe_ref)
@@ -100,7 +97,7 @@ class ChartTool:
                 columns = dataframe_ref["columns"]
                 # Convert rows to list of dicts
                 return [
-                    dict(zip(columns, row))
+                    dict(zip(columns, row, strict=False))
                     for row in rows
                 ]
             elif "data" in dataframe_ref:
@@ -115,7 +112,7 @@ class ChartTool:
             except Exception:
                 return []
 
-    def _get_data_shape(self, dataframe_ref: Any) -> Dict[str, Any]:
+    def _get_data_shape(self, dataframe_ref: Any) -> dict[str, Any]:
         """Get shape information about the data."""
         data = self._extract_data(dataframe_ref)
         if not data:
@@ -127,7 +124,7 @@ class ChartTool:
         else:
             return {"rows": len(data), "columns": 1 if data and not isinstance(data[0], (list, dict)) else len(data[0]) if isinstance(data[0], list) else 0}
 
-    def _get_empty_option(self, chart_type: str) -> Dict[str, Any]:
+    def _get_empty_option(self, chart_type: str) -> dict[str, Any]:
         """Return an empty chart option."""
         return {
             "title": {"text": "No Data Available"},
@@ -138,7 +135,7 @@ class ChartTool:
             "series": []
         }
 
-    def _build_bar_chart(self, data: list, mapping: Dict[str, Any]) -> Dict[str, Any]:
+    def _build_bar_chart(self, data: list, mapping: dict[str, Any]) -> dict[str, Any]:
         """Build a bar chart option."""
         if not data:
             return self._get_empty_option("bar")
@@ -190,7 +187,7 @@ class ChartTool:
 
         return option
 
-    def _build_line_chart(self, data: list, mapping: Dict[str, Any]) -> Dict[str, Any]:
+    def _build_line_chart(self, data: list, mapping: dict[str, Any]) -> dict[str, Any]:
         """Build a line chart option."""
         if not data:
             return self._get_empty_option("line")
@@ -243,7 +240,7 @@ class ChartTool:
 
         return option
 
-    def _build_pie_chart(self, data: list, mapping: Dict[str, Any]) -> Dict[str, Any]:
+    def _build_pie_chart(self, data: list, mapping: dict[str, Any]) -> dict[str, Any]:
         """Build a pie chart option."""
         if not data:
             return self._get_empty_option("pie")
@@ -268,11 +265,11 @@ class ChartTool:
                 value_data.append(1)
 
         # Filter out zero or negative values for pie chart
-        filtered_data = [(n, v) for n, v in zip(name_data, value_data) if v > 0]
+        filtered_data = [(n, v) for n, v in zip(name_data, value_data, strict=False) if v > 0]
         if not filtered_data:
             return self._get_empty_option("pie")
 
-        name_data, value_data = zip(*filtered_data) if filtered_data else ([], [])
+        name_data, value_data = zip(*filtered_data, strict=False) if filtered_data else ([], [])
 
         option = {
             "title": {"text": mapping.get("title", "Pie Chart")},
@@ -304,14 +301,14 @@ class ChartTool:
                 },
                 "data": [
                     {"value": v, "name": n}
-                    for v, n in zip(value_data, name_data)
+                    for v, n in zip(value_data, name_data, strict=False)
                 ]
             }]
         }
 
         return option
 
-    def _build_scatter_chart(self, data: list, mapping: Dict[str, Any]) -> Dict[str, Any]:
+    def _build_scatter_chart(self, data: list, mapping: dict[str, Any]) -> dict[str, Any]:
         """Build a scatter chart option."""
         if not data:
             return self._get_empty_option("scatter")
@@ -369,7 +366,7 @@ class ChartTool:
             "series": [{
                 "name": mapping.get("series_name", "Value"),
                 "type": "scatter",
-                "data": [[x, y] for x, y in zip(x_data, y_data)],
+                "data": [[x, y] for x, y in zip(x_data, y_data, strict=False)],
                 "symbolSize": mapping.get("symbol_size", 10)
             }]
         }

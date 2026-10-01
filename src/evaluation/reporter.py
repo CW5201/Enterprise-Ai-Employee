@@ -13,12 +13,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from src.core.exceptions import ReporterError
 
 
-def generate_markdown_report(results: Dict[str, Any], output_path: Path | str) -> None:
+def generate_markdown_report(results: dict[str, Any], output_path: Path | str) -> None:
     """
     Generate a Markdown report from evaluation results.
 
@@ -82,7 +82,7 @@ def generate_markdown_report(results: Dict[str, Any], output_path: Path | str) -
         raise ReporterError(f"Failed to generate Markdown report: {e}") from e
 
 
-def generate_html_report(results: Dict[str, Any], output_path: Path | str) -> None:
+def generate_html_report(results: dict[str, Any], output_path: Path | str) -> None:
     """
     Generate an HTML report from evaluation results.
 
@@ -97,14 +97,15 @@ def generate_html_report(results: Dict[str, Any], output_path: Path | str) -> No
     # In a real implementation, we might use a template engine.
     try:
         import markdown
-    except ImportError:
+    except ImportError as exc:
         raise ReporterError(
             "Markdown package is required for HTML report generation. "
             "Install it with: pip install markdown"
-        )
+        ) from exc
 
     # First generate markdown content
     from io import StringIO
+
     import markdown
 
     md_buffer = StringIO()
@@ -196,7 +197,7 @@ def generate_html_report(results: Dict[str, Any], output_path: Path | str) -> No
         raise ReporterError(f"Failed to generate HTML report: {e}") from e
 
 
-def save_results_json(results: Dict[str, Any], output_path: Path | str) -> None:
+def save_results_json(results: dict[str, Any], output_path: Path | str) -> None:
     """
     Save evaluation results as JSON file.
 

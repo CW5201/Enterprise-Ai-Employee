@@ -13,25 +13,23 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from src.core.exceptions import RunnerError
 from src.evaluation.dataset import (
-    iterate_jsonl_dataset,
-    load_jsonl_dataset,
     get_dataset_info,
+    load_jsonl_dataset,
 )
 from src.evaluation.metrics import (
-    task_success_rate,
-    routing_accuracy,
-    retrieval_recall_at_k,
-    sql_execution_accuracy,
-    evidence_support_rate,
     average_latency,
+    evidence_support_rate,
+    retrieval_recall_at_k,
+    routing_accuracy,
+    sql_execution_accuracy,
+    task_success_rate,
 )
 from src.evaluation.reporter import (
     generate_html_report,
@@ -42,8 +40,8 @@ from src.evaluation.reporter import (
 
 def run_system(
     query: str,
-    config: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+    config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """
     Placeholder for running the actual system on a query.
     In a real implementation, this would invoke the LangGraph or API.
@@ -89,9 +87,9 @@ def run_system(
 def run_evaluation(
     dataset_path: Path,
     output_dir: Path,
-    config: Optional[Dict[str, Any]] = None,
+    config: dict[str, Any] | None = None,
     system_name: str = "ours",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Run evaluation on a dataset.
 
@@ -231,7 +229,7 @@ def main() -> None:
 
     # Run evaluation
     try:
-        result = run_evaluation(
+        run_evaluation(
             dataset_path=Path(args.dataset),
             output_dir=Path(args.output-dir),
             config=config,

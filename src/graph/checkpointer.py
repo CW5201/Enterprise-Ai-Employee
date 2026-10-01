@@ -12,9 +12,9 @@ design decisions behind it.
 from __future__ import annotations
 
 import json
-import os
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, Dict, Iterator, Optional, Tuple, Union
+from typing import Any
 
 from src.core.exceptions import CheckpointerError
 
@@ -27,7 +27,7 @@ class Checkpointer:
     The checkpoint ID is used as the filename.
     """
 
-    def __init__(self, checkpoint_dir: Union[str, Path]):
+    def __init__(self, checkpoint_dir: str | Path):
         """
         Initialize the checkpointer.
 
@@ -37,7 +37,7 @@ class Checkpointer:
         self.checkpoint_dir = Path(checkpoint_dir)
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
-    def get(self, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def get(self, config: dict[str, Any]) -> dict[str, Any] | None:
         """
         Get the latest checkpoint for the given config.
 
@@ -63,10 +63,10 @@ class Checkpointer:
 
     def put(
         self,
-        config: Dict[str, Any],
-        checkpoint: Dict[str, Any],
-        metadata: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        config: dict[str, Any],
+        checkpoint: dict[str, Any],
+        metadata: dict[str, Any],
+    ) -> dict[str, Any]:
         """
         Save a checkpoint.
 
@@ -95,7 +95,7 @@ class Checkpointer:
         except Exception as e:
             raise CheckpointerError(f"Failed to save checkpoint: {e}") from e
 
-    def list(self, config: Optional[Dict[str, Any]]) -> Iterator[Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]]:
+    def list(self, config: dict[str, Any] | None) -> Iterator[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]]:
         """
         List existing checkpoints.
 
@@ -125,7 +125,7 @@ class Checkpointer:
         except Exception as e:
             raise CheckpointerError(f"Failed to list checkpoints: {e}") from e
 
-    def _get_checkpoint_id(self, config: Dict[str, Any]) -> Optional[str]:
+    def _get_checkpoint_id(self, config: dict[str, Any]) -> str | None:
         """
         Extract the checkpoint ID from config.
 
@@ -153,9 +153,9 @@ class InMemoryCheckpointer:
     """
 
     def __init__(self):
-        self.checkpoints: Dict[str, Dict[str, Any]] = {}
+        self.checkpoints: dict[str, dict[str, Any]] = {}
 
-    def get(self, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def get(self, config: dict[str, Any]) -> dict[str, Any] | None:
         checkpoint_id = self._get_checkpoint_id(config)
         if checkpoint_id and checkpoint_id in self.checkpoints:
             return self.checkpoints[checkpoint_id]
@@ -163,10 +163,10 @@ class InMemoryCheckpointer:
 
     def put(
         self,
-        config: Dict[str, Any],
-        checkpoint: Dict[str, Any],
-        metadata: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        config: dict[str, Any],
+        checkpoint: dict[str, Any],
+        metadata: dict[str, Any],
+    ) -> dict[str, Any]:
         checkpoint_id = self._get_checkpoint_id(config)
         if not checkpoint_id:
             import uuid
@@ -176,13 +176,13 @@ class InMemoryCheckpointer:
         self.checkpoints[checkpoint_id] = checkpoint
         return {**config, "checkpoint_id": checkpoint_id}
 
-    def list(self, config: Optional[Dict[str, Any]]) -> Iterator[Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]]:
-        for checkpoint_id, checkpoint_data in self.checkpoints.items():
+    def list(self, config: dict[str, Any] | None) -> Iterator[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]]:
+        for _checkpoint_id, checkpoint_data in self.checkpoints.items():
             metadata = checkpoint_data.get("metadata", {})
             config_data = checkpoint_data.get("config", {})
             yield checkpoint_data, metadata, config_data
 
-    def _get_checkpoint_id(self, config: Dict[str, Any]) -> Optional[str]:
+    def _get_checkpoint_id(self, config: dict[str, Any]) -> str | None:
         if "checkpoint_id" in config:
             return config["checkpoint_id"]
         if "configurable" in config and "checkpoint_id" in config["configurable"]:

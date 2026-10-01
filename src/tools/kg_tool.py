@@ -127,22 +127,6 @@ _TEMPLATES: dict[str, dict[str, Any]] = {
         ),
         "params": ["customer_id", "supplier_id", "item1_id", "item2_id"],
     },
-    "customer_items_via_supplier": {
-        "id": "customer_items_via_supplier",
-        "name": "Items a customer bought, supplied by a given supplier (cross-entity)",
-        "description": (
-            "Three-hop cross-entity: Customer -> Order -> StockItem, "
-            "filtered by StockItem -> Supplier.  Answers 'which items of "
-            "supplier X has customer Y ever ordered'."
-        ),
-        "cypher": (
-            "MATCH (c:Customer {customer_id: $customer_id})"
-            "-[:PLACED]->(order:Order)-[:HAS_LINE]->(item:StockItem)"
-            "-[:SUPPLIED_BY]->(sup:Supplier {supplier_id: $supplier_id}) "
-            "RETURN DISTINCT item ORDER BY item.stock_item_id"
-        ),
-        "params": ["customer_id", "supplier_id"],
-    },
     "order_invoices": {
         "id": "order_invoices",
         "name": "Find invoices for an order",

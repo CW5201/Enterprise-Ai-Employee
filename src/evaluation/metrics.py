@@ -13,15 +13,15 @@ from __future__ import annotations
 
 from collections import defaultdict
 from statistics import mean
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any
 
 from src.core.exceptions import MetricsError
 
 
 def task_success_rate(
-    results: List[Dict[str, Any]],
-    ground_truth: List[Dict[str, Any]]
-) -> Dict[str, Any]:
+    results: list[dict[str, Any]],
+    ground_truth: list[dict[str, Any]]
+) -> dict[str, Any]:
     """
     Calculate task success rate - the proportion of tasks where the conclusion
     reaches the determination standard.
@@ -90,7 +90,7 @@ def task_success_rate(
     }
 
 
-def _is_task_successful(result: Dict[str, Any], ground_truth: Dict[str, Any]) -> bool:
+def _is_task_successful(result: dict[str, Any], ground_truth: dict[str, Any]) -> bool:
     """Determine if a task is successful based on its type and ground truth."""
     task_type = ground_truth.get("task_type")
 
@@ -131,9 +131,9 @@ def _is_task_successful(result: Dict[str, Any], ground_truth: Dict[str, Any]) ->
 
 
 def routing_accuracy(
-    results: List[Dict[str, Any]],
-    ground_truth: List[Dict[str, Any]]
-) -> Dict[str, Any]:
+    results: list[dict[str, Any]],
+    ground_truth: list[dict[str, Any]]
+) -> dict[str, Any]:
     """
     Calculate routing accuracy - consistency between system's tool set and expected tool set.
 
@@ -155,7 +155,7 @@ def routing_accuracy(
     by_type_over = defaultdict(lambda: {"total": 0, "over": 0})
     by_type_under = defaultdict(lambda: {"total": 0, "under": 0})
 
-    for result, gt in zip(results, ground_truth):
+    for result, gt in zip(results, ground_truth, strict=False):
         task_type = gt.get("task_type", "unknown")
 
         # Update breakdown totals
@@ -163,8 +163,8 @@ def routing_accuracy(
         by_type_over[task_type]["total"] += 1
         by_type_under[task_type]["total"] += 1
 
-        expected_tools: Set[str] = set(gt.get("expected_tools", []))
-        actual_tools: Set[str] = set(result.get("selected_tools", []))
+        expected_tools: set[str] = set(gt.get("expected_tools", []))
+        actual_tools: set[str] = set(result.get("selected_tools", []))
 
         if actual_tools == expected_tools:
             exact_match += 1
@@ -213,10 +213,10 @@ def routing_accuracy(
 
 
 def retrieval_recall_at_k(
-    results: List[Dict[str, Any]],
-    ground_truth: List[Dict[str, Any]],
-    k_values: List[int] = [1, 3, 5, 10]
-) -> Dict[str, Any]:
+    results: list[dict[str, Any]],
+    ground_truth: list[dict[str, Any]],
+    k_values: list[int] | None = None,
+) -> dict[str, Any]:
     """
     Calculate Retrieval Recall@K - proportion of reference evidence covered in Top-K results.
 
@@ -224,15 +224,10 @@ def retrieval_recall_at_k(
     - Dense / BM25 / Hybrid / Hybrid+Rerank configurations
     - Document-level hits and chunk-level hits (chunk-level is stricter)
     """
+    if k_values is None:
+        k_values = [1, 3, 5, 10]
     if len(results) != len(ground_truth):
         raise MetricsError("Results and ground truth must have the same length")
-
-    # Initialize results structure
-    metrics = {
-        "k_values": k_values,
-        "configurations": ["dense", "bm25", "hybrid", "hybrid_rerank"],
-        "levels": ["document", "chunk"]
-    }
 
     # Prepare recall storage: config -> level -> k -> list of recall scores per query
     recall_scores = {
@@ -243,15 +238,14 @@ def retrieval_recall_at_k(
         for config in ["dense", "bm25", "hybrid", "hybrid_rerank"]
     }
 
-    for result, gt in zip(results, ground_truth):
-        expected_docs: Set[str] = set(gt.get("expected_document_ids", []))
-        expected_chunks: Set[str] = set(gt.get("expected_chunk_ids", []))
+    for result, gt in zip(results, ground_truth, strict=False):
+        expected_docs: set[str] = set(gt.get("expected_document_ids", []))
+        expected_chunks: set[str] = set(gt.get("expected_chunk_ids", []))
 
         # Process each configuration
         for config in ["dense", "bm25", "hybrid", "hybrid_rerank"]:
-            config_key = f"retrieval_mode_{config}" if config != "hybrid_rerank" else "retrieval_mode_hybrid_rerank"
-            retrieved_docs: Set[str] = set()
-            retrieved_chunks: Set[str] = set()
+            retrieved_docs: set[str] = set()
+            retrieved_chunks: set[str] = set()
 
             # Extract retrieved items based on config
             retrieval_results = result.get("retrieval_results", {})
@@ -296,9 +290,9 @@ def retrieval_recall_at_k(
         for config in ["dense", "bm25", "hybrid", "hybrid_rerank"]
     }
 
-    for result, gt in zip(results, ground_truth):
-        expected_docs: Set[str] = set(gt.get("expected_document_ids", []))
-        expected_chunks: Set[str] = set(gt.get("expected_chunk_ids", []))
+    for result, gt in zip(results, ground_truth, strict=False):
+        expected_docs: set[str] = set(gt.get("expected_document_ids", []))
+        expected_chunks: set[str] = set(gt.get("expected_chunk_ids", []))
 
         for config in ["dense", "bm25", "hybrid", "hybrid_rerank"]:
             retrieval_results = result.get("retrieval_results", {})
@@ -343,9 +337,9 @@ def retrieval_recall_at_k(
 
 
 def sql_execution_accuracy(
-    results: List[Dict[str, Any]],
-    ground_truth: List[Dict[str, Any]]
-) -> Dict[str, Any]:
+    results: list[dict[str, Any]],
+    ground_truth: list[dict[str, Any]]
+) -> dict[str, Any]:
     """
     Calculate SQL Execution Accuracy - proportion of generated SQL that executes correctly
     and produces expected results.
@@ -365,7 +359,7 @@ def sql_execution_accuracy(
     # Breakdowns
     by_type = defaultdict(lambda: {"total": 0, "execution_success": 0, "execution_failure": 0, "result_mismatch": 0})
 
-    for result, gt in zip(results, ground_truth):
+    for result, gt in zip(results, ground_truth, strict=False):
         task_type = gt.get("task_type", "unknown")
         by_type[task_type]["total"] += 1
 
@@ -417,9 +411,9 @@ def sql_execution_accuracy(
 
 
 def evidence_support_rate(
-    results: List[Dict[str, Any]],
-    ground_truth: List[Dict[str, Any]]
-) -> Dict[str, Any]:
+    results: list[dict[str, Any]],
+    ground_truth: list[dict[str, Any]]
+) -> dict[str, Any]:
     """
     Calculate Evidence Support Rate - proportion of claims that are supported by evidence.
 
@@ -447,10 +441,9 @@ def evidence_support_rate(
         "contradicted": 0
     })
 
-    for result, gt in zip(results, ground_truth):
+    for result, gt in zip(results, ground_truth, strict=False):
         task_type = gt.get("task_type", "unknown")
         claims = result.get("claims", [])
-        expected_claims = gt.get("expected_claims", [])
 
         # For simplicity, we'll compare each claim with expected verdict
         # In practice, this would use the verification module's output
@@ -510,8 +503,8 @@ def evidence_support_rate(
 
 
 def average_latency(
-    results: List[Dict[str, Any]]
-) -> Dict[str, Any]:
+    results: list[dict[str, Any]]
+) -> dict[str, Any]:
     """
     Calculate Average Latency - end-to-end average latency in milliseconds.
 
@@ -599,7 +592,7 @@ def _conclusion_matches_reference(conclusion: Any, reference: Any) -> bool:
     return _values_equal(conclusion, reference)
 
 
-def _citations_correct(actual: List[Any], expected: List[Any]) -> bool:
+def _citations_correct(actual: list[Any], expected: list[Any]) -> bool:
     """Check if actual citations match expected citations."""
     if len(actual) != len(expected):
         return False
@@ -607,30 +600,30 @@ def _citations_correct(actual: List[Any], expected: List[Any]) -> bool:
     return sorted([str(c) for c in actual]) == sorted([str(c) for c in expected])
 
 
-def _result_sets_equal(result1: List[Any], result2: List[Any]) -> bool:
+def _result_sets_equal(result1: list[Any], result2: list[Any]) -> bool:
     """Check if two result sets are equal (order-independent)."""
     try:
         # Convert to sets of tuples for comparison, handling unhashable types
-        set1 = set(tuple(sorted(item.items())) if isinstance(item, dict) else str(item) for item in result1)
-        set2 = set(tuple(sorted(item.items())) if isinstance(item, dict) else str(item) for item in result2)
+        set1 = {tuple(sorted(item.items())) if isinstance(item, dict) else str(item) for item in result1}
+        set2 = {tuple(sorted(item.items())) if isinstance(item, dict) else str(item) for item in result2}
         return set1 == set2
     except Exception:
         # Fallback to string comparison
         return str(sorted(result1)) == str(sorted(result2))
 
 
-def _stats_and_direction_match(actual: Dict[str, Any], expected: Dict[str, Any]) -> bool:
+def _stats_and_direction_match(actual: dict[str, Any], expected: dict[str, Any]) -> bool:
     """Check if statistics and conclusion direction match."""
     # Simple implementation - in practice would be more sophisticated
     return _values_equal(actual, expected)
 
 
-def _sources_used_correctly(actual: List[Any], expected: List[Any]) -> bool:
+def _sources_used_correctly(actual: list[Any], expected: list[Any]) -> bool:
     """Check if required sources were used."""
     if not expected:
         return True  # No sources required
-    actual_set = set(str(s) for s in actual)
-    expected_set = set(str(s) for s in expected)
+    actual_set = {str(s) for s in actual}
+    expected_set = {str(s) for s in expected}
     return expected_set.issubset(actual_set)
 
 

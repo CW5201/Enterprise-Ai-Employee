@@ -11,7 +11,7 @@ design decisions behind it.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 from src.core.exceptions import ToolError
 from src.core.observability import observe
@@ -154,7 +154,7 @@ class ToolInvocationNode:
             }
             state["tool_calls"] = state.get("tool_calls", []) + [tool_call_record]
 
-    def _prepare_tool_inputs(self, state: AgentState, tool: Any) -> Dict[str, Any]:
+    def _prepare_tool_inputs(self, state: AgentState, tool: Any) -> dict[str, Any]:
         """
         Prepare inputs for a tool based on its input schema and current state.
 

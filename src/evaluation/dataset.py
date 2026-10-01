@@ -12,13 +12,14 @@ design decisions behind it.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, Iterator, List, Optional
+from typing import Any
 
 from src.core.exceptions import DatasetError
 
 
-def load_jsonl_dataset(file_path: Path | str) -> List[dict[str, Any]]:
+def load_jsonl_dataset(file_path: Path | str) -> list[dict[str, Any]]:
     """
     Load a JSONL dataset file.
 
@@ -94,7 +95,7 @@ def iterate_jsonl_dataset(file_path: Path | str) -> Iterator[dict[str, Any]]:
         raise DatasetError(f"Failed to iterate dataset from {path}: {e}") from e
 
 
-def get_dataset_info(dataset: List[dict[str, Any]]) -> dict[str, Any]:
+def get_dataset_info(dataset: list[dict[str, Any]]) -> dict[str, Any]:
     """
     Get basic information about a dataset.
 
@@ -119,13 +120,13 @@ def get_dataset_info(dataset: List[dict[str, Any]]) -> dict[str, Any]:
 
     return {
         "size": len(dataset),
-        "fields": sorted(list(fields)),
+        "fields": sorted(fields),
         "sample": dataset[0] if dataset else None
     }
 
 
 def validate_dataset_version(
-    dataset: List[dict[str, Any]],
+    dataset: list[dict[str, Any]],
     expected_version: str,
     version_field: str = "version"
 ) -> bool:
@@ -140,7 +141,7 @@ def validate_dataset_version(
     Returns:
         True if all entries have the expected version, False otherwise
     """
-    for i, entry in enumerate(dataset):
+    for _i, entry in enumerate(dataset):
         if not isinstance(entry, dict):
             continue
         actual_version = entry.get(version_field)

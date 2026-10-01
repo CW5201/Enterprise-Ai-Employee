@@ -132,6 +132,30 @@ class CheckpointerError(AppError):
     code = "checkpointer_error"
 
 
+class FeedbackError(AppError):
+    """The feedback-learning module failed to load or apply feedback."""
+
+    code = "feedback_error"
+
+
+class MetricsError(AppError):
+    """Evaluation metric computation failed (bad inputs, schema mismatch)."""
+
+    code = "metrics_error"
+
+
+class ReporterError(AppError):
+    """Report generation failed."""
+
+    code = "reporter_error"
+
+
+class RunnerError(AppError):
+    """The evaluation runner failed to set up or finish a run."""
+
+    code = "runner_error"
+
+
 __all__ = [
     "AppError",
     "ConfigError",
@@ -146,4 +170,8 @@ __all__ = [
     "ToolError",
     "DatasetError",
     "CheckpointerError",
+    "FeedbackError",
+    "MetricsError",
+    "ReporterError",
+    "RunnerError",
 ]
