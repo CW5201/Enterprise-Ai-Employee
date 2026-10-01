@@ -94,7 +94,7 @@
         </div>
       </div>
 
-      <!-- Right: execution trace -->
+      <!-- Right: execution trace + evidence -->
       <div class="col col-right">
         <div class="panel">
           <div class="panel-head">执行过程</div>
@@ -106,6 +106,8 @@
           </ol>
           <div v-else class="panel-empty">尚无执行记录</div>
         </div>
+
+        <EvidencePanel :result="result" />
 
         <div v-if="result?.tool_calls?.length" class="panel">
           <div class="panel-head">工具调用</div>
@@ -125,6 +127,7 @@ import { onMounted, ref } from 'vue'
 import { postChat } from '@/api/chat'
 import { streamChat } from '@/api/stream'
 import { listTasks } from '@/api/tasks'
+import EvidencePanel from '@/components/EvidencePanel.vue'
 import type { ChatResponse, StreamEvent, TaskRecord } from '@/types'
 
 interface ChatMsg {
