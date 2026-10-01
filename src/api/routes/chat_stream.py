@@ -58,6 +58,18 @@ def _ts() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()) + f".{int((time.time() % 1) * 1000):03d}Z"
 
 
+def _sanitize_evidence(ev: dict[str, Any]) -> dict[str, Any]:
+    """Strip raw row data / chunk text from an evidence record.
+
+    The guard node only sanitises ``answer_sources``; the raw ``evidence``
+    records in state still carry full row data and chunk text (PII).  The
+    SSE stream exposes only user-safe fields.
+    """
+    out = {k: v for k, v in ev.items() if k not in ("payload", "content")}
+    out["row_count"] = ev.get("row_count")
+    return out
+
+
 def _safe_payload(node_name: str, delta: dict[str, Any]) -> dict[str, Any]:
     """Pick user-safe fields from the node state delta.
 
@@ -83,14 +95,14 @@ def _safe_payload(node_name: str, delta: dict[str, Any]) -> dict[str, Any]:
         p["tool_calls"] = delta.get("tool_calls", [])
         p["sql"] = delta.get("sql", "")
         p["sql_result"] = delta.get("sql_result")
-        p["evidence"] = delta.get("evidence", [])
+        p["evidence"] = [_sanitize_evidence(e) for e in delta.get("evidence", [])]
         p["tool_results"] = delta.get("tool_results", [])
         p["errors"] = delta.get("errors", [])
     elif node_name == "answer":
         p["answer"] = delta.get("answer", "")
         p["intent"] = delta.get("intent", "")
         p["sql"] = delta.get("sql", "")
-        p["evidence"] = delta.get("evidence", [])
+        p["evidence"] = [_sanitize_evidence(e) for e in delta.get("evidence", [])]
         p["tool_calls"] = delta.get("tool_calls", [])
         p["status"] = delta.get("status", "")
         p["latency"] = delta.get("latency", {})
@@ -155,34 +167,41 @@ def chat_stream(request: Request, body: ChatRequest) -> StreamingResponse:
                     })
 
             # --- final completed event (reads the folded final state) ---
+            completed_payload: dict[str, Any] = {
+                "answer": final_state.get("answer", ""),
+                "status": final_state.get("status", ""),
+                "route": final_state.get("route", ""),
+                "intent": final_state.get("intent", ""),
+                "sql": final_state.get("sql", ""),
+                "latency": final_state.get("latency", {}),
+            }
+            # Evidence / tool_calls / verification rows are already in the
+            # per-node step events; only expose them in `completed` when the
+            # guard stripped internal fields.  This avoids streaming raw PII
+            # rows a second time.
+            completed_payload["verification"] = final_state.get("verification_results", [])
+            completed_payload["sources"] = final_state.get("answer_sources", [])
+            completed_payload["verification_summary"] = final_state.get("verification_summary", {})
+            completed_payload["guard"] = final_state.get("guard_decision", {})
+
             yield _sse_event({
                 "type": "completed",
                 "timestamp": _ts(),
                 "step": "end",
                 "status": "ok",
-                "payload": {
-                    "answer": final_state.get("answer", ""),
-                    "status": final_state.get("status", ""),
-                    "route": final_state.get("route", ""),
-                    "intent": final_state.get("intent", ""),
-                    "sql": final_state.get("sql", ""),
-                    "evidence": final_state.get("evidence", []),
-                    "tool_calls": final_state.get("tool_calls", []),
-                    "verification": final_state.get("verification_results", []),
-                    "sources": final_state.get("answer_sources", []),
-                    "latency": final_state.get("latency", {}),
-                    "verification_summary": final_state.get("verification_summary", {}),
-                    "guard": final_state.get("guard_decision", {}),
-                },
+                "payload": completed_payload,
             })
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             logger.exception("stream pipeline failed")
+            # Surface a safe, generic message to the client; the internal
+            # exception detail stays in the server log (never a stack trace
+            # or secret in the SSE stream).
             yield _sse_event({
                 "type": "error",
                 "timestamp": _ts(),
                 "step": "error",
                 "status": "error",
-                "payload": {"message": str(exc)},
+                "payload": {"message": "任务执行失败，请稍后重试或联系管理员"},
             })
 
     return StreamingResponse(

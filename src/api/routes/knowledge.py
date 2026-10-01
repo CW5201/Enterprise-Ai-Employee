@@ -83,11 +83,12 @@ def get_document_content(doc_id: str) -> dict[str, Any]:
     if not docs:
         raise HTTPException(status_code=404, detail=f"document {doc_id!r} not found")
     dept = docs[0]["department"]
-    suffix = f"{doc_id}.md"
+    # Exact-stem match in the owning department; fall back to an exact-stem
+    # search across all departments.  (rglob(f"*{doc_id}.md") would prefix-
+    # match and could return the wrong file.)
     candidates = [p for p in (KB_ROOT / dept).glob("*.md") if p.stem == doc_id]
     if not candidates:
-        # fall back to matching by filename stem across departments
-        candidates = list(KB_ROOT.rglob(f"*{suffix}"))
+        candidates = [p for p in KB_ROOT.rglob("*.md") if p.stem == doc_id]
     if not candidates:
         raise HTTPException(status_code=404, detail=f"file not found for {doc_id!r}")
     text = candidates[0].read_text(encoding="utf-8")

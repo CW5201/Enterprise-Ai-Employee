@@ -67,7 +67,10 @@ def chat(request: Request, body: ChatRequest) -> dict[str, Any]:
         final: AgentState = _employee(request).run(text, request_id=body.request_id)
     except Exception as exc:  # noqa: BLE001 - surface a structured error, never a 500 stack
         logger.exception("pipeline failed for request %s", body.request_id)
-        raise HTTPException(status_code=502, detail=f"pipeline error: {exc}") from exc
+        # Keep the raw exception in the server log; the client gets a short,
+        # generic message so internal detail (SQL fragments, endpoint URLs,
+        # collection names, claim text) never reaches the browser.
+        raise HTTPException(status_code=502, detail="任务执行失败，请稍后重试或联系管理员") from exc
 
     return {
         "request_id": final.get("request_id", ""),
