@@ -11,6 +11,13 @@ LLM backend selection:
   Text-to-SQL via the OpenAI-compatible endpoint;
 - otherwise -> deterministic offline backend (tests stay green offline,
   with a clearly-labelled placeholder result).
+
+Live-service guard:
+- the full pipeline instantiates the Milvus vector store; when Milvus is
+  not running the test is *skipped* with an explicit reason (it is an
+  environment condition, not a code defect).  If the service is
+  reachable, the test runs against the real pipeline and any genuine
+  SQL / RAG / LLM error still fails it.
 """
 
 from __future__ import annotations
@@ -56,9 +63,41 @@ def wwi_db() -> str:
     return str(path)
 
 
+def _skip_unless_milvus_reachable() -> None:
+    """Skip only when the live Milvus service is unavailable.
+
+    The SQL end-to-end pipeline instantiates the Milvus vector store, whose
+    connection fails when Milvus (``localhost:19530`` by default) is not
+    running.  That is an *environment* condition, not a code defect, so we
+    probe service reachability up-front and skip with an explicit reason.
+    We only probe the connection (not the collection, and we do NOT load an
+    embedder model), so a real retrieval / BGE-M3 / LLM error raised later
+    by the pipeline still fails the test normally — we never mask genuine
+    defects.
+    """
+    from pymilvus import MilvusClient
+
+    from src.core.config_loader import get_settings
+
+    settings = get_settings()
+    milvus_cfg = settings.raw.get("milvus", {})
+    host = str(milvus_cfg.get("host", "localhost"))
+    port = str(milvus_cfg.get("port", "19530"))
+    uri = host if host.startswith(("http://", "https://")) else f"http://{host}:{port}"
+    user = str(milvus_cfg.get("user", ""))
+    password = str(milvus_cfg.get("password", ""))
+    token = f"{user}:{password}" if user or password else ""
+
+    try:
+        MilvusClient(uri=uri, token=token)
+    except Exception as exc:  # noqa: BLE001 - connection-level failure only
+        pytest.skip(f"Milvus not reachable at {uri}: {exc}")
+
+
 @pytest.mark.usefixtures("wwi_db")
 def test_sql_end_to_end() -> None:
     """Full pipeline: intent -> router -> sql tool -> answer."""
+    _skip_unless_milvus_reachable()
     os.environ.pop("LLM_BASE_URL", None)  # honour the running environment as-is
     graph = build_graph()
     state = graph.invoke(
