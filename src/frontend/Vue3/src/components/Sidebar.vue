@@ -2,7 +2,7 @@
   <el-aside :width="SIDEBAR_WIDTH" class="app-aside">
     <div class="sidebar-brand">
       <div class="sidebar-brand-title">Enterprise AI Employee</div>
-      <div class="sidebar-brand-sub">企业数据工作台</div>
+      <div class="sidebar-brand-sub">企业工作台</div>
     </div>
     <el-menu :default-active="activeRoute" router class="sidebar-menu" :collapse="collapsed">
       <el-menu-item index="/dashboard">

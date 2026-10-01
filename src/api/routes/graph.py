@@ -20,11 +20,22 @@ logger = logging.getLogger("eae.api.graph")
 
 
 def _neo4j_client() -> Any | None:
-    """Return a configured Neo4jClient or None (offline / not configured)."""
+    """Return a usable, connected Neo4jClient or None (offline / not configured).
+
+    ``Neo4jClient()`` is lazy — constructing it never fails.  When
+    ``NEO4J_PASSWORD`` is unset (the normal local-dev / CI case) or the
+    server is unreachable, connecting raises :class:`Neo4jUnavailableError`;
+    in that case the endpoints return empty lists instead of crashing.
+    """
     try:
-        from src.core.neo4j_client import Neo4jClient
+        from src.core.neo4j_client import Neo4jClient, Neo4jUnavailableError
+
         client = Neo4jClient()
+        client.get_driver()  # forces connection so offline shows up here
         return client
+    except Neo4jUnavailableError as exc:
+        logger.warning("Neo4j offline (%s); returning empty result", exc.message)
+        return None
     except Exception:  # noqa: BLE001
         logger.warning("Neo4j client unavailable; returning empty result")
         return None

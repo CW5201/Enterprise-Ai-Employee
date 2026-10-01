@@ -97,12 +97,15 @@ const neo4jOffline = ref(false)
 async function loadEntities() {
   loading.value = true
   try {
-    entities.value = await listGraphEntities({
-      search: entitySearch.value || undefined,
-    })
-    neo4jOffline.value = entities.value.length === 0
-    // relations without a specific entity filter
-    relations.value = await listGraphRelations({})
+    const [ents, rels] = await Promise.all([
+      listGraphEntities({ search: entitySearch.value || undefined }),
+      listGraphRelations({}),
+    ])
+    entities.value = ents
+    relations.value = rels
+    // Both endpoints return 200 [] when Neo4j is offline; two empty lists
+    // is the signal to show the offline notice instead of pretending.
+    neo4jOffline.value = ents.length === 0 && rels.length === 0
   } finally {
     loading.value = false
   }

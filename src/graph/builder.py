@@ -28,7 +28,7 @@ from langgraph.graph import END, START, StateGraph
 
 from src.core.embedder import create_embedder
 from src.core.llm_client import LLMClient
-from src.core.observability import set_task_latencies
+from src.core.observability import observe, set_task_latencies
 from src.core.state import AgentState, make_state
 from src.nodes.answer_generation import AnswerGenerationNode
 from src.nodes.answer_guard import AnswerGuardNode
@@ -179,7 +179,11 @@ class DigitalEmployee:
     def run(self, user_query: str, *, request_id: str | None = None) -> AgentState:
         state: AgentState = make_state(user_query, request_id=request_id)
         set_task_latencies(state["latency"])
-        return cast(AgentState, self._graph.invoke(state))
+        # Wrap the whole run in one observe stage so ``total_ms`` is
+        # written into the latency table alongside the per-stage entries.
+        with observe("total"):
+            result = self._graph.invoke(state)
+        return cast(AgentState, result)
 
 
 __all__ = ["DigitalEmployee", "build_graph"]
