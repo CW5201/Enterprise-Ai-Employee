@@ -19,7 +19,7 @@ from src.core.claim_verifier import (
 from src.core.evidence_adapter import adapt_analysis, adapt_kg, adapt_rag, adapt_sql
 from src.core.verification_types import Evidence
 
-CFG = VerificationConfig(support_threshold=0.6, semantic_threshold=0.25)
+CFG = VerificationConfig(support_threshold=0.75, semantic_threshold=0.6)
 
 
 def _sql_ev(value: Any, eid: str = "ev-sql") -> Evidence:

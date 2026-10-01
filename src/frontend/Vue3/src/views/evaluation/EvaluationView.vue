@@ -156,6 +156,14 @@ function renderChart() {
   if (!chartRef.value || !summary.value?.available) return
   const rows = baselineRows.value
   if (!rows.length) return
+  // When the v-if (baselineRows.length >= 2) toggles, the canvas element is
+  // destroyed and recreated.  The previously-created ECharts instance is
+  // bound to the old element, so re-init when the DOM node has changed
+  // (an "Instance not found" / stale-canvas error otherwise).
+  if (chart && chart.getDom() !== chartRef.value) {
+    chart.dispose()
+    chart = null
+  }
   if (!chart) {
     chart = echarts.init(chartRef.value)
   }
@@ -184,8 +192,16 @@ function renderChart() {
   })
 }
 
-onMounted(load)
+function onResize() {
+  chart?.resize()
+}
+
+onMounted(() => {
+  window.addEventListener('resize', onResize)
+  load()
+})
 onBeforeUnmount(() => {
+  window.removeEventListener('resize', onResize)
   chart?.dispose()
   chart = null
 })

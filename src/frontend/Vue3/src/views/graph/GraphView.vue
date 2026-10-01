@@ -160,8 +160,16 @@ function renderGraph() {
   })
 }
 
-onMounted(loadEntities)
+function onResize() {
+  graphChart?.resize()
+}
+
+onMounted(() => {
+  window.addEventListener('resize', onResize)
+  loadEntities()
+})
 onBeforeUnmount(() => {
+  window.removeEventListener('resize', onResize)
   graphChart?.dispose()
   graphChart = null
 })

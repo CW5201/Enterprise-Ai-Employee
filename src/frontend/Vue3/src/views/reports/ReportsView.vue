@@ -15,6 +15,7 @@
         <el-table-column prop="created_at" label="生成时间" width="180" />
       </el-table>
     </div>
+    <div v-else-if="loadError" class="panel-empty panel-error">{{ loadError }}</div>
     <div v-else-if="!loading" class="panel-empty">
       暂无报告。报告生成链（src/tools/report_tool.py）将在后续阶段接入。
     </div>
@@ -33,11 +34,15 @@ interface ReportRecord {
 
 const reports = ref<ReportRecord[]>([])
 const loading = ref(false)
+const loadError = ref('')
 
 async function load() {
   loading.value = true
   try {
     reports.value = await client.get<ReportRecord[]>('/api/reports')
+    loadError.value = ''
+  } catch (err) {
+    loadError.value = err instanceof Error ? err.message : String(err)
   } finally {
     loading.value = false
   }
@@ -74,5 +79,9 @@ onMounted(load)
   text-align: center;
   color: var(--eae-text-muted);
   font-size: 13px;
+}
+
+.panel-error {
+  color: var(--eae-danger);
 }
 </style>

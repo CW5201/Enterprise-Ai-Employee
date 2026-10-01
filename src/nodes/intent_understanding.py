@@ -16,8 +16,10 @@ Outputs written to AgentState: ``intent``, ``confidence``, ``entities``,
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Any, Literal
 
+import yaml
 from pydantic import BaseModel, Field, field_validator
 
 from src.core.exceptions import LLMError
@@ -51,6 +53,36 @@ class IntentResult(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Ambiguity register
+# ---------------------------------------------------------------------------
+
+_AMBIGUITY_REGISTER_PATH = Path(__file__).resolve().parent.parent.parent / "config" / "ambiguity_register.yaml"
+_AMBIGUITY_REGISTER: list[str] = []
+
+
+def _load_ambiguity_register() -> list[str]:
+    """Load ambiguity patterns from config/ambiguity_register.yaml."""
+    global _AMBIGUITY_REGISTER
+    if not _AMBIGUITY_REGISTER:
+        try:
+            if _AMBIGUITY_REGISTER_PATH.exists():
+                with _AMBIGUITY_REGISTER_PATH.open(encoding="utf-8") as f:
+                    data = yaml.safe_load(f) or {}
+                # Expect a list under key 'patterns' or the whole file is a list
+                if isinstance(data, dict) and "patterns" in data:
+                    _AMBIGUITY_REGISTER = [str(p).lower() for p in data["patterns"]]
+                elif isinstance(data, list):
+                    _AMBIGUITY_REGISTER = [str(p).lower() for p in data]
+                else:
+                    _AMBIGUITY_REGISTER = []
+            else:
+                _AMBIGUITY_REGISTER = []
+        except Exception:
+            _AMBIGUITY_REGISTER = []
+    return _AMBIGUITY_REGISTER
+
+
+# ---------------------------------------------------------------------------
 # Rule fast lane
 # ---------------------------------------------------------------------------
 
@@ -72,6 +104,16 @@ def _contains_any(text: str, keywords: list[str]) -> bool:
     return any(k in text.lower() for k in keywords)
 
 
+def _extract_data_entities(query: str) -> list[str]:
+    entities: list[str] = []
+    top_match = re.search(r"前\s*(\d+)", query)
+    if top_match:
+        entities.append(f"top_n:{top_match.group(1)}")
+    for name in re.findall(r"['‘’]([^’‘']{1,40})['‘’]", query):
+        entities.append(name)
+    return entities
+
+
 def classify_by_rules(query: str) -> tuple[str, float, list[str], str] | None:
     """Return (intent, confidence, entities, reason) when a rule is decisive.
 
@@ -79,8 +121,14 @@ def classify_by_rules(query: str) -> tuple[str, float, list[str], str] | None:
     - complex markers + data terms  -> complex_analysis
     - data terms only               -> data_query
     - policy terms only             -> knowledge_query
+    - ambiguity patterns present    -> clarification
     Anything ambiguous returns None (LLM lane).
     """
+    # Check ambiguity patterns first
+    ambiguity_patterns = _load_ambiguity_register()
+    if any(pattern in query.lower() for pattern in ambiguity_patterns):
+        return "clarification", 0.95, [], "rule: ambiguity pattern detected"
+
     has_complex = _contains_any(query, _COMPLEX_MARKERS)
     has_data = _contains_any(query, _DATA_KEYWORDS)
     has_knowledge = _contains_any(query, _KNOWLEDGE_KEYWORDS)
@@ -92,16 +140,6 @@ def classify_by_rules(query: str) -> tuple[str, float, list[str], str] | None:
     if has_knowledge and not has_data:
         return "knowledge_query", 0.95, [], "rule: 政策/制度/文档关键词"
     return None
-
-
-def _extract_data_entities(query: str) -> list[str]:
-    entities: list[str] = []
-    top_match = re.search(r"前\s*(\d+)", query)
-    if top_match:
-        entities.append(f"top_n:{top_match.group(1)}")
-    for name in re.findall(r"['‘’]([^’‘']{1,40})['‘’]", query):
-        entities.append(name)
-    return entities
 
 
 # ---------------------------------------------------------------------------
@@ -130,7 +168,6 @@ def _llm_classify(query: str, llm: LLMClient) -> IntentResult:
 # ---------------------------------------------------------------------------
 # Node
 # ---------------------------------------------------------------------------
-
 
 class IntentUnderstandingNode:
     """Intent node: rule fast lane first, LLM lane for ambiguous queries."""

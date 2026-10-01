@@ -110,6 +110,39 @@ _TEMPLATES: dict[str, dict[str, Any]] = {
         ),
         "params": ["customer_id", "supplier_id"],
     },
+    "customer_items_via_supplier_both": {
+        "id": "customer_items_via_supplier_both",
+        "name": "Items a customer bought, both supplied by a given supplier (for intersection queries)",
+        "description": (
+            "Special template for intersection queries: finds customers who have ordered BOTH "
+            "of two specific items from a given supplier. Used for queries like '哪些客户同时订购了供应商X提供的商品A和商品B'"
+        ),
+        "cypher": (
+            "MATCH (c:Customer {customer_id: $customer_id})"
+            "-[:PLACED]->(:Order)-[:HAS_LINE]->(item1:StockItem {stock_item_id: $item1_id})"
+            "-[:SUPPLIED_BY]->(:Supplier {supplier_id: $supplier_id})"
+            "MATCH (c)-[:PLACED]->(:Order)-[:HAS_LINE]->(item2:StockItem {stock_item_id: $item2_id})"
+            "-[:SUPPLIED_BY]->(:Supplier {supplier_id: $supplier_id})"
+            "RETURN c.customer_id AS customer_id, c.name AS customer_name"
+        ),
+        "params": ["customer_id", "supplier_id", "item1_id", "item2_id"],
+    },
+    "customer_items_via_supplier": {
+        "id": "customer_items_via_supplier",
+        "name": "Items a customer bought, supplied by a given supplier (cross-entity)",
+        "description": (
+            "Three-hop cross-entity: Customer -> Order -> StockItem, "
+            "filtered by StockItem -> Supplier.  Answers 'which items of "
+            "supplier X has customer Y ever ordered'."
+        ),
+        "cypher": (
+            "MATCH (c:Customer {customer_id: $customer_id})"
+            "-[:PLACED]->(order:Order)-[:HAS_LINE]->(item:StockItem)"
+            "-[:SUPPLIED_BY]->(sup:Supplier {supplier_id: $supplier_id}) "
+            "RETURN DISTINCT item ORDER BY item.stock_item_id"
+        ),
+        "params": ["customer_id", "supplier_id"],
+    },
     "order_invoices": {
         "id": "order_invoices",
         "name": "Find invoices for an order",

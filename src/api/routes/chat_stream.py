@@ -59,7 +59,13 @@ def _ts() -> str:
 
 
 def _safe_payload(node_name: str, delta: dict[str, Any]) -> dict[str, Any]:
-    """Pick user-safe fields from the node state delta."""
+    """Pick user-safe fields from the node state delta.
+
+    Key names follow what each node ACTUALLY writes into AgentState
+    (see src/nodes/*), not the node name itself — e.g. the
+    claim_extraction node writes "claims", evidence_collection writes
+    "evidence_v4".
+    """
     p: dict[str, Any] = {}
     if node_name == "intent":
         p["intent"] = delta.get("intent", "")
@@ -78,18 +84,28 @@ def _safe_payload(node_name: str, delta: dict[str, Any]) -> dict[str, Any]:
         p["sql"] = delta.get("sql", "")
         p["sql_result"] = delta.get("sql_result")
         p["evidence"] = delta.get("evidence", [])
+        p["tool_results"] = delta.get("tool_results", [])
         p["errors"] = delta.get("errors", [])
     elif node_name == "answer":
         p["answer"] = delta.get("answer", "")
+        p["intent"] = delta.get("intent", "")
+        p["sql"] = delta.get("sql", "")
+        p["evidence"] = delta.get("evidence", [])
+        p["tool_calls"] = delta.get("tool_calls", [])
         p["status"] = delta.get("status", "")
         p["latency"] = delta.get("latency", {})
-    elif node_name in ("claim_extraction", "evidence_collection", "verification", "answer_guard"):
-        p[node_name] = delta.get(node_name, [])
-        if node_name == "verification":
-            p["verification_results"] = delta.get("verification_results", [])
-            p["verification_summary"] = delta.get("verification_summary", {})
-        if node_name == "answer_guard":
-            p["guard_decision"] = delta.get("guard_decision", {})
+    elif node_name == "claim_extraction":
+        p["claims"] = delta.get("claims", [])
+        p["status"] = delta.get("status", "")
+    elif node_name == "evidence_collection":
+        p["evidence_v4"] = delta.get("evidence_v4", [])
+    elif node_name == "verification":
+        p["verification_results"] = delta.get("verification_results", [])
+        p["verification_summary"] = delta.get("verification_summary", {})
+    elif node_name == "answer_guard":
+        p["guard_decision"] = delta.get("guard_decision", {})
+        p["answer"] = delta.get("answer", "")
+        p["answer_sources"] = delta.get("answer_sources", [])
     return p
 
 
@@ -109,10 +125,16 @@ def chat_stream(request: Request, body: ChatRequest) -> StreamingResponse:
         try:
             from src.core.state import make_state
 
-            state: dict[str, Any] = make_state(text, request_id=body.request_id)
+            # LangGraph's .stream() accumulates state internally and does NOT
+            # write back to the dict passed in, so read the final values by
+            # folding the per-node deltas ourselves.
+            final_state: dict[str, Any] = make_state(text, request_id=body.request_id)
 
-            for update in employee._graph.stream(state, stream_mode="updates"):
+            for update in employee._graph.stream(final_state, stream_mode="updates"):
                 for node_name, delta in update.items():
+                    # fold this node's delta into the running final state
+                    for k, v in delta.items():
+                        final_state[k] = v
                     event_type = _NODE_EVENT_MAP.get(node_name, "step")
                     # Tool nodes: emit a started event before the results
                     # event so the frontend trace shows pending->running.
@@ -132,18 +154,25 @@ def chat_stream(request: Request, body: ChatRequest) -> StreamingResponse:
                         "payload": _safe_payload(node_name, delta),
                     })
 
-            # --- final completed event ---
+            # --- final completed event (reads the folded final state) ---
             yield _sse_event({
                 "type": "completed",
                 "timestamp": _ts(),
                 "step": "end",
                 "status": "ok",
                 "payload": {
-                    "answer": state.get("answer", ""),
-                    "status": state.get("status", ""),
-                    "route": state.get("route", ""),
-                    "latency": state.get("latency", {}),
-                    "verification_summary": state.get("verification_summary", {}),
+                    "answer": final_state.get("answer", ""),
+                    "status": final_state.get("status", ""),
+                    "route": final_state.get("route", ""),
+                    "intent": final_state.get("intent", ""),
+                    "sql": final_state.get("sql", ""),
+                    "evidence": final_state.get("evidence", []),
+                    "tool_calls": final_state.get("tool_calls", []),
+                    "verification": final_state.get("verification_results", []),
+                    "sources": final_state.get("answer_sources", []),
+                    "latency": final_state.get("latency", {}),
+                    "verification_summary": final_state.get("verification_summary", {}),
+                    "guard": final_state.get("guard_decision", {}),
                 },
             })
         except Exception as exc:  # noqa: BLE001

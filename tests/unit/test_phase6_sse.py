@@ -26,11 +26,12 @@ class _FakeGraph:
 
     def stream(self, state: dict[str, Any], stream_mode: str = "updates") -> Iterator[dict[str, dict[str, Any]]]:
         assert stream_mode == "updates"
-        # simulate state accumulation so the final `completed` payload is correct
-        for upd in self._updates:
-            for delta in upd.values():
-                state.update(delta)
-            yield upd
+        # Faithfully mimic LangGraph: the caller's dict is NOT mutated —
+        # LangGraph accumulates internally.  The caller must fold the
+        # deltas themselves to obtain the final state.  This is exactly
+        # the semantics the SSE route has to rely on; a fake that
+        # mutates `state` in place would mask that contract.
+        yield from self._updates
 
 
 class _FakeEmployee:

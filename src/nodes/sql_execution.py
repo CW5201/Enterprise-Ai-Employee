@@ -130,10 +130,13 @@ _SYSTEM_PROMPT = """你是企业数据的 Text-to-SQL 生成器，目标数据�
 - 只生成一条只读 SELECT 或 WITH...SELECT 语句;
 - 禁止 INSERT/UPDATE/DELETE/DROP/CREATE/ALTER 等任何写操作;
 - 数值口径必须参考数据字典; 表名/列名必须与上面的结构一致;
-- 对 "订单数量最多的客户" 这类问题, 用 COUNT + GROUP BY + ORDER BY 实现, 不要硬编码。
+- 特别注意：对于诸如"销售额"、"利润"、"营收"、"订单量"等业务指标，必须严格参照数据字典中的定义和公式，不能自行假设或简化；
+- 对 "订单数量最多的客户" 这类问题, 用 COUNT + GROUP BY + ORDER BY 实现, 不要硬编码;
+- 如果问题中的业务口径存在歧义（如未指明时间范围、客户范围或产品范围），应倾向于生成更保守的查询或在rationale中说明假设；
+- 生成的SQL必须能够在DuckDB上执行且返回合理结果。
 返回 JSON: {{"sql": str, "rationale": str}}"""
 
-_USER_TEMPLATE = "用户问题: {question}\n意图: {intent}\n实体: {entities}"
+_USER_TEMPLATE = "用户问题: {question}\n意图: {intent}\n实体: {entities}\n\n重要提示：如果问题涉及'销售额'、'利润'、'营收'、'订单量'等业务指标，请先检查数据字典中的确切定义和公式，确保生成的SQL使用正确的计算方式。如果问题中这些指标的范围不明确（如未指定时间范围、客户范围或产品范围），请在rationale中说明您做了什么假设，或倾向于生成更通用的查询。"
 
 
 def _load_yaml(path: Path) -> Any:

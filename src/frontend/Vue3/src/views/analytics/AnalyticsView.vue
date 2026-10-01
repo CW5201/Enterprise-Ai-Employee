@@ -171,8 +171,18 @@ function renderCharts() {
   })
 }
 
-onMounted(load)
-onBeforeUnmount(() => charts.forEach((c) => c.dispose()))
+function onResize() {
+  charts.forEach((c) => c.resize())
+}
+
+onMounted(() => {
+  window.addEventListener('resize', onResize)
+  load()
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', onResize)
+  charts.forEach((c) => c.dispose())
+})
 </script>
 
 <style scoped>

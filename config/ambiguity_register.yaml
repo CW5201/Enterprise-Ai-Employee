@@ -1,0 +1,15 @@
+# List of ambiguous patterns that should trigger clarification
+patterns:
+  - "多表连接"
+  - "时间窗口"
+  - "销售额"  # example of ambiguous metric without scope
+  - "利润"   # another example
+  - "营收"
+  - "订单量"  # maybe ambiguous without time window
+  - "数量"
+  - "金额"
+  - "平均"
+  - "比例"
+  - "增长率"
+  - "环比"
+  - "同比"

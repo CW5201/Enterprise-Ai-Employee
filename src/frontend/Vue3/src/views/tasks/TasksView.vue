@@ -55,6 +55,7 @@
             </el-table-column>
             <el-table-column prop="route" label="路由" width="90" show-overflow-tooltip />
           </el-table>
+          <div v-else-if="historyError" class="panel-empty panel-error">{{ historyError }}</div>
           <div v-else class="panel-empty">暂无任务</div>
         </div>
       </div>
@@ -148,26 +149,50 @@ const messages = ref<ChatMsg[]>([])
 const tasks = ref<TaskRecord[]>([])
 const result = ref<ChatResponse | null>(null)
 const trace = ref<TraceStep[]>([])
+const historyError = ref('')
 
 const abortRef = ref<AbortController | null>(null)
 
 function refreshHistory() {
-  listTasks().then((ts) => (tasks.value = ts)).catch(() => undefined)
+  listTasks()
+    .then((ts) => {
+      tasks.value = ts
+      historyError.value = ''
+    })
+    .catch((err) => {
+      // Do not swallow: the user must be able to tell "no tasks" from
+      // "API unreachable".
+      historyError.value = err instanceof Error ? err.message : String(err)
+    })
 }
 
 function loadTask(row: TaskRecord) {
   // Show the recorded answer in the result pane; full trace re-run via
-  // the stream button (history rows store only summary fields).
+  // the stream button (history rows store only summary fields).  Build a
+  // fresh, fully-populated ChatResponse so no stale fields from a previous
+  // result leak into the next run.
   result.value = {
-    ...(result.value ?? ({} as ChatResponse)),
-    answer: row.answer,
-    route: row.route,
+    request_id: row.id,
+    answer: row.answer ?? '',
+    intent: '',
+    route: row.route ?? '',
+    sql: '',
+    evidence: [],
+    tool_calls: [],
     status: row.status,
-    latency: { total_ms: row.latency_ms ?? 0 },
+    latency: row.latency_ms != null ? { total_ms: row.latency_ms } : {},
+    sources: [],
+    verification: [],
+    verification_summary: {},
+    guard: {},
   } as ChatResponse
   trace.value = [
     { title: '任务提交', detail: row.question, status: 'ok' },
-    { title: row.status === 'completed' ? '执行完成' : '执行失败', detail: row.route, status: row.status === 'completed' ? 'ok' : 'error' },
+    {
+      title: row.status === 'completed' ? '执行完成' : '执行失败',
+      detail: row.route,
+      status: row.status === 'completed' ? 'ok' : 'error',
+    },
   ]
 }
 
@@ -310,21 +335,25 @@ async function runStream(q?: string) {
     {
       onEvent: (ev: StreamEvent) => {
         if (ev.type === 'answer') {
-          const p = ev.payload as { answer?: string; status?: string; route?: string; latency?: Record<string, number> }
+          const p = ev.payload as {
+            answer?: string
+            status?: string
+            route?: string
+            intent?: string
+            sql?: string
+            latency?: Record<string, number>
+          }
+          // The answer node's delta carries intent / sql / evidence /
+          // tool_calls now (backend _safe_payload), so keep what arrived
+          // instead of blanking it.
           finalState = {
             ...(finalState ?? ({} as ChatResponse)),
-            answer: p.answer ?? '',
+            answer: p.answer ?? finalState?.answer ?? '',
             status: p.status ?? '',
-            route: p.route ?? '',
-            intent: '',
-            sql: '',
-            evidence: [],
-            tool_calls: [],
-            latency: p.latency ?? {},
-            sources: [],
-            verification: [],
-            verification_summary: {},
-            guard: {},
+            route: p.route ?? finalState?.route ?? '',
+            intent: p.intent ?? finalState?.intent ?? '',
+            sql: p.sql ?? finalState?.sql ?? '',
+            latency: p.latency ?? finalState?.latency ?? {},
           }
           return
         }
@@ -333,28 +362,89 @@ async function runStream(q?: string) {
             answer?: string
             status?: string
             route?: string
+            intent?: string
+            sql?: string
             latency?: Record<string, number>
+            evidence?: ChatResponse['evidence']
+            tool_calls?: ChatResponse['tool_calls']
+            verification?: ChatResponse['verification']
+            sources?: ChatResponse['sources']
+            guard?: ChatResponse['guard']
             verification_summary?: ChatResponse['verification_summary']
           }
+          // The completed event now carries the full folded final state, so
+          // the streaming panel can show the same depth as the one-shot
+          // /api/chat response (evidence / tool_calls / verification).
           finalState = {
             ...(finalState ?? ({} as ChatResponse)),
             answer: p.answer ?? finalState?.answer ?? '',
             status: p.status ?? 'completed',
-            route: p.route ?? '',
-            latency: p.latency ?? {},
-            verification_summary: p.verification_summary ?? {},
+            route: p.route ?? finalState?.route ?? '',
+            intent: p.intent ?? finalState?.intent ?? '',
+            sql: p.sql ?? finalState?.sql ?? '',
+            latency: p.latency ?? finalState?.latency ?? {},
+            evidence: p.evidence ?? finalState?.evidence ?? [],
+            tool_calls: p.tool_calls ?? finalState?.tool_calls ?? [],
+            verification: p.verification ?? finalState?.verification ?? [],
+            sources: p.sources ?? finalState?.sources ?? [],
+            guard: p.guard ?? finalState?.guard ?? {},
+            verification_summary: p.verification_summary ?? finalState?.verification_summary ?? {},
           }
+          return
+        }
+        if (ev.type === 'error') {
+          // The backend sends exactly one `error` event and no `completed`,
+          // so without this branch the result / evidence / tool panels stay
+          // empty and the trace is left dangling.  Materialise a minimal
+          // failed response so the UI reflects the failure.
+          const p = ev.payload as { message?: string }
+          trace.value.push({ title: '执行失败', detail: p.message ?? '管道异常', status: 'error' })
+          finalState = {
+            ...(finalState ?? ({} as ChatResponse)),
+            status: 'failed',
+            answer: finalState?.answer ?? '',
+            route: finalState?.route ?? '',
+            intent: finalState?.intent ?? '',
+            sql: finalState?.sql ?? '',
+            latency: finalState?.latency ?? {},
+            evidence: finalState?.evidence ?? [],
+            tool_calls: finalState?.tool_calls ?? [],
+            verification: finalState?.verification ?? [],
+            sources: finalState?.sources ?? [],
+            guard: finalState?.guard ?? {},
+            verification_summary: finalState?.verification_summary ?? {},
+          }
+          appendStreamStep(ev)
           return
         }
         appendStreamStep(ev)
       },
       onError: (err: Error) => {
+        // Network-level failure (fetch rejected / stream torn down) — also
+        // materialise a failed result so the panels don't stay blank.
         trace.value.push({ title: '执行失败', detail: err.message, status: 'error' })
+        finalState = {
+          ...(finalState ?? ({} as ChatResponse)),
+          status: 'failed',
+          answer: finalState?.answer ?? '',
+          route: finalState?.route ?? '',
+          latency: finalState?.latency ?? {},
+          evidence: [],
+          tool_calls: [],
+          verification: [],
+          sources: [],
+          guard: {},
+          verification_summary: {},
+        }
       },
       onDone: () => {
         if (finalState) {
           result.value = finalState
-          messages.value.push({ role: 'ai', text: finalState.answer || '（无回答）' })
+          const failText =
+            finalState.status === 'failed'
+              ? '执行失败，请查看执行过程面板。'
+              : finalState.answer || '（无回答）'
+          messages.value.push({ role: 'ai', text: failText })
           const s = finalState.verification_summary
           const vStep = trace.value.find((t) => t.title === '结果验证')
           if (vStep) {
@@ -446,6 +536,10 @@ onMounted(refreshHistory)
   color: var(--eae-text-muted);
   font-size: 13px;
   text-align: center;
+}
+
+.panel-error {
+  color: var(--eae-danger);
 }
 
 /* chat */

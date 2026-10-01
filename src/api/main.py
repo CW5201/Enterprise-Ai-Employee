@@ -87,10 +87,6 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     def health() -> dict[str, Any]:
-        from src.core.config_loader import get_settings
-
-        settings = get_settings()
-
         # LLM
         try:
             from src.core.llm_client import LLMClient
@@ -125,17 +121,22 @@ def create_app() -> FastAPI:
         except RetrievalError as exc:
             # Distinguish "server not running" from misconfiguration so the
             # workbench dashboard can show an honest, readable status.
-            if str(exc.details.get("uri", "")) or "connection failed" in str(exc).lower():
-                milvus_status = "offline"
-            else:
-                milvus_status = f"error: {exc}"
+            # create_vector_store() always populates details["uri"] on a
+            # connection failure, so that is the reliable "offline" signal.
+            milvus_status = "offline" if exc.details.get("uri") else f"error: {exc}"
 
         # Database (DuckDB)
         db_status = "ok"
         try:
             import duckdb
 
-            db_path = settings.db_path
+            # Match the pipeline's actual data source: analytics / SQL
+            # execution both read default_database_path() (data/runtime/
+            # wwi.duckdb), so /health must check the same file or it
+            # reports a different DB than the one BI / SQL actually use.
+            from src.core.sql_executor import default_database_path
+
+            db_path = default_database_path()
             if db_path.exists():
                 conn = duckdb.connect(str(db_path), read_only=True)
                 conn.close()

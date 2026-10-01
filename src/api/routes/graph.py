@@ -11,6 +11,7 @@ credential-safe details only.
 from __future__ import annotations
 
 import logging
+import threading
 from typing import Any
 
 from fastapi import APIRouter, Query
@@ -18,27 +19,42 @@ from fastapi import APIRouter, Query
 router = APIRouter(tags=["graph"])
 logger = logging.getLogger("eae.api.graph")
 
+# One shared Neo4jClient (and therefore one underlying driver + connection
+# pool) for the whole process, guarded by a lock so concurrent requests do
+# not race on first construction.  Creating a fresh GraphDatabase.driver()
+# per request would leak connection pools without bound.
+_shared_client: Any | None = None
+_shared_client_lock = threading.Lock()
+
 
 def _neo4j_client() -> Any | None:
-    """Return a usable, connected Neo4jClient or None (offline / not configured).
+    """Return the process-wide Neo4jClient, or None when offline.
 
     ``Neo4jClient()`` is lazy — constructing it never fails.  When
     ``NEO4J_PASSWORD`` is unset (the normal local-dev / CI case) or the
     server is unreachable, connecting raises :class:`Neo4jUnavailableError`;
     in that case the endpoints return empty lists instead of crashing.
-    """
-    try:
-        from src.core.neo4j_client import Neo4jClient, Neo4jUnavailableError
 
-        client = Neo4jClient()
-        client.get_driver()  # forces connection so offline shows up here
-        return client
-    except Neo4jUnavailableError as exc:
-        logger.warning("Neo4j offline (%s); returning empty result", exc.message)
-        return None
-    except Exception:  # noqa: BLE001
-        logger.warning("Neo4j client unavailable; returning empty result")
-        return None
+    The client is memoised per process so the neo4j driver's connection pool
+    is created exactly once and shared by all requests (no per-request leak).
+    """
+    global _shared_client
+    with _shared_client_lock:
+        if _shared_client is None:
+            try:
+                from src.core.neo4j_client import Neo4jClient, Neo4jUnavailableError
+
+                candidate = Neo4jClient()
+                candidate.get_driver()  # force connect so offline shows up here
+                _shared_client = candidate
+                logger.info("shared Neo4j client initialised for %s", candidate.uri)
+            except Neo4jUnavailableError as exc:
+                logger.warning("Neo4j offline (%s); returning empty result", exc.message)
+                return None
+            except Exception:  # noqa: BLE001
+                logger.warning("Neo4j client unavailable; returning empty result")
+                return None
+    return _shared_client
 
 
 def _query_entities(client: Any, search: str | None, limit: int) -> list[dict[str, Any]]:

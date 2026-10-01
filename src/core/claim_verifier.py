@@ -480,21 +480,21 @@ def verify_semantic(
             reason="no candidate evidence available",
         )
 
-    # embedding / lexical gate: keep the top semantic candidates
+    # embedding / lexical gate: keep the top semantic candidates (up to max_semantic_candidates)
     scored = sorted(
         ((scorer.score(claim_text, e.content or str(e.structured_value or "")), e) for e in candidates),
         key=lambda t: -t[0],
     )
-    top = [e for s, e in scored[: cfg.max_semantic_candidates] if s >= cfg.semantic_threshold]
+    top = [e for s, e in scored[: cfg.max_semantic_candidates]]
 
     if not top:
-        best_sim = scored[0][0]
+        # no candidates at all
         return VerificationResult(
             claim_id=claim_id, claim_type=claim_type,  # type: ignore[arg-type]
             supported=False, status="unsupported",
-            support_score=round(best_sim, 4),
+            support_score=0.0,
             verifier_type="semantic",
-            reason=f"no candidate above semantic_threshold {cfg.semantic_threshold} (best sim {best_sim:.3f})",
+            reason="no candidate evidence available",
         )
 
     # final LLM judgment on the candidates (never trust the embedding alone)

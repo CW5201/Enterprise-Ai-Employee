@@ -114,6 +114,24 @@ class ValidationError(AppError):
     code = "verification_error"
 
 
+class ToolError(AppError):
+    """A tool failed or was misused (unknown tool, bad input, ...)."""
+
+    code = "tool_error"
+
+
+class DatasetError(AppError):
+    """The evaluation dataset was missing or malformed."""
+
+    code = "dataset_error"
+
+
+class CheckpointerError(AppError):
+    """Checkpoint persistence failed (I/O, malformed state, ...)."""
+
+    code = "checkpointer_error"
+
+
 __all__ = [
     "AppError",
     "ConfigError",
@@ -125,4 +143,7 @@ __all__ = [
     "EmbeddingUnavailableError",
     "RerankerUnavailableError",
     "ValidationError",
+    "ToolError",
+    "DatasetError",
+    "CheckpointerError",
 ]

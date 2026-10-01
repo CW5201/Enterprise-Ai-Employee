@@ -102,8 +102,10 @@ def analytics_summary() -> dict[str, Any]:
         ]
         _CACHE["summary"] = {"available": True, "kpis": kpis}
     except Exception:  # noqa: BLE001
+        # Do NOT cache failures — a transient / first-call problem must not
+        # poison the cache for the life of the process.
         logger.exception("analytics summary query failed")
-        _CACHE["summary"] = {"available": False, "reason": "query failed"}
+        return {"available": False, "reason": "query failed"}
     return _CACHE["summary"]
 
 
@@ -166,7 +168,7 @@ def analytics_trends() -> dict[str, Any]:
         }
     except Exception:  # noqa: BLE001
         logger.exception("analytics trends query failed")
-        _CACHE["trends"] = {"available": False, "reason": "query failed"}
+        return {"available": False, "reason": "query failed"}
     return _CACHE["trends"]
 
 
