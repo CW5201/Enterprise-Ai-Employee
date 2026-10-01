@@ -350,22 +350,48 @@ Phase 2.4（Neo4j KG，✅）。
 
 ---
 
-## Phase 5 — Evaluation（Baseline + Ablation）— NOT STARTED
+## Phase 5 — Enterprise AI Employee End-to-End Evaluation ✅（2026-09-30）
 
-**目标**：用真实实验证明模块有效性。
+**目标**：用统一 Benchmark + Baseline + Ablation + Failure Analysis
+回答 RQ1–RQ3，收口整个项目的核心实验。
 
-内容：
-- 构建 `data/eval_dataset.jsonl`（约 430 条）与 Ground Truth / Evidence；
-- `src/evaluation/`：`dataset.py`、`metrics.py`、`runner.py`、`reporter.py`；
-- `scripts/run_eval.py`；
-- Baseline 1–4 与 Ours 的实现与运行；
-- 消融 A / B / C；
-- 错误分析与 `FAILURE_HANDBOOK.md` 案例填充；
-- 启用 CI 评估门禁（与存档 baseline 比较）。
+**已交付**（全部真实实现 + 真实运行）：
 
-**完成标准**：六项指标全部由真实运行产出，报告可追溯到逐条结果。
+- ✅ **Enterprise Benchmark**：`data/eval/enterprise_tasks.jsonl`（**487 条**，
+  10 类 task_type × easy/medium/hard × 单/双/三/四工具 + clarification），
+  `scripts/build_enterprise_tasks.py` 生成、`scripts/validate_enterprise_tasks.py`
+  校验；GT 由**独立** SQL / KB 包含 / 人工声明产生（`provenance.verifier`），
+  先于系统输出固定，DB 漂移即构建失败；
+- ✅ **End-to-End Evaluation**：`src/evaluation/enterprise_metrics.py`
+  （分层指标：route / tool F1 / plan EM / answer exact / evidence attribution /
+  unsupported-claim detection / critical leakage / latency 百分位 / LLM 计数）
+  + `src/evaluation/enterprise_systems.py`（系统/消融矩阵）+
+  `scripts/run_enterprise_eval.py`（真实组件驱动，失败保留分母，
+  offline/online 明确区分）；
+- ✅ **Baselines**：A 完整 / B 去验证 / C 静态无验证 / B1 LLM-only /
+  B4 规则路由（B2/B3 需 live Milvus，offline 记录 skipped_with_reason）；
+- ✅ **Ablation**：w/o Dynamic Routing / KG / Hybrid / Reranker / Verification
+  （`scripts/run_enterprise_ablation.py`）；
+- ✅ **Failure Analysis**：`scripts/analyze_enterprise_failures.py`
+  （按 task_type / difficulty / tool-composition 分组 + 40 条真实失败案例 +
+  跨阶段 Failure Taxonomy）；
+- ✅ **Research Conclusions**：`docs/phase5/EXPERIMENT_REPORT.md`
+  （18 节，含结果表 / RQ1–RQ3 结论 / 局限 / 可复现）。
 
-**禁止**：手填任何数值、伪造任何结果。
+**完成标准**：全部指标由真实运行产出、可追溯到逐条结果；负结果保留。
+
+**本阶段明确不做**（留给 Phase 6+）：
+
+- 不进 Phase 6 前端、不进 Phase 7 Docker、不开始论文正文大规模写作；
+- 不把 offline harness 结果外推为 online 端到端性能（§17 Limitations）；
+- 不主张"系统全面优于所有方法"，只据本数据集与配置讨论。
+
+**真实结果摘要**（offline harness，487 条全量，详见 `docs/phase5/`）：
+
+- A_full：task success 0.345 / route 0.394 / tool F1 0.405 / P95 412ms；
+- B4 规则路由：success 0.450（离线最强路由基线）；
+- w/o Dynamic Routing：success 0.008（唯一有真实下降的消融）；
+- 多工具任务 success 0.000–0.067 vs 单工具 0.373（RQ3 的核心负结果）。
 
 ---
 

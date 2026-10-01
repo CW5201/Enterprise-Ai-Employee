@@ -1,7 +1,8 @@
 # 研究设计（RESEARCH）
 
-> 状态：Phase 2.4。§11 / §12 为阶段性研究证据（Phase 2.3 / 2.4
-> 真实实验结果）；其余章节的方法学设计数值仍随实验填充。
+> 状态：Phase 5 完成（2026-09-30）。§11–§15 为阶段性 / 综合研究证据
+> （Phase 2.3 / 2.4 / 3 / 4 / 5 真实运行结果）；其余章节的方法学设计
+> 数值随实验填充。
 > **未经真实运行的数字不得写入本文档。**
 
 ---
@@ -284,5 +285,50 @@ Phase 4 在该研究问题下的阶段性证据（详见
    证明 RQ2 的关键在 evidence-aware 分层，而非把判定外包给 LLM；
 5. **边界声明**：本阶段为离线确定性 harness（claim 注入 + GT 域
    合成证据），**未**在线跑 BGE-M3 / live LLM / 真实 RAG-KG 链路；
-   在线表现与端到端 latency 属 Phase 5 正式 Benchmark（430 任务）
+   在线表现与端到端 latency 属 Phase 5 正式 Benchmark（487 任务）
    范畴，本报告不主张"Verification 消除了 hallucination"。
+
+---
+
+## 15. Phase 5 Research Evidence（End-to-End 综合证据）
+
+**对应研究问题**：
+
+- **RQ1 — 动态路由**（§13 的端到端兑现）；
+- **RQ2 — 验证**（§14 的端到端兑现）；
+- **RQ3 — 多源协同**（§11 / §12 的综合兑现）。
+
+Phase 5 在统一 487 条企业任务 Benchmark 上的端到端证据
+（详见
+[`phase5/EXPERIMENT_REPORT.md`](phase5/EXPERIMENT_REPORT.md)，
+离线确定性 harness，真实 DuckDB + 真实 27 文档 KB，未接入 live
+Milvus / Neo4j / LLM 在线链路）：
+
+1. **RQ1（动态路由）**：A_full（动态路由）tool F1 = 0.405 /
+   route_acc = 0.394，vs C_static（SupervisorRouter）tool F1 = 0.010 /
+   route_acc = 0.343；w/o Dynamic Routing 消融 success 0.345 → 0.008。
+   **动态路由在 SQL 侧工具选择上显著优于静态路由**；但在 easy
+   单工具任务上，B4 规则路由 success（0.450）高于 A_full（0.345），
+   原因是动态路由 confidence gate 将部分易判定任务降为 clarification
+   （honest，不硬猜）——这是保留下来的真实工程结果。
+2. **RQ2（验证）**：A_full 与 B_no_verification 在 offline 下
+   success / route / tool F1 **完全相同**，证实验证层是
+   post-hoc 结果层，**不 re-route、不 re-invoke 工具**（与设计一致）；
+   offline 下 claim 集合为空（离线 LLM backend 不产生 claim），
+   **unsupported leakage 在 offline 下无数值意义**，RQ2 的 leakage
+   量化需 online end-to-end 运行（§17 Limitations）。
+3. **RQ3（多源协同）**：two_tool success = 0.000 / three_plus_tool
+   success = 0.067（单工具 0.373），tool F1 反而更高（0.756 / 0.504）——
+   系统**能选对工具组合**但**多源结果融合到答案是当前最大难点**；
+   这是 RQ3 的核心负结果，保留。
+4. **KG 在 offline 的 honest failure**：`relationship_query` 全 0
+   （无 Neo4j 凭证，KG 路由对但工具无结果）；structured_lookup 的
+   KG 子集（175/276 条）同原因拉低该 task_type 总 success 至 0.141。
+   这不是系统缺陷而是离线环境限制，**不外推为 KG 不可用**。
+5. **Latency 与 LLM 调用**：A_full P95 = 412ms / LLM 3.0 次；
+   无验证系统 P95 = 258ms；验证尾链开销约 +154ms。
+
+**结论限定**：本证据基于 487 条合成企业任务 + 离线确定性 harness；
+RQ1 / RQ3 结论受离线无 Neo4j / 无 live LLM 影响；RQ2 的 leakage
+数字需 online 运行补全。不主张"系统全面优于所有方法"，只在本
+数据集与配置下讨论。

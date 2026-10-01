@@ -169,8 +169,10 @@ AI 数字员工的定位不是"能回答问题的聊天机器人"，而是"能�
 5. Evidence Support Rate
 6. Average Latency
 
-> 最终系统级指标（Task Success Rate 等）在 Phase 5 由 `src/evaluation/runner.py`
-> 真实运行产生；在 Phase 5 之前**没有系统级实验数值**。
+> 最终系统级指标（Task Success Rate 等）已在 Phase 5 由
+> `scripts/run_enterprise_eval.py` + `scripts/run_enterprise_ablation.py`
+> 对 487 条统一 Benchmark 真实运行产生（`docs/phase5/EXPERIMENT_REPORT.md`
+> 记录完整结果）；Phase 5 之前各阶段只有阶段性指标，无端到端数值。
 > 检索层的阶段性实验数值（Recall@K / MRR / NDCG@5）由
 > `scripts/run_hybrid_eval.py`（Phase 2.2）与 `scripts/run_retrieval_eval.py`
 > （Phase 2.3）生成，结果写入 `artifacts/`（本地保留，不进 Git）。
@@ -193,8 +195,8 @@ Phase 2.2 在**当前真实实验环境**下完成了 Hybrid RAG 的阶段性检
 
 - 在 35-chunk 小规模语料上，**Hybrid 与 Dense 指标一致，未表现出普遍增益**；
   语料扩大后（190 chunks / 56 queries）重测，Hybrid 已优于单一通道（§15）。
-- 该实验是 **Phase 2.2 的局部检索实验**，**不等价于最终 430 条 Evaluation
-  Benchmark**（后者在 Phase 5 构建）。
+- 该实验是 **Phase 2.2 的局部检索实验**，**不等价于最终 487 条 Evaluation
+  Benchmark**（后者已在 Phase 5 由 `data/eval/enterprise_tasks.jsonl` 构建）。
 
 完整实验设置、Ground Truth、指标与局限见
 [`docs/EVALUATION.md`](docs/EVALUATION.md) 的 "Phase 2.2 Hybrid Retrieval
@@ -378,7 +380,7 @@ enterprise-ai-employee/
 | Phase 2.4 | Neo4j Knowledge Graph：图谱构建 + KG Tool + 安全 Cypher + 58 任务评测 | ✅ 已完成 |
 | Phase 3 | Task-Adaptive Routing：Task Profile + 动态路由 + 多工具融合 + 100 任务评测 | ✅ 已完成 |
 | Phase 4 | Claim-Evidence Verification：Claim/Evidence 模型 + 分层验证引擎 + Answer Guard + 120 任务评测 | ✅ 已完成 |
-| Phase 5 | Evaluation：Baseline + Ablation | ⬜ 未开始 |
+| Phase 5 | Evaluation：Baseline + Ablation | ✅ 已完成（487 条统一 Benchmark + 端到端 runner + 10 系统矩阵 + 分组/失败分析 + `docs/phase5/EXPERIMENT_REPORT.md`） |
 | Phase 6 | Vue3 工作台 | ⬜ 未开始 |
 | Phase 7 | Docker + CI | ⬜ 未开始 |
 | Phase 8 | 论文与答辩 | ⬜ 未开始 |

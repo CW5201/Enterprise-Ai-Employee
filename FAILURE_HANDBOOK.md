@@ -306,6 +306,73 @@ _（Phase 1 起填充真实案例）_
 
 ---
 
+## 11. Phase 5 End-to-End Failure Taxonomy（真实运行，487 条全量）
+
+> 来源：`artifacts/phase5/enterprise_failure_report.md`（由
+> `scripts/analyze_enterprise_failures.py` 自动生成）。以下为四类
+> **跨阶段串联**的真实失败模式（Phase 5 将 Phase 2 / 3 / 4 的失败
+> 首次串到同一张分类图上）。
+
+### 案例记录
+
+#### FH-P5-001（Phase 5，offline harness，KG 路由 honest failure）
+
+- **触发**：`relationship_query` / `structured_lookup`（KG 子集）任务在
+  offline harness 运行，Neo4j 不可用（凭证受限），KG 工具无结果。
+- **路由 / 工具选择**：动态路由**正确**选了 KG 路由（route_acc 对 KG
+  子集接近 1.0），但工具在 offline 无 Neo4j 时返回空 → task_success = 0。
+- **根因**：**环境限制**，非路由或系统缺陷——KG 链路本身已在 Phase 2.4
+  验证，offline 只是未接入。
+- **恢复 / 回归**：online 运行（`NEO4J_PASSWORD` 配置）后该子集预期回升；
+  失败类别 `kg_coverage` 保留在分母。
+
+#### FH-P5-002（Phase 5，多工具任务 success 低但 tool F1 高）
+
+- **触发**：`two_tool` / `three_plus_tool` 任务（RAG+SQL+KG+Analysis 组合）。
+- **现象**：tool F1 0.5–0.75（**工具组合选对了**）但 task_success
+  0.000–0.067（**跨源融合到答案失败**）。
+- **根因**：offline 无 live LLM 在线生成答案，多源融合的最后一步
+  （`AnswerGenerationNode` 只基于 `sql_result` + `retrieved_context`，
+  不读 KG / Analysis 的 `tool_results`）在 offline 下无法产出完整答案。
+- **恢复 / 回归**：Phase 4 多工具执行已把各源结果写入 `tool_results`
+  通道；online 下 `AnswerGenerationNode` + `MultiToolExecutionNode`
+  融合后 success 预期上升。负结果保留，不外推。
+
+#### FH-P5-003（Phase 5，B4 规则路由 success 高于动态路由——保留负结果）
+
+- **现象**：B4（确定性关键词路由）success 0.450 > A_full（动态路由）
+  0.345。
+- **根因**：动态路由的 confidence gate 将部分 easy 单工具任务降为
+  clarification（honest，不硬猜）；B4 对这类任务"果断"路由因而 success
+  更高。这是**真实且有价值的工程结果**，保留不掩盖。
+- **结论**：动态路由的收益集中在需要正确源判断的复杂任务
+  （SQL 侧 tool F1 0.405 vs 静态 0.010），不在 easy 单工具上。
+
+#### FH-P5-004（Phase 5，验证层 offline 下 leakage 无数值）
+
+- **现象**：A_full 与 B_no_verification 的 success / route / tool F1
+  **完全相同**；unsupported-claim leakage 在 offline 下全 0。
+- **根因**：offline LLM backend 不产生 claim 集合（`_OfflineBackend`
+  的 claim-extraction 返回空 claims list），验证层对空集合运行 →
+  无 leakage 可计。
+- **恢复 / 回归**：RQ2 的 leakage 指标需 online 运行（live LLM 生成
+  真实答案 → claim 抽取 → 验证）才有数值；Phase 4 离线确定性评测
+  （B：hallucinated-claim rate 1.0 → 0.025）是该指标的阶段性证据，
+  Phase 5 online 将补全。
+
+#### FH-P5-005（Phase 5，w/o KG / w/o Hybrid / w/o Reranker 消融无指标差）
+
+- **现象**：四项消融（w/o KG / w/o Hybrid / w/o Reranker /
+  w/o Verification）在 offline 下与 A_full **success / route / tool F1
+  完全相同**。
+- **根因**：offline 环境下这些组件的"在/不在"不影响确定性路由与
+  SQL 结果（RAG 用 fake dense、KG 无 Neo4j、验证无 live LLM），
+  消融未触发任何实际差异。
+- **结论**：这是 **offline harness 的固有局限**，不是"去掉这些
+  模块一定不下降"的证据。要分离这些组件的真实贡献，需 online
+  end-to-end 运行（live Milvus + Neo4j + LLM）。
+
+
 ## 记录纪律
 
 - 案例必须来自**真实运行**，含真实输入、真实输出、时间与配置版本；

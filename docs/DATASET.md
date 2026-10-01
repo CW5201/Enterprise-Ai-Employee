@@ -29,8 +29,8 @@
 >   由 `scripts/build_retrieval_eval.py` 生成，**用于 190-chunk 语料上的
 >   Dense / BM25 / Hybrid / Hybrid+Reranker 四模式对比**；
 >
-> 两者均为**阶段性检索实验集**，**不是**最终 430 条 Evaluation Dataset
-> （后者在 Phase 5 由 `data/eval_dataset.jsonl` 构建）。
+> 两者均为**阶段性检索实验集**，**不是**最终 487 条 Evaluation Dataset
+> （后者已在 Phase 5 由 `data/eval/enterprise_tasks.jsonl` 构建，见第 11 节）。
 >
 > **合成数据红线**：
 > - `generate_synthetic_seed.py` 生成的 Sales_Customers / Purchasing_Suppliers /
@@ -82,7 +82,7 @@
 
 **边界（重要）**：
 
-- 这是**图谱局部实验集**，不属于正式 430 条 Evaluation Dataset（Phase 5）；
+- 这是**图谱局部实验集**，不属于正式 487 条 Evaluation Dataset（Phase 5）；
 - 不得把 58 任务 exact match（0.2931）外推为"图谱优于 SQL"——它只证明
   "图谱作为关系型知识源可支撑多跳关系查询"（限定 WWI 样例 + 项目 schema）；
 - **Ground Truth 生成红线**：`expected_entities` / `expected_relations`
@@ -104,7 +104,7 @@
 | Tool Calling | BFCL | 工具调用能力对照 | 未下载 |
 | Tool Calling | ToolBench | 工具调用能力对照 | 未下载 |
 | Agent | GAIA | 复杂任务对照 | 未下载 |
-| 自建评估集 | Enterprise AI Employee Task Dataset | 主评估集（约 430 条） | 未构建（Phase 5） |
+| 自建评估集 | Enterprise AI Employee Task Dataset | 主评估集（487 条） | ✅ 已构建（Phase 5） |
 | Phase 2.2 局部检索实验集 | `data/eval/hybrid_eval.jsonl` | 35-chunk 语料上 Dense/BM25/Hybrid 对比 | 已生成（10 query，已入库） |
 | Phase 2.3 局部检索实验集 | `data/eval/retrieval_eval.jsonl` | 190-chunk 语料上 4 模式（+Reranker）对比 | 已生成（56 query，已入库） |
 
@@ -197,8 +197,10 @@
 
 ### 11.1 定位
 
-基于 WideWorldImporters / AdventureWorks 的 Schema 与公开企业知识库构建的企业任务数据集，
-目标规模约 430 条，用于评估完整系统、Baseline 与消融实验。
+基于 WideWorldImporters 真实维度表 + 合成业务种子数据（`data/runtime/wwi.duckdb`）
+与 27 篇合成企业知识文档（`data/knowledge_base/*.md`）构建的企业任务数据集，
+**实际规模 487 条**（Commit 1 生成，`scripts/build_enterprise_tasks.py`），
+用于评估完整系统、Baseline 与消融实验（Phase 5 已落地）。
 
 ### 11.2 任务类别
 
@@ -213,7 +215,7 @@
 
 ### 11.3 数据结构
 
-`data/eval_dataset.jsonl`，每行一条 JSON：
+`data/eval/enterprise_tasks.jsonl`（Commit 1，487 条），每行一条 JSON：
 
 ```json
 {

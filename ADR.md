@@ -492,3 +492,75 @@ Phase 4 引入的关键设计决策与边界。
 - LLM semantic 判定有额外延迟（在线环境，本阶段未测）；
 - claim 抽取质量（LLM structured output）是新的错误来源，离线
   harness 用确定性注入绕过，在线实验需专门评估。
+
+---
+
+## ADR-012: Phase 5 Enterprise End-to-End Evaluation 的设计约束
+
+### Context
+
+Phase 5 交付项目**最终核心实验**：统一 Enterprise Task Benchmark
+（`data/eval/enterprise_tasks.jsonl`，487 条）与端到端评测框架
+（`src/evaluation/enterprise_metrics.py` /
+`src/evaluation/enterprise_systems.py` /
+`scripts/run_enterprise_eval.py` / `scripts/run_enterprise_ablation.py` /
+`scripts/analyze_enterprise_failures.py`）。本 ADR 记录 Phase 5 引入的
+关键设计决策与边界。
+
+### Decision
+
+1. **不新增数据库 / 模型 / 组件，只做统一评测。** Phase 5 不重写
+   RAG / SQL / KG / Analysis / Routing / Verification 任一实现；
+   `src/evaluation/enterprise_systems.py` 的 `SystemConfig` 仅参数化
+   既有 `build_graph`（`phase3` / `phase4` / `enable_kg` /
+   `retrieval_mode`），不 fork 代码。
+2. **GT 独立于任何系统输出。** Benchmark 的每一个 GT 由**独立** SQL
+   （独立 DuckDB 连接手写查询）/ KB 包含规则 / 人工声明产生，
+   `provenance.verifier` 记录来源；构建时断言与 live 表一致（DB 漂移
+   即构建失败）；**禁止**用 Router / Verification / Answer 的输出反构 GT。
+3. **区分 offline harness 与 online end-to-end。** runner 通过
+   `probe_services()` 探测 llm / milvus / neo4j / duckdb，并在 artifact 的
+   `live_services` / `deterministic_mode` 字段中明确标注；两条主线的
+   结论不得混同。
+4. **分层指标，不合并成单一数字。** routing / tool / answer / evidence
+   四层分别记录；另有 unsupported-claim detection 与 critical leakage
+   （仅在验证层运行时才有数值）。
+5. **失败保留在分母。** routing / tool / verification / 429 / timeout
+   失败都产生 0 分记录 + 失败类别，绝不 silent skip；服务不可用（如
+   offline 无 Neo4j）记为 honest failure 并记录原因，**不伪造**图谱或
+   检索结果。
+6. **消融的成本必须如实记录，不伪造下降。** 某个组件在 offline 下
+   无法分离贡献（如 w/o KG / w/o Hybrid / w/o Reranker / w/o Verification
+   在 offline 与 A_full 同分），就**如实记录"无指标差 + 原因"**，
+   不制造"去掉模块一定下降"。
+7. **负结果保留。** RQ3 的核心负结果（多工具任务 success 远低于单工具）、
+   B4 规则路由 success 高于动态路由，全部保留并写入报告。
+
+### Alternatives
+
+| 方案 | 未采用原因 |
+|---|---|
+| 只跑完整系统，不做 Baseline/Ablation | 无法回答 RQ1–RQ3，也无从归因 |
+| 用系统输出反向构造 GT | 循环论证，GT 失去独立验证意义 |
+| 把四个指标合成一个总分 | 掩盖 routing/tool/answer 的分层差异，违背 spec |
+| offline 下为 KG 任务伪造图谱结果 | 直接违反"不伪造结果"纪律 |
+| 失败任务从分母剔除 | 系统性高估成功率，评估失真 |
+| 在 `artifacts/phase5/` 提交完整实验输出 | 输出体积大；只提交脚本 + `docs/phase5/` 报告 |
+
+### Consequences
+
+正面：
+
+- 487 条统一 Benchmark + 10 系统矩阵 + 40 条失败案例，构成完整可复现的
+  最终实验；所有数字可追溯到逐条结果；
+- offline / online 明确区分，避免了"用离线 harness 冒充在线性能"；
+- 消融与负结果如实记录，结论边界清晰。
+
+负面：
+
+- offline harness 下 RAG 用 fake dense、KG 无 Neo4j、LLM 用离线 backend，
+  w/o KG / w/o Hybrid / w/o Reranker / w/o Verification 的贡献**无法分离**，
+  RQ2 的 leakage 指标无数值——需 online end-to-end 运行补全；
+- 487 条中 structured_lookup 偏多（276 条）且其 KG 子集 offline 全 0，
+  拉低该 task_type 均值；
+- 合成业务数据的数值结论不得当作真实经营指标外推。

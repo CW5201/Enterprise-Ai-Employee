@@ -10,6 +10,12 @@
 > （`src/nodes/task_router.py` + `src/nodes/multi_tool_execution.py`，§10/§13）。
 > Claim-Evidence Verification 已于 Phase 4 实现（`src/core/claim_verifier.py` +
 > `src/nodes/claim_extraction.py` / `evidence_collection.py` / `verification.py` / `answer_guard.py`），见 §16。
+> **Phase 5 已完成端到端评测框架**：`src/evaluation/enterprise_metrics.py`
+> （分层指标）+ `src/evaluation/enterprise_systems.py`（系统/消融矩阵）+
+> `scripts/run_enterprise_eval.py`（端到端 runner）+
+> `scripts/analyze_enterprise_failures.py`（分组 + 失败分析）；
+> 数据由 `data/eval/enterprise_tasks.jsonl`（487 条统一 Benchmark）驱动，
+> 结果写入 `artifacts/phase5/`（gitignored）。
 
 ---
 
@@ -415,3 +421,46 @@ Answer / Chart / Report
   必须经 `src/core/` 的统一封装；
 - 不允许 LLM 生成任意 Cypher，不允许执行任意用户 Python 代码；
 - 新增技术或框架前必须先更新 `ADR.md`，不允许擅自扩张技术栈。
+
+## 20. End-to-End Evaluation（Phase 5）
+
+Phase 5 不新增 Agent 组件，只在既有链路（§18）上加一层评测框架，
+由以下模块构成（详见 §10 / §11 / §13 / §16，此处只列 Phase 5 新增）：
+
+```
+data/eval/enterprise_tasks.jsonl  (487 条，GT 独立验证，provenance.verifier)
+  ↓
+src/evaluation/enterprise_systems.py   (SystemConfig / SYSTEMS)
+  ↓ 参数化 build_graph（phase3/phase4/enable_kg/retrieval_mode）
+src/graph/builder.py                    (既有，不改)
+  ↓ 逐任务驱动
+src/evaluation/enterprise_metrics.py    (分层指标：route/tool/answer/evidence/leakage/latency)
+  ↓
+artifacts/phase5/enterprise_eval_results.json   (逐条记录，失败保留分母)
+artifacts/phase5/enterprise_eval_summary.json
+artifacts/phase5/enterprise_eval_summary.md
+```
+
+- **无新增数据库 / 模型 / RAG / SQL / KG / Routing / Verification 实现**；
+  Phase 5 只驱动并度量既有组件；
+- **offline harness**：`LLM_FORCE_OFFLINE=1` + `backend="fake"`（RAG）
+  + 无 Neo4j，确定性可复现；**online end-to-end**：live Milvus + Neo4j +
+  LLM，`--offline` 不传即走在线模式；
+- 两条主线在 artifact 中通过 `live_services` / `deterministic_mode` 字段
+  明确区分，不混同。
+
+## 21. 评测框架实现（`src/evaluation/`）
+
+Phase 0 占位的 `dataset.py` / `metrics.py` / `runner.py` / `reporter.py`
+在 Phase 5 落地为：
+
+- `enterprise_metrics.py`：10 项指标（task success / answer exact /
+  route acc / tool F1 / plan EM / evidence attribution /
+  unsupported claim detection / critical leakage / latency p50-p95 /
+  LLM call count），全部函数纯逻辑、无 live 依赖；
+- `enterprise_systems.py`：`SystemConfig` 数据类 + `SYSTEMS` 常量
+  （A/B/C + B1–B4 + 5 项消融），确定性可枚举；
+- `scripts/run_enterprise_eval.py`：runner（`--system` / `--limit` /
+  `--offline` / `--out`）；
+- `scripts/run_enterprise_ablation.py`：Commit-3 全矩阵驱动；
+- `scripts/analyze_enterprise_failures.py`：Commit-4 分组 + 失败分析。

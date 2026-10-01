@@ -500,3 +500,63 @@ Reranker 在 CPU 上对 20 条候选重排 ~5.7s/query，工程代价显著；
 > 未在线跑 live BGE-M3 / LLM / 真实 RAG-KG 链路；不主张
 > "Verification 消除了 hallucination"，只据实验讨论
 > unsupported-claim leakage 是否降低（A→B 已显著降低）。
+
+---
+
+## 18. Phase 5 Enterprise End-to-End Benchmark（真实运行）
+
+> 完整报告：`docs/phase5/EXPERIMENT_REPORT.md`（18 节）与
+> `artifacts/phase5/`（gitignored，由脚本生成）。本节为摘要。
+
+### 18.1 Setup
+
+- 数据集：`data/eval/enterprise_tasks.jsonl`（**487 条**，10 类
+  task_type × easy/medium/hard × 单/双/三/四工具 + clarification；
+  GT 由独立 SQL / KB 包含 / 人工声明产生，`provenance.verifier` 记录来源）；
+- 系统：A_full / B_no_verification / C_static_no_verification /
+  B1_llm_only / B4_rule_routing + 5 项组件消融（`scripts/run_enterprise_eval.py`）；
+- 模式：**offline-deterministic harness**（真实 DuckDB + 真实 27 文档
+  KB；未接入 live Milvus / Neo4j / LLM 在线链路）；
+- 失败保留分母，失败类别自动记录。
+
+### 18.2 Results（offline harness，487 条全量，真实运行）
+
+| system | task success | answer exact | route acc | tool F1 | plan EM | evidence acc | P95 (ms) | LLM calls |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| **A_full** | **0.345** | 0.133 | **0.394** | **0.405** | 0.347 | 0.362 | 412 | 3.0 |
+| B_no_verification | 0.345 | 0.133 | 0.394 | 0.405 | 0.347 | 0.362 | 258 | 3.0 |
+| C_static_no_verification | 0.008 | 0.166 | 0.343 | 0.010 | 0.010 | 0.371 | 258 | 2.4 |
+| B4_rule_routing | **0.450** | 0.010 | 0.433 | 0.471 | 0.402 | 0.369 | 233 | 2.0 |
+| B1_llm_only | 0.000 | 0.380 | 0.092 | 0.010 | 0.010 | 0.010 | 0 | 1.0 |
+
+### 18.3 Ablation（offline harness）
+
+| 消融 | task success | 说明 |
+|---|---:|---|
+| A_full | 0.345 | 基线 |
+| w/o Dynamic Routing | 0.008 | 大幅下降（SupervisorRouter 路由 SQL/KG/多源任务失败） |
+| w/o KG | 0.345 | offline 无 Neo4j，KG 任务本就 0，无指标差（受限，§17 Limitations） |
+| w/o Hybrid Retrieval | 0.345 | 同上（RAG 用 fake dense，无真实 BGE-M3） |
+| w/o Reranker | 0.345 | 同上 |
+| w/o Verification | 0.345 | 验证层 offline 下 claim 集为空，不影响 success/route/tool F1（与 A 相同） |
+
+### 18.4 Analysis（如实记录）
+
+- **RQ1（动态路由）**：A_full tool F1 0.405 vs C_static 0.010，
+  **动态路由在 SQL 侧工具选择显著优于静态**；B4 success 0.450 > A 0.345，
+  原因是动态路由 confidence gate 将部分 easy 任务降为 clarification
+  （honest，保留）。
+- **RQ2（验证）**：A 与 B_no_verification 指标完全相同（success / route /
+  tool F1），**验证层是 post-hoc 结果层，不 re-route / re-invoke 工具**；
+  offline 下 claim 集为空，leakage 无数值意义，RQ2 需 online 补全。
+- **RQ3（多源协同）**：two_tool success 0.000 / three_plus 0.067
+  vs 单工具 0.373；tool F1 反向更高（0.756 / 0.504）——**多源融合到
+  答案是当前系统最困难处**，RQ3 核心负结果。
+- **KG honest failure**：`relationship_query` 全 0、structured_lookup
+  拉低至 0.141，均因 offline 无 Neo4j（KG 路由对但工具无结果），
+  非系统缺陷，不外推为"KG 不可用"。
+
+> **边界**：本实验为 offline-deterministic harness；所有组件消融指标相同
+> 是 offline 环境局限，非"去掉模块一定不下降"的证据。要分离
+> w/o KG / w/o Hybrid / w/o Reranker / w/o Verification 的真实贡献，
+> 需 online end-to-end 运行（live Milvus + Neo4j + LLM），属后续实验。
