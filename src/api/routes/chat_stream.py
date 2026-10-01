@@ -54,7 +54,8 @@ _NODE_EVENT_MAP: dict[str, str] = {
 
 
 def _ts() -> str:
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    """UTC ISO-8601 timestamp (millisecond precision) for event framing."""
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()) + f".{int((time.time() % 1) * 1000):03d}Z"
 
 
 def _safe_payload(node_name: str, delta: dict[str, Any]) -> dict[str, Any]:
