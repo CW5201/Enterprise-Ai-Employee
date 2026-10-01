@@ -91,7 +91,9 @@ def test_reports_empty_state(client: TestClient) -> None:
 
 def test_evaluation_summary_available_flag(client: TestClient) -> None:
     body = client.get("/api/evaluation/summary").json()
-    assert {"baselines", "ablations", "verification", "available"} <= set(body)
+    assert {"baselines", "ablations", "verification", "available",
+            "report_path", "report_excerpt"} <= set(body)
     # The Phase 5 summary artifact exists in this repo checkout.
     assert body["available"] is True
-    assert "A_full" in body["baselines"] or body["baselines"], "at least one baseline entry"
+    assert "A_full" in body["baselines"]
+    assert "abl_w_kg" in body["ablations"]

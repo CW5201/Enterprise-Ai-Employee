@@ -20,6 +20,7 @@ logger = logging.getLogger("eae.api.evaluation")
 # Project root = 3 levels up from this file: routes -> api -> src -> root
 _ROOT = Path(__file__).resolve().parents[3]
 _PHASE5 = _ROOT / "artifacts" / "phase5" / "baseline_ablation_summary.json"
+_PHASE_REPORT = _ROOT / "docs" / "phase5" / "EXPERIMENT_REPORT.md"
 _PHASE4 = _ROOT / "artifacts" / "phase4" / "verification_summary.json"
 
 
@@ -33,6 +34,11 @@ def _load_json(path: Path) -> dict[str, Any] | None:
         return None
 
 
+def _md_summary(text: str, max_chars: int = 6000) -> str:
+    """First N chars of the report, capped so the API stays cheap."""
+    return text[:max_chars]
+
+
 @router.get("/evaluation/summary")
 def evaluation_summary() -> dict[str, Any]:
     """Return the Phase 5 baseline/ablation + Phase 4 verification data."""
@@ -41,6 +47,8 @@ def evaluation_summary() -> dict[str, Any]:
         "ablations": {},
         "verification": {},
         "available": False,
+        "report_path": str(_PHASE_REPORT.relative_to(_ROOT)) if _PHASE_REPORT.is_file() else None,
+        "report_excerpt": None,
     }
 
     p5 = _load_json(_PHASE5)
@@ -53,12 +61,20 @@ def evaluation_summary() -> dict[str, Any]:
             if kind == "ablation":
                 result["ablations"][name] = {"metrics": summary, "config": config}
             else:
+                # kind "system" (full) and "baseline" both belong to the
+                # baseline group from the dashboard's perspective.
                 result["baselines"][name] = {"metrics": summary, "config": config}
         result["available"] = True
 
     p4 = _load_json(_PHASE4)
     if p4:
         result["verification"] = p4
+
+    if _PHASE_REPORT.is_file():
+        try:
+            result["report_excerpt"] = _md_summary(_PHASE_REPORT.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            logger.exception("failed to read experiment report")
 
     return result
 

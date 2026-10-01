@@ -76,4 +76,26 @@ def get_document(doc_id: str) -> KnowledgeDocumentOut:
     return docs[0]
 
 
+@router.get("/knowledge/documents/{doc_id}/content")
+def get_document_content(doc_id: str) -> dict[str, Any]:
+    """Return the raw Markdown text of one KB document."""
+    docs = [d for d in _scan_kb() if d["id"] == doc_id]
+    if not docs:
+        raise HTTPException(status_code=404, detail=f"document {doc_id!r} not found")
+    dept = docs[0]["department"]
+    suffix = f"{doc_id}.md"
+    candidates = [p for p in (KB_ROOT / dept).glob("*.md") if p.stem == doc_id]
+    if not candidates:
+        # fall back to matching by filename stem across departments
+        candidates = list(KB_ROOT.rglob(f"*{suffix}"))
+    if not candidates:
+        raise HTTPException(status_code=404, detail=f"file not found for {doc_id!r}")
+    text = candidates[0].read_text(encoding="utf-8")
+    return {
+        "id": doc_id,
+        "title": docs[0]["title"],
+        "content": text,
+    }
+
+
 __all__ = ["router"]

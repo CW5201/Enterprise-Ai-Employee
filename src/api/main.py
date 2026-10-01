@@ -9,6 +9,7 @@ Phase 6 routes:
 - GET  /api/graph/*       - Neo4j entity / relation queries
 - GET  /api/reports       - report listing
 - GET  /api/evaluation/*  - evaluation summary
+- GET  /api/analytics/*   - BI aggregations over DuckDB
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from src.api.routes.analytics import router as analytics_router
 from src.api.routes.chat import ChatRequest, ChatResponse
 from src.api.routes.chat import router as chat_router
 from src.api.routes.chat_stream import router as chat_stream_router
@@ -79,6 +81,7 @@ def create_app() -> FastAPI:
     app.include_router(knowledge_router, prefix="/api")
     app.include_router(graph_router, prefix="/api")
     app.include_router(reports_router, prefix="/api")
+    app.include_router(analytics_router, prefix="/api")
     # Phase 6.6
     app.include_router(evaluation_router, prefix="/api")
 

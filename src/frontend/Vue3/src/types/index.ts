@@ -183,6 +183,8 @@ export interface EvaluationSummary {
   ablations: Record<string, EvaluationEntry>
   verification: Record<string, Record<string, number>>
   available: boolean
+  report_path?: string | null
+  report_excerpt?: string | null
 }
 
 // --- Analytics ---
@@ -192,4 +194,34 @@ export interface AnalyticsKPI {
   value: number | string
   unit?: string
   delta?: number | null
+}
+
+export interface AnalyticsSummary {
+  available: boolean
+  reason?: string
+  kpis?: AnalyticsKPI[]
+}
+
+export interface TrendPoint {
+  month: string
+  total: number
+}
+
+export interface TopEntry {
+  name: string
+  total: number
+}
+
+export interface AnalyticsTrends {
+  available: boolean
+  reason?: string
+  monthly_sales?: TrendPoint[]
+  top_suppliers?: TopEntry[]
+  top_customers?: TopEntry[]
+  order_stats?: {
+    total: number
+    credit_notes: number
+    first_invoice: string
+    last_invoice: string
+  }
 }
