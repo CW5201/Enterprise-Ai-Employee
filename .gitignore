@@ -16,7 +16,7 @@ secrets.yaml
 venv/
 env/
 __pycache__/
-*.py[cod]
+__pycache__/*
 *.egg-info/
 .eggs/
 build/
@@ -45,6 +45,7 @@ dist/
 dist-ssr/
 *.local
 .vite/
+*.tsbuildinfo
 
 # --- Runtime output --------------------------------------------------------
 logs/

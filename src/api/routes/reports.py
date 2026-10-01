@@ -1,17 +1,27 @@
-"""API route: reports - report retrieval
+"""API route: reports - report retrieval.
 
-Status
-------
-Phase 0 (project skeleton): interface placeholder only.
-NO business logic is allowed in this phase.
-
-See docs/ROADMAP.md for the phase in which this module is implemented,
-docs/ARCHITECTURE.md for its role in the task pipeline, and ADR.md for the
-design decisions behind it.
+Phase 6.5: report listing.  Report generation is not yet implemented
+(see src/tools/report_tool.py); this endpoint returns an empty list so
+the frontend can show a correct empty state.
 """
 
 from __future__ import annotations
 
-__all__: list[str] = []
+from fastapi import APIRouter, HTTPException
 
-# TODO(Phase 1+): implement according to docs/ROADMAP.md.
+router = APIRouter(tags=["reports"])
+
+
+@router.get("/reports")
+def list_reports() -> list[dict]:
+    """Return generated reports. Empty until report generation lands."""
+    return []
+
+
+@router.get("/reports/{report_id}")
+def get_report(report_id: str) -> dict:
+    """Return one report by id."""
+    raise HTTPException(status_code=404, detail=f"report {report_id!r} not found")
+
+
+__all__ = ["router"]
