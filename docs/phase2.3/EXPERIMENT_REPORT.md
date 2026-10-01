@@ -17,7 +17,7 @@
 对比 4 种检索模式：Dense / BM25 / Hybrid / Hybrid + Reranker，
 统一在同一语料、同一 query 集、同一 final_k 下评测。
 
-**这是局部检索实验**，不等价于最终 430 条 Evaluation Benchmark
+**这是局部检索实验**，不等价于最终 487 条 Evaluation Benchmark
 （Phase 5 构建）。
 
 ## 2. Dataset
@@ -155,7 +155,7 @@ Reranker 在 CPU 上对 20 条候选重排约 5.7s/query，为**已验证的稳�
 - **合成企业知识**：非真实企业内部文档，结论仅限合成语料；
 - **设备**：CPU 推理（~5.7s/query），正式 GPU 环境下延迟会显著降低；
 - **实验范围**：仅检索层，未接入 Answer Generation / Verification；
-- 本实验是 Phase 2.3 局部检索实验，**不等价于**最终 430 条
+- 本实验是 Phase 2.3 局部检索实验，**不等价于**最终 487 条
   Evaluation Benchmark（第 1 节，Phase 5 构建）。
 
 ## 13. Reproducibility

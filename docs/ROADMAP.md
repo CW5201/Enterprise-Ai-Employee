@@ -153,7 +153,7 @@ Qwen 生成带来源的回答。本阶段使用**真实** BGE-M3 与 **真实** 
 - 不做 Reranker（BGE-Reranker-v2-M3 仍未启用）；
 - 不做 Neo4j / GraphRAG / Claim-Evidence Verification；
 - 不修改 Phase 1 的 SQL / Intent / Router，也不改 Phase 2.1 的真实 Milvus 行为；
-- 不扩大语料、不把 10-query 局部实验当作最终 430 条 Benchmark。
+- 不扩大语料、不把 10-query 局部实验当作最终 487 条 Benchmark。
 
 ---
 
@@ -197,7 +197,7 @@ Qwen 生成带来源的回答。本阶段使用**真实** BGE-M3 与 **真实** 
 - 不做 Neo4j / GraphRAG；
 - 不做 Claim-Evidence Verification；
 - 不做 Task-Adaptive Routing（动态路由）；
-- 不把 56-query 局部实验当作最终 430 条 Benchmark。
+- 不把 56-query 局部实验当作最终 487 条 Benchmark。
 
 ---
 
@@ -298,7 +298,7 @@ Phase 2.4（Neo4j KG，✅）。
 **本阶段明确不做**（留给 Phase 4 / 5）：
 
 - 不做 Claim-Evidence Verification；
-- 不做 430 条正式 Enterprise Task Benchmark（Phase 5）；
+- 不做 487 条正式 Enterprise Task Benchmark（Phase 5）；
 - 不实现"规则快车道优先 + LLM 兜底"的混合延迟策略；
 - 不把 route_acc 0.68 外推为"动态路由普遍优于静态"或"多源融合已证明有效"。
 
@@ -342,7 +342,7 @@ Phase 2.4（Neo4j KG，✅）。
 
 **本阶段明确不做**（留给 Phase 5）：
 
-- 不做 430 条正式 Enterprise Task Benchmark；
+- 不做 487 条正式 Enterprise Task Benchmark；
 - 不在线跑 live BGE-M3 / LLM / 真实 RAG-KG 链路（Phase 4 评测为
   离线确定性 harness，在线表现属 Phase 5 范畴）；
 - 不主张"Verification 消除了 hallucination"，只据实验讨论

@@ -7,7 +7,7 @@
 | `knowledge_base/` | 企业非结构化知识文档（人事、财务、运营、安全、业务），是 RAG 的唯一语料来源 | ✅（全部为合成语料 synthetic） |
 | `schemas/` | 企业数据库 Schema、数据字典、Text-to-SQL Few-shot，是 SQL 生成的结构依据 | ✅ |
 | `synthetic/` | 任务生成、Ground Truth 生成、受控数据扩充脚本（当前仅为占位） | ✅ |
-| `eval_dataset.jsonl` | 统一评估集，目标约 430 条企业任务 | ⬜（Phase 5 构建后入库） |
+| `eval/enterprise_tasks.jsonl` | 统一评估集（487 条企业任务，Phase 5 已构建） | ✅（Phase 5 入库） |
 | `raw/` | 第三方原始数据下载区（如 WWI T-SQL DDL） | ❌（本地下载，`.gitignore` 忽略） |
 | `runtime/` | 运行时数据库（`wwi.duckdb`）、向量索引等构建产物 | ❌（`.gitignore` 忽略） |
 | `duckdb/` | DuckDB 业务库（旧版） | ❌（`.gitignore` 忽略） |

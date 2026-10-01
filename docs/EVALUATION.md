@@ -4,14 +4,14 @@
 > 本文档定义评估协议。正式系统级指标在 Phase 5 由
 > `src/evaluation/runner.py` 实际运行产出，当前不填写未经验证的系统级数值。
 > Phase 2.2 完成了 Hybrid RAG 的**局部检索实验**（10 query），结果如实记录于
-> 第 14 节，属于阶段性实验，不等价于最终 430 条 Benchmark。
+> 第 14 节，属于阶段性实验，不等价于最终 487 条 Benchmark。
 
 ---
 
 ## 1. Eval Dataset
 
-- 文件：`data/eval_dataset.jsonl`（当前为空，Phase 5 构建）；
-- 规模目标：约 430 条；
+- 文件：`data/eval/enterprise_tasks.jsonl`（Phase 5 已构建，487 条）；
+- 规模：487 条；
 - 类别：Information Query / Knowledge QA / Text-to-SQL / Data Analysis /
   Multi-source Reasoning / Complex Agent Task；
 - 字段定义与构建规则见 [`DATASET.md`](DATASET.md) 第 11 节。
@@ -25,7 +25,7 @@
 
 | 层级 | 数据集 | 目的 |
 |---|---|---|
-| 主评估 | Enterprise AI Employee Task Dataset（约 430 条） | 完整系统、Baseline、消融 |
+| 主评估 | Enterprise AI Employee Task Dataset（487 条） | 完整系统、Baseline、消融 |
 | 外部对照 | Spider, BIRD | Text-to-SQL 能力对照 |
 | 外部对照 | HotpotQA | 多跳检索与证据支持对照 |
 | 外部对照 | BFCL, ToolBench | 工具调用能力对照 |
@@ -168,8 +168,8 @@ Evidence Support Rate = supported claims / total claims
 ## 14. Phase 2.2 Hybrid Retrieval Experiment
 
 > **定位**：本节是 Phase 2.2 的**局部检索实验**（Dense vs BM25 vs Hybrid），
-> 用于验证混合检索链路是否正确接通，**不等于**第 1 节的 430 条
-> 正式 Evaluation Benchmark（正式集在 Phase 5 构建）。
+> 用于验证混合检索链路是否正确接通，**不等于**第 1 节的 487 条
+> 正式 Evaluation Benchmark（正式集已在 Phase 5 构建）。
 > 所有指标由 `scripts/run_hybrid_eval.py` 真实运行产生，**禁止手填**；
 > 结果如实记录，包含对"Hybrid 未超过 Dense"的负向结论。
 
@@ -232,7 +232,7 @@ hybrid 内部融合窗口（更宽的候选池）已在输出中记录。
 ### 14.6 Experimental Limitation
 
 - 本实验是 **Phase 2.2 的局部检索实验**（10 query / 35 chunk），
-  **不等价于**最终 430 条 Evaluation Benchmark（第 1 节，Phase 5 构建）。
+  **不等价于**最终 487 条 Evaluation Benchmark（第 1 节，Phase 5 已构建）。
 - 语料规模小、query 少，指标对单条结果敏感，**不能把 10-query 结果外推为
   最终系统性能**；正式系统级指标仍以 Phase 5 的真实运行为准。
 - 单点 MRR=0.95 在三模式上相同，主要由 query 区分度高导致，非模型能力的
@@ -375,8 +375,8 @@ Reranker 在 CPU 上对 20 条候选重排 ~5.7s/query，工程代价显著；
 - **合成企业知识**：非真实企业内部文档，结论仅限合成语料；
 - **设备**：CPU 推理（~5.7s/query），正式 GPU 环境下延迟会显著降低；
 - **实验范围**：仅检索层，未接入 Answer Generation / Verification；
-- **本实验是 Phase 2.3 局部检索实验**，**不等价于**最终 430 条
-  Evaluation Benchmark（第 1 节，Phase 5 构建）。
+- **本实验是 Phase 2.3 局部检索实验**，**不等价于**最终 487 条
+  Evaluation Benchmark（第 1 节，Phase 5 已构建）。
 
 ## 16. Phase 2.4 Knowledge Graph Experiment
 
@@ -453,7 +453,7 @@ Reranker 在 CPU 上对 20 条候选重排 ~5.7s/query，工程代价显著；
   `FAILURE_HANDBOOK.md` §4（FH-KG-001/002/003）。
 
 > **边界**：本实验为 Phase 2.4 局部图谱实验，**不等价于**最终
-> 430 条 Evaluation Benchmark（第 1 节，Phase 5 构建），也不能证明
+> 487 条 Evaluation Benchmark（第 1 节，Phase 5 已构建），也不能证明
 > "图谱优于 SQL"——多源融合效果留给 Phase 3（Dynamic Routing）与
 > Phase 4（Claim-Evidence Verification）。
 

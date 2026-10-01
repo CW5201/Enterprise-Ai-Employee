@@ -4,24 +4,25 @@
 
 企业 AI 数字员工是一个面向企业数据分析与任务执行的知识增强型 AI Agent 系统，通过任务理解、动态路由、RAG、Text-to-SQL、知识图谱、工具调用和结果验证，将自然语言任务转化为可执行的数据查询、知识检索、分析推理和报告生成流程。
 
-> **项目状态：Phase 3 — Task-Adaptive Routing ✅ 已完成（2026-09-30）。**
+> **项目状态：Phase 5 — Enterprise End-to-End Evaluation ✅ 已完成（2026-09-30）。**
 > Phase 0 完成骨架与文档；Phase 1 完成 `Intent → Router → RAG/SQL → Answer` 最小闭环；
 > Phase 2.1 已将 RAG 接通（BGE-M3 + 真实 Milvus）；
 > Phase 2.2 将 RAG 升级为 Hybrid 检索（Dense + BM25 + RRF）；
 > Phase 2.3 在 Hybrid 之上接入 BGE-Reranker-v2-M3 重排阶段（4 模式 × 56 query 检索实验）；
 > Phase 2.4 接入 Neo4j 知识图谱（WWI → Neo4j 图谱构建 + 预定义 Cypher 模板
 > KG Tool + 58 任务真实评测，GT 经 DuckDB SQL 独立核验）；
-> **Phase 3 实现 Task-Adaptive Routing：任务特征 → 结构化 TaskProfile（LLM 提议）→
-> 候选工具（能力规则）→ 路由决策（RoutingDecision 强校验 + confidence gate）→
-> 多工具执行与结果融合；100 任务真实评测（A/B/C/D 四 baseline），
-> 详见 `docs/phase3/EXPERIMENT_REPORT.md`。**
+> Phase 3 实现 Task-Adaptive Routing（100 任务 A/B/C/D 评测）；
+> Phase 4 完成 Claim-Evidence Verification（120 任务评测）；
+> **Phase 5 收口：487 条统一 Enterprise Task Benchmark + 端到端评测 runner +
+> 10 系统 Baseline/Ablation 矩阵 + 分组/失败分析，详见
+> `docs/phase5/EXPERIMENT_REPORT.md`。**
 > 真实实验环境：BGE-M3 + Real Milvus + BM25 + RRF + BGE-Reranker-v2-M3 +
 > Neo4j 5.26 + Qwen（LLM 路由车道）。
-> **实测结果如实记录**：动态路由（C rule 0.630 / D LLM 0.680）route accuracy
-> 显著高于静态策略（A 0.110 / B 0.220）；multi_tool 顺序拆解（plan EM 0.520）
-> 与 KG 模板覆盖缺口为主要失分点（负结果保留）。
-> 尚未实现：Claim-Evidence 验证、正式 430 任务评估框架与前端
-> （分别为 Phase 4 / 5 / 6，见 Roadmap）。
+> **实测结果如实记录（offline harness，487 条全量）**：A_full task success
+> 0.345 / route 0.394 / tool F1 0.405；B4 规则路由 success 0.450（离线最强
+> 路由基线）；多工具任务 success 0.000–0.067 vs 单工具 0.373（RQ3 核心负结果，
+> 保留不掩盖）；KG 任务 offline 无 Neo4j 记 honest failure。
+> 尚未实现：Vue3 前端、Docker 部署、论文正文（分别为 Phase 6 / 7 / 8，见 Roadmap）。
 
 ---
 
@@ -153,7 +154,7 @@ AI 数字员工的定位不是"能回答问题的聊天机器人"，而是"能�
 | RAG / Evidence Benchmark | HotpotQA | 检索与证据对照 |
 | Tool Calling Benchmark | BFCL, ToolBench | 工具调用能力对照 |
 | Agent Benchmark | GAIA | 复杂任务对照 |
-| 自建评估集 | Enterprise AI Employee Task Dataset（约 430 条） | 主评估集 |
+| 自建评估集 | Enterprise AI Employee Task Dataset（487 条） | 主评估集 |
 
 **不伪造"某家真实企业的内部数据"。** 知识库语料一律标注为公开文档或合成企业知识文本。
 第三方资源按原许可证使用，登记于 [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md)，详见 [`docs/DATASET.md`](docs/DATASET.md)。
@@ -328,7 +329,7 @@ enterprise-ai-employee/
 │   ├── knowledge_base/           企业知识库文档（hr / finance / operations / security / business）
 │   ├── schemas/                  数据库 Schema、数据字典、SQL Few-shot
 │   ├── synthetic/                任务生成 / Ground Truth 生成 / 受控扩充
-│   └── eval_dataset.jsonl        统一评估集（约 430 条）
+└── data/eval/enterprise_tasks.jsonl   统一评估集（487 条，Phase 5）
 ├── docs/                         研究与设计文档
 │   ├── ARCHITECTURE.md           系统架构
 │   ├── RESEARCH.md               研究问题、创新点、方法

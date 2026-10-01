@@ -60,10 +60,10 @@
 
 **边界（重要）**：
 
-- 这两个文件都只是**阶段性检索实验集**，**不属于正式 430 条
+- 这两个文件都只是**阶段性检索实验集**，**不属于正式 487 条
   Evaluation Dataset**；
-- 正式 430 条 Evaluation Dataset 在 **Phase 5** 由
-  `data/eval_dataset.jsonl` 构建（见第 11 节）；
+- 正式 487 条 Evaluation Dataset 已在 **Phase 5** 由
+  `data/eval/enterprise_tasks.jsonl` 构建（见第 11 节）；
 - 不得把 10-query / 56-query 的召回指标当作最终系统性能对外引用；
 - **Ground Truth 生成红线**：`expected_chunk_ids` 必须来自对 chunk 语料的
   人工核验，**禁止**用待评估系统（Dense / BM25 / Hybrid / Reranker）

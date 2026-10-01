@@ -23,7 +23,7 @@ appropriate knowledge sources and tools according to task characteristics?
 本阶段回答"系统是否能够根据任务特征动态选择不同知识源与工具"
 （capability-aware 路由的可行性与代价），**不回答**"多源融合是否已被
 证明有效"——那需 Phase 4（Claim-Evidence Verification）与 Phase 5
-（430 任务正式 Benchmark）。
+（487 任务正式 Benchmark，Phase 5 已构建）。
 
 ## 3. Task Taxonomy
 

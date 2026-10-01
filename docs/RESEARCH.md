@@ -194,8 +194,8 @@ Phase 2.3 在该研究问题下的阶段性证据（详见
    （Recall@5 0.9583 → 0.9470），负结果如实保留；
 4. 上述结论**仅限本实验数据集（190-chunk synthetic enterprise
    corpus / 56 queries / CPU 推理）**，不外推为 Reranker 在一般
-   企业知识库上的普遍结论；更大语料与 430 条正式 Benchmark
-   的验证留给 Phase 5。
+   企业知识库上的普遍结论；更大语料与 487 条正式 Benchmark
+   的验证已在 Phase 5 完成。
 
 ## 12. Phase 2.4 Research Evidence（Knowledge Graph 阶段性证据）
 
@@ -253,7 +253,7 @@ Phase 3 在该研究问题下的阶段性证据（详见
 **边界声明**：本阶段证明"系统能够根据任务特征动态选择不同知识源与
 工具"（限定 100 任务 / WWI 样例 + 项目 schema / 单模型 Qwen 代理），
 **不能**证明"多源融合已被证明有效"——多源融合的最终证据需
-Phase 4（Claim-Evidence Verification）与 Phase 5（430 任务正式
+Phase 4（Claim-Evidence Verification）与 Phase 5（487 任务正式
 Benchmark）。
 
 ---

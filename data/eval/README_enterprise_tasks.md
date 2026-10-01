@@ -6,7 +6,7 @@
 
 > 与 `retrieval_eval.jsonl` / `kg_eval.jsonl` / `routing_eval.jsonl` /
 > `verification_eval.jsonl` 等**阶段性实验集不同**——那些是各 Phase 的局部
-> 实验集，本文件是正式 430+ 条的完整 Benchmark，不得用阶段性结果代替。
+> 实验集，本文件是正式 487 条的完整 Benchmark，不得用阶段性结果代替。
 
 ## 规模与分布（当前 487 条，`python scripts/build_enterprise_tasks.py` 生成）
 

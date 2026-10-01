@@ -854,7 +854,7 @@ def _comparison_tasks(db: _Duck, kb: _KB, seq: SeqGen) -> list[Task]:
 
 
 # ---------------------------------------------------------------------------
-# Scale-up families — expand the base benchmark to ~430 tasks while keeping
+# Scale-up families — expand the base benchmark to ~487 tasks while keeping
 # every GT independently verified.  Each family is parameterised over a
 # *verified* fact pool so nothing is fabricated.
 # ---------------------------------------------------------------------------
