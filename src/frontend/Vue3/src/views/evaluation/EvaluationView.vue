@@ -21,6 +21,7 @@
       <!-- Baselines -->
       <div class="panel">
         <div class="panel-head">基线系统</div>
+        <div class="table-scroll">
         <el-table :data="baselineRows" size="small">
           <el-table-column prop="name" label="系统" width="180" />
           <el-table-column label="任务成功率" width="110">
@@ -45,11 +46,13 @@
             <template #default="{ row }">{{ row.m.latency_total_ms_mean?.toFixed(0) ?? '—' }}</template>
           </el-table-column>
         </el-table>
+        </div>
       </div>
 
       <!-- Ablations -->
       <div v-if="ablationRows.length" class="panel">
         <div class="panel-head">消融实验</div>
+        <div class="table-scroll">
         <el-table :data="ablationRows" size="small">
           <el-table-column prop="name" label="配置" width="180" />
           <el-table-column label="任务成功率" width="110">
@@ -68,6 +71,7 @@
             <template #default="{ row }">{{ row.m.latency_total_ms_mean?.toFixed(0) ?? '—' }}</template>
           </el-table-column>
         </el-table>
+        </div>
       </div>
 
       <!-- Baseline comparison chart -->
@@ -230,6 +234,10 @@ onBeforeUnmount(() => {
   border-radius: var(--eae-radius);
   padding: var(--eae-space-4);
   margin-bottom: var(--eae-space-4);
+}
+
+.table-scroll {
+  overflow-x: auto;
 }
 
 .panel-head {
