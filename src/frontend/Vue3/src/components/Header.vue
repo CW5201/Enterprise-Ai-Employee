@@ -1,36 +1,38 @@
 <template>
-  <div class="header-inner">
-    <div class="header-left">
-      <span class="header-title">Enterprise AI Employee</span>
+  <el-header class="app-header" height="52px">
+    <div class="header-inner">
+      <div class="header-left">
+        <span class="header-title">Enterprise AI Employee</span>
+      </div>
+      <div class="header-right">
+        <el-input
+          v-model="search"
+          placeholder="搜索"
+          :prefix-icon="Search"
+          class="header-search"
+          clearable
+        />
+        <el-badge :value="0" :hidden="true">
+          <el-button :icon="Bell" text />
+        </el-badge>
+        <el-dropdown trigger="click">
+          <span class="header-user">
+            <el-avatar :size="28">
+              <el-icon><User /></el-icon>
+            </el-avatar>
+            <span class="header-user-name">用户</span>
+          </span>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item>
+                <router-link :to="{ name: 'settings' }">系统设置</router-link>
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+      </div>
     </div>
-    <div class="header-right">
-      <el-input
-        v-model="search"
-        placeholder="搜索"
-        :prefix-icon="Search"
-        class="header-search"
-        clearable
-      />
-      <el-badge :value="0" :hidden="true">
-        <el-button :icon="Bell" text />
-      </el-badge>
-      <el-dropdown trigger="click">
-        <span class="header-user">
-          <el-avatar :size="28">
-            <el-icon><User /></el-icon>
-          </el-avatar>
-          <span class="header-user-name">用户</span>
-        </span>
-        <template #dropdown>
-          <el-dropdown-menu>
-            <el-dropdown-item>
-              <router-link :to="{ name: 'settings' }">系统设置</router-link>
-            </el-dropdown-item>
-          </el-dropdown-menu>
-        </template>
-      </el-dropdown>
-    </div>
-  </div>
+  </el-header>
 </template>
 
 <script setup lang="ts">
@@ -41,6 +43,11 @@ const search = ref('')
 </script>
 
 <style scoped>
+.app-header {
+  background: var(--eae-surface);
+  border-bottom: 1px solid var(--eae-border);
+}
+
 .header-inner {
   display: flex;
   align-items: center;
