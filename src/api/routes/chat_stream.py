@@ -35,7 +35,9 @@ from src.api.routes.chat import ChatRequest
 router = APIRouter(tags=["chat-stream"])
 logger = logging.getLogger("eae.api.chat_stream")
 
-# Map LangGraph node names to frontend event types.
+# Map LangGraph node names to frontend event types.  Tool nodes emit a
+# tool_started event (plan) followed by tool_completed (results), so the
+# trace can show a pending -> running -> success transition per tool.
 _NODE_EVENT_MAP: dict[str, str] = {
     "intent": "task_started",
     "route": "routing",
@@ -69,7 +71,8 @@ def _safe_payload(node_name: str, delta: dict[str, Any]) -> dict[str, Any]:
         p["routing_decision"] = delta.get("routing_decision", {})
         p["routing_trace"] = delta.get("routing_trace", {})
     elif node_name in ("sql", "rag", "execute"):
-        p["tool"] = node_name if node_name != "execute" else "multi_tool"
+        tool = node_name if node_name != "execute" else "multi_tool"
+        p["tool"] = tool
         p["tool_calls"] = delta.get("tool_calls", [])
         p["sql"] = delta.get("sql", "")
         p["sql_result"] = delta.get("sql_result")
@@ -110,13 +113,22 @@ def chat_stream(request: Request, body: ChatRequest) -> StreamingResponse:
             for update in employee._graph.stream(state, stream_mode="updates"):
                 for node_name, delta in update.items():
                     event_type = _NODE_EVENT_MAP.get(node_name, "step")
-                    payload = _safe_payload(node_name, delta)
+                    # Tool nodes: emit a started event before the results
+                    # event so the frontend trace shows pending->running.
+                    if event_type == "tool":
+                        yield _sse_event({
+                            "type": "tool_started",
+                            "timestamp": _ts(),
+                            "step": node_name,
+                            "status": "running",
+                            "payload": {"tool": _safe_payload(node_name, delta).get("tool", node_name)},
+                        })
                     yield _sse_event({
-                        "type": event_type,
+                        "type": "tool_completed" if event_type == "tool" else event_type,
                         "timestamp": _ts(),
                         "step": node_name,
                         "status": "ok",
-                        "payload": payload,
+                        "payload": _safe_payload(node_name, delta),
                     })
 
             # --- final completed event ---

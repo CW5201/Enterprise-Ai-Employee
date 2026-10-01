@@ -33,6 +33,30 @@ export interface EvidenceItem {
 
 // --- Chat / pipeline ---
 
+export type VerificationStatus = 'supported' | 'unsupported' | 'conflict'
+
+export interface VerificationResult {
+  claim_id: string
+  claim_type?: string
+  supported: boolean
+  support_score?: number
+  evidence_ids?: string[]
+  conflict: boolean
+  status: VerificationStatus
+  verifier_type?: string
+  reason?: string
+  computed_value?: unknown
+  claimed_value?: unknown
+}
+
+export interface VerificationSummary {
+  supported_claims?: number
+  unsupported_claims?: number
+  conflicts?: number
+  total?: number
+  [key: string]: number | undefined
+}
+
 export interface ChatResponse {
   request_id: string
   answer: string
@@ -44,15 +68,26 @@ export interface ChatResponse {
   status: string
   latency: Record<string, number>
   sources: Array<Record<string, unknown>>
-  verification: Array<Record<string, unknown>>
-  verification_summary: Record<string, unknown>
+  verification: VerificationResult[]
+  verification_summary: VerificationSummary
   guard: Record<string, unknown>
 }
 
 // --- SSE stream events ---
 
+export type StreamEventType =
+  | 'task_started'
+  | 'routing'
+  | 'tool_started'
+  | 'tool_completed'
+  | 'verification'
+  | 'answer'
+  | 'guard'
+  | 'completed'
+  | 'error'
+
 export interface StreamEvent {
-  type: string
+  type: StreamEventType | string
   timestamp: string
   step: string
   status: string
