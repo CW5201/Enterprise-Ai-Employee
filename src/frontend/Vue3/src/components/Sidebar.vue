@@ -1,10 +1,18 @@
 <template>
-  <el-aside :width="SIDEBAR_WIDTH" class="app-aside">
+  <el-aside class="app-aside" :class="{ 'is-collapsed': layout.collapsed }">
     <div class="sidebar-brand">
-      <div class="sidebar-brand-title">Enterprise AI Employee</div>
-      <div class="sidebar-brand-sub">企业工作台</div>
+      <span class="sidebar-logo">EAE</span>
+      <div class="sidebar-brand-text">
+        <div class="sidebar-brand-title">Enterprise AI Employee</div>
+        <div class="sidebar-brand-sub">企业工作台</div>
+      </div>
     </div>
-    <el-menu :default-active="activeRoute" router class="sidebar-menu" :collapse="collapsed">
+    <el-menu
+      :default-active="activeRoute"
+      router
+      class="sidebar-menu"
+      :collapse="layout.collapsed"
+    >
       <el-menu-item index="/dashboard">
         <el-icon><Odometer /></el-icon>
         <span>工作台</span>
@@ -54,30 +62,64 @@ import {
   Setting,
   Trophy,
 } from '@element-plus/icons-vue'
+import { useLayoutStore } from '@/stores/layout'
 
-const SIDEBAR_WIDTH = '220px'
 const route = useRoute()
-const collapsed = computed(() => false)
+const layout = useLayoutStore()
 const activeRoute = computed(() => route.path)
 </script>
 
 <style scoped>
 .app-aside {
+  width: var(--eae-sidebar-width);
+  flex-shrink: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
   background: var(--eae-surface);
   border-right: 1px solid var(--eae-border);
   display: flex;
   flex-direction: column;
+  transition: width 0.2s ease;
+}
+
+.app-aside.is-collapsed {
+  width: var(--eae-sidebar-collapsed-width);
 }
 
 .sidebar-brand {
-  padding: var(--eae-space-4) var(--eae-space-4) var(--eae-space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--eae-space-2);
+  padding: var(--eae-space-4);
   border-bottom: 1px solid var(--eae-border);
+}
+
+.sidebar-logo {
+  display: none;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--eae-radius-sm);
+  background: var(--eae-primary);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.sidebar-brand-text {
+  min-width: 0;
 }
 
 .sidebar-brand-title {
   font-size: 15px;
   font-weight: 600;
   color: var(--eae-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .sidebar-brand-sub {
@@ -86,9 +128,27 @@ const activeRoute = computed(() => route.path)
   margin-top: 2px;
 }
 
+.app-aside.is-collapsed .sidebar-brand {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.app-aside.is-collapsed .sidebar-logo {
+  display: flex;
+}
+
+.app-aside.is-collapsed .sidebar-brand-text {
+  display: none;
+}
+
 .sidebar-menu {
   border-right: none;
   flex: 1;
+}
+
+.sidebar-menu:not(.el-menu--collapse) {
+  width: 100%;
 }
 
 .sidebar-menu .el-menu-item.is-active {

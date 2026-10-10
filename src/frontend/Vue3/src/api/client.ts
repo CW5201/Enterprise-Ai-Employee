@@ -55,6 +55,18 @@ function normalizeError(err: unknown): Error {
   return err instanceof Error ? err : new Error(String(err))
 }
 
+/**
+ * Absolute-from-root API path that honours the app's base URL.
+ *
+ * Used by the places that bypass axios - `fetch` for SSE and for plain
+ * browser downloads (`<a href>`) - so they resolve to the same origin the
+ * client talks to instead of hardcoding "/api".
+ */
+export function apiUrl(path: string): string {
+  const base = import.meta.env.BASE_URL || '/'
+  return `${base.replace(/\/$/, '')}/${path.replace(/^\//, '')}`
+}
+
 const client = new ApiClient(import.meta.env.BASE_URL || '')
 
 export default client

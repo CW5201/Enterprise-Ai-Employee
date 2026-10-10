@@ -1,5 +1,5 @@
 <template>
-  <div class="page">
+  <div>
     <div class="page-head">
       <div>
         <h1 class="page-title">知识图谱</h1>
@@ -18,10 +18,11 @@
       </div>
     </div>
 
-    <div v-if="neo4jOffline" class="panel-empty panel-empty-wide">
+    <div v-if="neo4jOffline" class="empty-card">
       Neo4j 未连接（未设置 NEO4J_PASSWORD 或服务离线）。
       实体与关系列表为空，图谱视图不可用。
     </div>
+    <div v-else-if="loadError" class="empty-card panel-error">{{ loadError }}</div>
 
     <div class="graph-layout">
       <!-- Left: entity list -->
@@ -93,6 +94,7 @@ const graphRef = ref<HTMLDivElement | null>(null)
 let graphChart: echarts.ECharts | null = null
 
 const neo4jOffline = ref(false)
+const loadError = ref('')
 
 async function loadEntities() {
   loading.value = true
@@ -106,18 +108,25 @@ async function loadEntities() {
     // Both endpoints return 200 [] when Neo4j is offline; two empty lists
     // is the signal to show the offline notice instead of pretending.
     neo4jOffline.value = ents.length === 0 && rels.length === 0
+    loadError.value = ''
+  } catch (err) {
+    // Do not swallow: "Neo4j offline" and "API unreachable" must look different.
+    loadError.value = err instanceof Error ? err.message : String(err)
   } finally {
     loading.value = false
   }
 }
 
-function selectEntity(e: GraphEntity) {
+async function selectEntity(e: GraphEntity) {
   selected.value = e
   // refresh relations filtered by this entity
-  listGraphRelations({ entity: e.name }).then((rs) => {
-    relations.value = rs
-    nextTick(renderGraph)
-  })
+  try {
+    relations.value = await listGraphRelations({ entity: e.name })
+    await nextTick()
+    renderGraph()
+  } catch (err) {
+    loadError.value = err instanceof Error ? err.message : String(err)
+  }
 }
 
 function renderGraph() {
@@ -176,65 +185,19 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.page-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: var(--eae-space-4);
-}
-
-.page-sub {
-  font-size: 13px;
-  color: var(--eae-text-secondary);
-}
-
-.head-actions {
-  display: flex;
-  gap: var(--eae-space-2);
-  flex: 0 0 auto;
-}
-
 .search-input {
   width: 220px;
 }
 
-.panel-empty {
-  padding: 24px;
-  color: var(--eae-text-muted);
-  font-size: 13px;
-  text-align: center;
-}
-
-.panel-empty-wide {
-  background: var(--eae-surface);
-  border: 1px solid var(--eae-border);
-  border-radius: var(--eae-radius);
-  margin-bottom: var(--eae-space-4);
-}
-
 .graph-layout {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
   gap: var(--eae-space-4);
 }
 
-@media (max-width: 1100px) {
-  .graph-layout {
-    grid-template-columns: 1fr;
-  }
-}
-
-.panel {
-  background: var(--eae-surface);
-  border: 1px solid var(--eae-border);
-  border-radius: var(--eae-radius);
-  padding: var(--eae-space-4);
-}
-
-.panel-head {
-  font-size: 14px;
-  font-weight: 600;
-  margin-bottom: var(--eae-space-3);
+/* grid gap already provides the spacing between panes */
+.graph-layout > .panel {
+  margin-bottom: 0;
 }
 
 .entity-detail {

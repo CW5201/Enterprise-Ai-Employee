@@ -1,15 +1,32 @@
 <template>
-  <div class="page">
-    <h1 class="page-title">系统设置</h1>
-    <div class="page-sub">当前运行配置（只读展示，配置由服务端管理）</div>
+  <div>
+    <div class="page-head">
+      <div>
+        <h1 class="page-title">系统设置</h1>
+        <div class="page-sub">当前运行状态（只读，配置由服务端管理）</div>
+      </div>
+      <div class="head-actions">
+        <el-button size="small" :loading="loading" @click="load">刷新</el-button>
+      </div>
+    </div>
 
     <div class="panel">
-      <div class="panel-head">运行时参数</div>
+      <div class="panel-head">运行时状态（来自 /health）</div>
+      <div v-if="loadError" class="panel-empty panel-error">{{ loadError }}</div>
+      <div v-else class="kv-list">
+        <div v-for="row in healthRows" :key="row.label" class="kv">
+          <span>{{ row.label }}</span>
+          <el-tag size="small" :type="statusTagType(row.status)">{{ row.status }}</el-tag>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">构建配置（服务端代码固定，见 src/api/main.py）</div>
       <div class="kv-list">
-        <div class="kv"><span>RAG 后端</span><span>{{ settings.rag_backend }}</span></div>
-        <div class="kv"><span>检索模式</span><span>{{ settings.retrieval_mode }}</span></div>
-        <div class="kv"><span>动态路由</span><span>已启用（Phase 3）</span></div>
-        <div class="kv"><span>结果验证</span><span>已启用（Phase 4）</span></div>
+        <div class="kv"><span>检索模式</span><span>hybrid（BM25 + 向量 + RRF）</span></div>
+        <div class="kv"><span>动态路由</span><span>已启用（phase3=True）</span></div>
+        <div class="kv"><span>结果验证</span><span>已启用（phase4=True）</span></div>
       </div>
     </div>
 
@@ -25,38 +42,59 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { getHealth } from '@/api/health'
+import type { HealthResponse } from '@/types'
 
-// Read-only view of the server-side runtime configuration. Values are
-// static here because config editing is a server-side concern; the page
-// documents where each setting lives instead of inventing a fake form.
-const settings = ref({
-  rag_backend: 'milvus（离线时回退内存 fake 存储）',
-  retrieval_mode: 'hybrid（BM25 + 向量 + RRF）',
+// Read-only view of the server's actual runtime state.  The values come from
+// GET /health - nothing is hardcoded here, so the page cannot claim Milvus is
+// in use while the API is actually answering from the in-memory fallback.
+const health = ref<HealthResponse | null>(null)
+const loading = ref(false)
+const loadError = ref('')
+
+const healthRows = computed(() => {
+  const h = health.value
+  if (!h) return []
+  const milvusDetails = h.milvus_details as { collection_name?: string; entity_count?: number } | undefined
+  const milvus = h.milvus ?? '未检测'
+  const milvusLabel =
+    milvus === 'ok' && milvusDetails?.collection_name
+      ? `已连接（${milvusDetails.collection_name}，${milvusDetails.entity_count ?? 0} chunks）`
+      : milvus
+  return [
+    { label: 'LLM', status: h.llm ?? '未检测' },
+    { label: 'Embedding', status: h.embedding ?? '未检测' },
+    { label: '向量库（RAG 后端）', status: milvusLabel },
+    { label: '业务数据库（DuckDB）', status: h.database ?? '未检测' },
+  ]
 })
+
+async function load() {
+  loading.value = true
+  try {
+    health.value = await getHealth()
+    loadError.value = ''
+  } catch (err) {
+    // Do not swallow: an unreachable API and a degraded component differ.
+    loadError.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    loading.value = false
+  }
+}
+
+function statusTagType(status: string): 'success' | 'danger' | 'warning' | 'info' {
+  const s = status.toLowerCase()
+  if (s.startsWith('ok') || s.startsWith('已连接')) return 'success'
+  if (s.includes('error') || s.includes('fail')) return 'danger'
+  if (s.includes('offline') || s.includes('degraded') || s.includes('not found')) return 'warning'
+  return 'info'
+}
+
+onMounted(load)
 </script>
 
 <style scoped>
-.page-sub {
-  font-size: 13px;
-  color: var(--eae-text-secondary);
-  margin-bottom: var(--eae-space-4);
-}
-
-.panel {
-  background: var(--eae-surface);
-  border: 1px solid var(--eae-border);
-  border-radius: var(--eae-radius);
-  padding: var(--eae-space-4);
-  margin-bottom: var(--eae-space-4);
-}
-
-.panel-head {
-  font-size: 14px;
-  font-weight: 600;
-  margin-bottom: var(--eae-space-3);
-}
-
 .kv-list {
   display: flex;
   flex-direction: column;
@@ -76,7 +114,7 @@ const settings = ref({
 
 .kv span:first-child {
   color: var(--eae-text-secondary);
-  flex: 0 0 140px;
+  flex: 0 0 180px;
 }
 
 .desc-text {

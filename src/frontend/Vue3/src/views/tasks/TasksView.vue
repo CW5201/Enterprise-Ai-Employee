@@ -1,5 +1,5 @@
 <template>
-  <div class="page">
+  <div>
     <div class="page-head">
       <div>
         <h1 class="page-title">AI 任务</h1>
@@ -68,6 +68,10 @@
             <el-tag v-if="result" size="small" class="head-tag" :type="statusType(result.status)">
               {{ result.status }}
             </el-tag>
+            <template v-if="result">
+              <el-button size="small" text @click="exportResult('md')">导出 Markdown</el-button>
+              <el-button size="small" text @click="exportResult('json')">导出 JSON</el-button>
+            </template>
           </div>
 
           <template v-if="result">
@@ -115,6 +119,7 @@
           <div v-for="(tc, i) in result.tool_calls" :key="i" class="tool-row">
             <el-tag size="small" :type="tc.ok ? 'success' : 'danger'">{{ tc.ok ? 'ok' : 'fail' }}</el-tag>
             <span class="tool-name">{{ tc.tool }}</span>
+            <span v-if="!tc.ok && tc.error" class="tool-error">{{ tc.error }}</span>
             <span class="tool-ms">{{ tc.duration_ms?.toFixed(1) }} ms</span>
           </div>
         </div>
@@ -129,6 +134,7 @@ import { postChat } from '@/api/chat'
 import { streamChat } from '@/api/stream'
 import { listTasks } from '@/api/tasks'
 import EvidencePanel from '@/components/EvidencePanel.vue'
+import { buildResultJson, buildResultMarkdown, downloadText, resultFilename } from '@/utils/export'
 import type { ChatResponse, StreamEvent, TaskRecord } from '@/types'
 
 interface ChatMsg {
@@ -150,6 +156,9 @@ const tasks = ref<TaskRecord[]>([])
 const result = ref<ChatResponse | null>(null)
 const trace = ref<TraceStep[]>([])
 const historyError = ref('')
+// The task behind the result currently on screen, used as the subject line
+// when the result is exported.
+const lastQuestion = ref('')
 
 const abortRef = ref<AbortController | null>(null)
 
@@ -171,6 +180,7 @@ function loadTask(row: TaskRecord) {
   // the stream button (history rows store only summary fields).  Build a
   // fresh, fully-populated ChatResponse so no stale fields from a previous
   // result leak into the next run.
+  lastQuestion.value = row.question
   result.value = {
     request_id: row.id,
     answer: row.answer ?? '',
@@ -297,6 +307,7 @@ function streamStepDetail(ev: StreamEvent, prev: string | undefined): string | u
 async function run() {
   const q = question.value.trim()
   if (!q || streaming.value) return
+  lastQuestion.value = q
   messages.value.push({ role: 'user', text: q })
   result.value = null
   trace.value = [{ title: '任务理解', status: 'running' }]
@@ -323,6 +334,7 @@ async function run() {
 async function runStream(q?: string) {
   const questionText = q ?? question.value.trim()
   if (!questionText) return
+  lastQuestion.value = questionText
   streaming.value = true
   abortRef.value?.abort()
   const ac = new AbortController()
@@ -464,6 +476,28 @@ function fmtMs(ms?: number): string {
   return ms == null ? '—' : `${(ms / 1000).toFixed(2)} s`
 }
 
+/**
+ * Export the result on screen.  The server also stores a report per run
+ * (报告中心 → 下载); this path exports the run the user is looking at, so a
+ * result stays exportable even if the API process was restarted.
+ */
+function exportResult(kind: 'md' | 'json') {
+  const current = result.value
+  if (!current) return
+  if (kind === 'md') {
+    downloadText(
+      resultFilename('task-result', 'md'),
+      buildResultMarkdown(current, lastQuestion.value),
+    )
+  } else {
+    downloadText(
+      resultFilename('task-result', 'json'),
+      buildResultJson(current, lastQuestion.value),
+      'application/json;charset=utf-8',
+    )
+  }
+}
+
 function statusType(status: string): 'success' | 'danger' | 'warning' | 'info' {
   const s = (status ?? '').toLowerCase()
   if (['completed', 'ok', 'success'].includes(s)) return 'success'
@@ -476,32 +510,35 @@ onMounted(refreshHistory)
 </script>
 
 <style scoped>
-.page-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: var(--eae-space-4);
-}
-
-.head-actions {
-  margin-top: 4px;
-}
-
-.page-sub {
-  font-size: 13px;
-  color: var(--eae-text-secondary);
-}
-
 .task-grid {
   display: grid;
-  grid-template-columns: 340px 1fr 280px;
+  /* The answer pane is the primary content, so it — not the chat column —
+     gets the fluid track. Side panes keep min/max bounds so the middle never
+     drops below a readable width. */
+  grid-template-columns: minmax(280px, 340px) minmax(420px, 1fr) minmax(240px, 300px);
   gap: var(--eae-space-4);
   align-items: start;
 }
 
-@media (max-width: 1200px) {
+/* Content width = viewport - 220px sidebar - 40px padding, so the 3-pane
+   layout is only kept when the panes still fit (viewport >= 1300px). */
+@media (max-width: 1299px) {
+  .task-grid {
+    grid-template-columns: minmax(300px, 360px) minmax(420px, 1fr);
+  }
+
+  .col-right {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 999px) {
   .task-grid {
     grid-template-columns: 1fr;
+  }
+
+  .col-right {
+    grid-column: auto;
   }
 }
 
@@ -509,37 +546,8 @@ onMounted(refreshHistory)
   min-width: 0;
 }
 
-.panel {
-  background: var(--eae-surface);
-  border: 1px solid var(--eae-border);
-  border-radius: var(--eae-radius);
-  padding: var(--eae-space-4);
-  margin-bottom: var(--eae-space-4);
-}
-
-.panel-head {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--eae-text-primary);
-  margin-bottom: var(--eae-space-3);
-  display: flex;
-  align-items: center;
-  gap: var(--eae-space-2);
-}
-
 .head-tag {
   margin-left: auto;
-}
-
-.panel-empty {
-  padding: var(--eae-space-4);
-  color: var(--eae-text-muted);
-  font-size: 13px;
-  text-align: center;
-}
-
-.panel-error {
-  color: var(--eae-danger);
 }
 
 /* chat */
@@ -712,6 +720,12 @@ onMounted(refreshHistory)
 
 .tool-name {
   font-weight: 500;
+}
+
+.tool-error {
+  color: var(--eae-danger);
+  font-size: 12px;
+  word-break: break-all;
 }
 
 .tool-ms {

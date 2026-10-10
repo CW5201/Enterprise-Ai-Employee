@@ -1,8 +1,11 @@
 <template>
-  <div class="page">
-    <h1 class="page-title">工作台</h1>
-    <div class="page-sub">系统状态与常用入口</div>
-
+  <div>
+    <div class="page-head">
+      <div>
+        <h1 class="page-title">工作台</h1>
+        <div class="page-sub">系统状态与常用入口</div>
+      </div>
+    </div>
     <div class="section">
       <div class="section-head">
         <div>
@@ -21,10 +24,10 @@
         </el-table-column>
       </el-table>
 
-      <div v-else-if="error" class="empty-box">
+      <div v-else-if="error" class="panel-empty">
         {{ error }}
       </div>
-      <div v-else-if="!loading" class="empty-box">暂无数据</div>
+      <div v-else-if="!loading" class="panel-empty">暂无数据</div>
     </div>
   </div>
 </template>
@@ -72,12 +75,6 @@ onMounted(loadHealth)
 </script>
 
 <style scoped>
-.page-sub {
-  font-size: 13px;
-  color: var(--eae-text-secondary);
-  margin-bottom: var(--eae-space-4);
-}
-
 .section {
   background: var(--eae-surface);
   border: 1px solid var(--eae-border);
@@ -91,12 +88,5 @@ onMounted(loadHealth)
   align-items: center;
   justify-content: space-between;
   margin-bottom: var(--eae-space-3);
-}
-
-.empty-box {
-  padding: var(--eae-space-5);
-  color: var(--eae-text-muted);
-  text-align: center;
-  font-size: 13px;
 }
 </style>

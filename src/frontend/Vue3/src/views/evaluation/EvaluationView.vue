@@ -1,5 +1,5 @@
 <template>
-  <div class="page">
+  <div>
     <div class="page-head">
       <div>
         <h1 class="page-title">实验评测</h1>
@@ -9,7 +9,15 @@
     </div>
 
     <el-alert
-      v-if="!loading && !summary?.available"
+      v-if="loadError"
+      :title="`评测数据加载失败：${loadError}`"
+      type="error"
+      :closable="false"
+      show-icon
+      class="mt-4"
+    />
+    <el-alert
+      v-else-if="!loading && !summary?.available"
       title="评测结果不可用（artifacts 未生成或被 gitignore）"
       type="info"
       :closable="false"
@@ -115,6 +123,7 @@ import type { EvaluationEntry, EvaluationSummary } from '@/types'
 
 const summary = ref<EvaluationSummary | null>(null)
 const loading = ref(false)
+const loadError = ref('')
 
 const chartRef = ref<HTMLDivElement | null>(null)
 let chart: echarts.ECharts | null = null
@@ -151,6 +160,10 @@ async function load() {
     summary.value = await getEvaluationSummary()
     await nextTick()
     renderChart()
+    loadError.value = ''
+  } catch (err) {
+    // Do not swallow: "no artifacts yet" and "API unreachable" must differ.
+    loadError.value = err instanceof Error ? err.message : String(err)
   } finally {
     loading.value = false
   }
@@ -212,38 +225,8 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.page-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: var(--eae-space-4);
-}
-
-.page-sub {
-  font-size: 13px;
-  color: var(--eae-text-secondary);
-}
-
-.mt-4 {
-  margin-top: var(--eae-space-4);
-}
-
-.panel {
-  background: var(--eae-surface);
-  border: 1px solid var(--eae-border);
-  border-radius: var(--eae-radius);
-  padding: var(--eae-space-4);
-  margin-bottom: var(--eae-space-4);
-}
-
 .table-scroll {
   overflow-x: auto;
-}
-
-.panel-head {
-  font-size: 14px;
-  font-weight: 600;
-  margin-bottom: var(--eae-space-3);
 }
 
 .chart {

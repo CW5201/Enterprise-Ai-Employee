@@ -1,14 +1,17 @@
 /**
- * Global design tokens and CSS-in-JS reset for the Enterprise SaaS look.
+ * Global design tokens and reset for the Enterprise SaaS look.
  *
  * Principles (see docs/ROADMAP.md Phase 6 visual spec):
  * - light gray / white surfaces, restrained blue primary
  * - small radii (6px default), subtle borders, minimal shadow
  * - no gradients, no glow, no particles
  * - information density > decoration
+ *
+ * This file also owns the shared page / card scaffolding
+ * (.page-head, .page-sub, .head-actions, .panel, ...) so that views only
+ * declare what is genuinely view-specific.
  */
 
-const STYLES = `
 :root {
   /* surfaces */
   --eae-bg: #f5f7fa;
@@ -48,8 +51,9 @@ const STYLES = `
   /* shadow */
   --eae-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
 
-  /* layout */
+  /* layout — single source of truth, read by Sidebar / Header / AppLayout */
   --eae-sidebar-width: 220px;
+  --eae-sidebar-collapsed-width: 64px;
   --eae-header-height: 52px;
 }
 
@@ -115,12 +119,73 @@ body {
   color: var(--eae-text-secondary);
   margin: 2px 0 0;
 }
-`
 
-export function setupGlobalStyles(): void {
-  const styleEl = document.createElement('style')
-  styleEl.textContent = STYLES
-  document.head.appendChild(styleEl)
+/* Page header row: title + subtitle on the left, actions on the right */
+.page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--eae-space-3);
+  margin-bottom: var(--eae-space-4);
 }
 
-export default STYLES
+.page-sub {
+  font-size: 13px;
+  color: var(--eae-text-secondary);
+}
+
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--eae-space-2);
+  align-self: center;
+  flex: 0 0 auto;
+}
+
+/* Card */
+.panel {
+  background: var(--eae-surface);
+  border: 1px solid var(--eae-border);
+  border-radius: var(--eae-radius);
+  padding: var(--eae-space-4);
+  margin-bottom: var(--eae-space-4);
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  gap: var(--eae-space-2);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--eae-text-primary);
+  margin-bottom: var(--eae-space-3);
+}
+
+/* Empty state rendered inside a .panel */
+.panel-empty {
+  padding: var(--eae-space-4);
+  color: var(--eae-text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* Empty state that *is* the card (no surrounding .panel) */
+.empty-card {
+  background: var(--eae-surface);
+  border: 1px solid var(--eae-border);
+  border-radius: var(--eae-radius);
+  padding: var(--eae-space-6);
+  margin-bottom: var(--eae-space-4);
+  color: var(--eae-text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.panel-error {
+  color: var(--eae-danger);
+}
+
+/* utility */
+.mt-4 {
+  margin-top: var(--eae-space-4);
+}

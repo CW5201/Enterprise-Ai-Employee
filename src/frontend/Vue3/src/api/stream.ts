@@ -1,3 +1,4 @@
+import { apiUrl } from './client'
 import type { StreamEvent } from '@/types'
 
 /**
@@ -21,14 +22,18 @@ export async function streamChat(
 ): Promise<void> {
   let resp: Response
   try {
-    resp = await fetch('/api/chat/stream', {
+    resp = await fetch(apiUrl('/api/chat/stream'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: question }),
       signal,
     })
   } catch (err) {
-    handlers.onError(err instanceof Error ? err : new Error(String(err)))
+    // A user-cancelled run is not a failure: the result pane already shows
+    // the partial state, so only real network errors are reported.
+    if ((err as Error).name !== 'AbortError') {
+      handlers.onError(err instanceof Error ? err : new Error(String(err)))
+    }
     handlers.onDone()
     return
   }

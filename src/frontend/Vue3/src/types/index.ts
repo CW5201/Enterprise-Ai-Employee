@@ -140,6 +140,28 @@ export interface KnowledgeDocument {
   synthetic: boolean
 }
 
+// --- Reports ---
+// Reports are assembled server-side from a completed run (answer + evidence +
+// verification verdicts) and stored by /api/reports.
+
+export interface ReportRecord {
+  id: string
+  title: string
+  question: string
+  request_id: string
+  created_at: string
+  format: string
+  content_chars: number
+  evidence_count: number
+  supported_claims: number
+  unsupported_claims: number
+  conflicts: number
+}
+
+export interface ReportDetail extends ReportRecord {
+  markdown: string
+}
+
 // --- Graph ---
 
 export interface GraphEntity {

@@ -1,5 +1,5 @@
 <template>
-  <div class="page">
+  <div>
     <div class="page-head">
       <div>
         <h1 class="page-title">数据分析</h1>
@@ -9,7 +9,15 @@
     </div>
 
     <el-alert
-      v-if="!loading && !summary?.available"
+      v-if="error"
+      :title="`数据分析加载失败：${error}`"
+      type="error"
+      :closable="false"
+      show-icon
+      class="mt-4"
+    />
+    <el-alert
+      v-else-if="!loading && !summary?.available"
       :title="`数据集不可用${summary?.reason ? '：' + summary.reason : ''}`"
       type="info"
       :closable="false"
@@ -186,33 +194,11 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.page-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: var(--eae-space-4);
-}
-
-.page-sub {
-  font-size: 13px;
-  color: var(--eae-text-secondary);
-}
-
-.mt-4 {
-  margin-top: var(--eae-space-4);
-}
-
 .kpi-row {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: var(--eae-space-3);
   margin-bottom: var(--eae-space-4);
-}
-
-@media (max-width: 1100px) {
-  .kpi-row {
-    grid-template-columns: repeat(2, 1fr);
-  }
 }
 
 .kpi {
@@ -244,38 +230,17 @@ onBeforeUnmount(() => {
 
 .charts-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
   gap: var(--eae-space-4);
 }
 
-@media (max-width: 1100px) {
-  .charts-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-.panel {
-  background: var(--eae-surface);
-  border: 1px solid var(--eae-border);
-  border-radius: var(--eae-radius);
-  padding: var(--eae-space-4);
-}
-
-.panel-head {
-  font-size: 14px;
-  font-weight: 600;
-  margin-bottom: var(--eae-space-3);
+/* grid gap already provides the spacing between panes */
+.charts-grid > .panel {
+  margin-bottom: 0;
 }
 
 .chart {
   height: 240px;
-}
-
-.panel-empty {
-  padding: var(--eae-space-4);
-  color: var(--eae-text-muted);
-  font-size: 13px;
-  text-align: center;
 }
 
 .kv-list {

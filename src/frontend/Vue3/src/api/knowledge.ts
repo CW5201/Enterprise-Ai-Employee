@@ -17,3 +17,14 @@ export async function listKnowledgeDocuments(params?: KnowledgeListParams): Prom
 export async function getKnowledgeDocument(id: string): Promise<KnowledgeDocument> {
   return client.get<KnowledgeDocument>(`/api/knowledge/documents/${id}`)
 }
+
+export interface KnowledgeContent {
+  id: string
+  title: string
+  content: string
+}
+
+/** Raw Markdown body of one KB document (GET /api/knowledge/documents/{id}/content). */
+export async function getKnowledgeContent(id: string): Promise<KnowledgeContent> {
+  return client.get<KnowledgeContent>(`/api/knowledge/documents/${id}/content`)
+}

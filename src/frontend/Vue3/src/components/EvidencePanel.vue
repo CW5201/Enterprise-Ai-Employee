@@ -48,16 +48,6 @@
       </div>
     </div>
 
-    <!-- Tool results -->
-    <div v-if="result && result.tool_calls?.length" class="toolresults">
-      <div class="subhead">工具结果</div>
-      <div v-for="(tc, i) in result.tool_calls" :key="i" class="toolrow">
-        <el-tag size="small" :type="tc.ok ? 'success' : 'danger'">{{ tc.tool }}</el-tag>
-        <span v-if="tc.ok" class="toolok">ok</span>
-        <span v-else class="toolfail">{{ tc.error || '执行失败' }}</span>
-      </div>
-    </div>
-
     <div v-if="!result" class="panel-empty-sm">执行任务后显示依据</div>
   </div>
 </template>
@@ -234,26 +224,6 @@ function evLabel(id: string): string {
   font-size: 11px;
   white-space: pre-wrap;
   word-break: break-word;
-}
-
-.toolresults {
-  margin-bottom: var(--eae-space-3);
-}
-
-.toolrow {
-  display: flex;
-  align-items: center;
-  gap: var(--eae-space-2);
-  font-size: 12px;
-  padding: var(--eae-space-1) 0;
-}
-
-.toolok {
-  color: var(--eae-success);
-}
-
-.toolfail {
-  color: var(--eae-danger);
 }
 
 .panel-empty-sm {
