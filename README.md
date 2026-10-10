@@ -4,7 +4,7 @@
 
 企业 AI 数字员工是一个面向企业数据分析与任务执行的知识增强型 AI Agent 系统，通过任务理解、动态路由、RAG、Text-to-SQL、知识图谱、工具调用和结果验证，将自然语言任务转化为可执行的数据查询、知识检索、分析推理和报告生成流程。
 
-> **项目状态：Phase 5 — Enterprise End-to-End Evaluation ✅ 已完成（2026-09-30）。**
+> **项目状态：Phase 6 — Vue3 企业工作台 ✅ 已完成（2026-10-09）。**
 > Phase 0 完成骨架与文档；Phase 1 完成 `Intent → Router → RAG/SQL → Answer` 最小闭环；
 > Phase 2.1 已将 RAG 接通（BGE-M3 + 真实 Milvus）；
 > Phase 2.2 将 RAG 升级为 Hybrid 检索（Dense + BM25 + RRF）；
@@ -22,7 +22,11 @@
 > 0.345 / route 0.394 / tool F1 0.405；B4 规则路由 success 0.450（离线最强
 > 路由基线）；多工具任务 success 0.000–0.067 vs 单工具 0.373（RQ3 核心负结果，
 > 保留不掩盖）；KG 任务 offline 无 Neo4j 记 honest failure。
-> 尚未实现：Vue3 前端、Docker 部署、论文正文（分别为 Phase 6 / 7 / 8，见 Roadmap）。
+> 阶段 6 收口：`src/frontend/Vue3/` 企业工作台（Vue 3.5 + TypeScript + Element Plus +
+> ECharts + Pinia）打通 8 个页面，接 `/api/tasks`、`/api/chat/stream`（SSE 流式执行
+> 与实时 Trace）、证据与校验面板，并支持结果导出（结果面板 Markdown / JSON 导出 +
+> 报告中心 `.md` 下载）。
+> 尚未实现：Docker 部署、论文正文（分别为 Phase 7 / 8，见 Roadmap）。
 
 ---
 
@@ -305,7 +309,7 @@ easy/medium/hard，GT 全部由 DuckDB SQL 独立核验）；
 | 业务数据库 | DuckDB（只读） |
 | 分析 | Pandas + NumPy（受控函数） |
 | 后端 | FastAPI + Pydantic + SSE |
-| 前端 | Vue3 + TypeScript + Element Plus + ECharts |
+| 前端 | Vue3 + TypeScript + Vite + Element Plus + Pinia + ECharts（单测：vitest） |
 | 评估 | pytest + 自建 Evaluation Framework |
 | 部署 | Docker + Docker Compose |
 | 工程 | Git / GitHub / GitHub Actions / ruff / mypy |
@@ -369,6 +373,27 @@ enterprise-ai-employee/
 | `docker/` | 本地统一运行环境 |
 | `docs/` | 项目研究、架构、数据与实验文档 |
 
+### Phase 6 前端工作台（启动方式）
+
+```bash
+# 1. 后端 API（默认 http://localhost:8000）
+python -m uvicorn src.api.main:app --port 8000
+
+# 2. 前端工作台（Vite dev server，/api 与 /health 代理到 8000）
+cd src/frontend/Vue3
+npm install
+npm run dev        # http://localhost:5173
+npm run test       # vitest：SSE 帧解析 / 导出构造 / API URL
+npm run build      # vue-tsc 类型检查 + vite 生产构建
+```
+
+工作台路径：`/dashboard`（工作台）、`/tasks`（AI 任务：提交 + Trace + 证据 + 导出）、
+`/analytics`（数据分析）、`/knowledge`（企业知识）、`/graph`（知识图谱）、
+`/reports`（报告中心：预览 + 下载）、`/evaluation`（实验评测）、`/settings`（系统设置）。
+
+> 报告由真实运行产生：在「AI 任务」页成功执行一条任务后，「报告中心」才会出现
+> 对应报告。报告与任务均存放于**进程内内存**，重启 API 后清空（Phase 6 的已知限制）。
+
 ## 15. Roadmap
 
 | 阶段 | 内容 | 状态 |
@@ -382,7 +407,7 @@ enterprise-ai-employee/
 | Phase 3 | Task-Adaptive Routing：Task Profile + 动态路由 + 多工具融合 + 100 任务评测 | ✅ 已完成 |
 | Phase 4 | Claim-Evidence Verification：Claim/Evidence 模型 + 分层验证引擎 + Answer Guard + 120 任务评测 | ✅ 已完成 |
 | Phase 5 | Evaluation：Baseline + Ablation | ✅ 已完成（487 条统一 Benchmark + 端到端 runner + 10 系统矩阵 + 分组/失败分析 + `docs/phase5/EXPERIMENT_REPORT.md`） |
-| Phase 6 | Vue3 工作台 | ⬜ 未开始 |
+| Phase 6 | Vue3 工作台 | ✅ 已完成（8 个页面 + SSE 流式执行与 Trace + 证据/校验面板 + 结果导出与报告下载 + vitest 前端单测） |
 | Phase 7 | Docker + CI | ⬜ 未开始 |
 | Phase 8 | 论文与答辩 | ⬜ 未开始 |
 

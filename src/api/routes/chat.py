@@ -2,8 +2,9 @@
 
 The handler delegates to the LangGraph pipeline (:class:`DigitalEmployee`),
 serialises the final AgentState into the response contract and records
-stage latencies for observability.  SSE streaming joins in Phase 6
-together with the workbench.
+stage latencies for observability.  A successful run is additionally
+assembled into a downloadable report (Phase 6.7, see routes/reports.py);
+SSE streaming lives in routes/chat_stream.py.
 
 The Pydantic request/response models live here (not in ``main.py``) to
 avoid the circular import between the app factory and its routes.
@@ -17,6 +18,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from src.api.routes.reports import record_run_report, should_record_report
 from src.core.state import AgentState
 from src.graph.builder import DigitalEmployee
 
@@ -72,7 +74,7 @@ def chat(request: Request, body: ChatRequest) -> dict[str, Any]:
         # collection names, claim text) never reaches the browser.
         raise HTTPException(status_code=502, detail="任务执行失败，请稍后重试或联系管理员") from exc
 
-    return {
+    payload: dict[str, Any] = {
         "request_id": final.get("request_id", ""),
         "answer": final.get("answer", ""),
         "intent": final.get("intent", ""),
@@ -90,6 +92,25 @@ def chat(request: Request, body: ChatRequest) -> dict[str, Any]:
         "verification_summary": final.get("verification_summary") or {},
         "guard": final.get("guard_decision") or {},
     }
+
+    # Phase 6.7: the same run is also assembled into a downloadable report.
+    # Only runs that produced an answer are recorded - a clarification reply
+    # or a failed run has nothing to export, and the caller already sees the
+    # outcome in the response.  A report failure is logged, never allowed to
+    # fail a successful task.
+    if should_record_report(status=payload["status"], answer=payload["answer"]):
+        try:
+            record_run_report(
+                request_id=payload["request_id"],
+                question=text,
+                answer=payload["answer"],
+                evidence=payload["evidence"],
+                verification_summary=payload["verification_summary"],
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("report assembly failed for request %s", payload["request_id"])
+
+    return payload
 
 
 __all__ = ["router", "ChatRequest", "ChatResponse"]

@@ -118,13 +118,20 @@ def classify_by_rules(query: str) -> tuple[str, float, list[str], str] | None:
     """Return (intent, confidence, entities, reason) when a rule is decisive.
 
     A rule fires only when the signal is strong enough to skip the LLM:
+    - ambiguity patterns present    -> clarification
     - complex markers + data terms  -> complex_analysis
     - data terms only               -> data_query
     - policy terms only             -> knowledge_query
-    - ambiguity patterns present    -> clarification
     Anything ambiguous returns None (LLM lane).
+
+    The ambiguity register is checked FIRST and deliberately so: an undefined
+    business term (``config/ambiguity_register.yaml``) must be clarified even
+    when the phrasing otherwise looks like a data question.  The register is
+    therefore only allowed to contain phrasings with no defined 口径 — a
+    decisive metric term such as "订单数量" belongs in ``_DATA_KEYWORDS``,
+    never in the register (see tests/unit/test_intent_ambiguity.py).
     """
-    # Check ambiguity patterns first
+    # Ambiguity register first: an undefined 口径 outranks a data/knowledge hit.
     ambiguity_patterns = _load_ambiguity_register()
     if any(pattern in query.lower() for pattern in ambiguity_patterns):
         return "clarification", 0.95, [], "rule: ambiguity pattern detected"

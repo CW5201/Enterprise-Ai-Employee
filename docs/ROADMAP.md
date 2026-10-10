@@ -1,6 +1,6 @@
 # 开发路线图（ROADMAP）
 
-> 状态：Phase 2.3 完成（2026-09-30）；Phase 2.2 / 2.1 / Phase 1 完成并通过验收。
+> 状态：Phase 6 完成（2026-10-09）；Phase 5 / 4 / 3 / 2.4 / 2.3 / 2.2 / 2.1 / 1 / 0 完成并通过验收。
 > 阶段顺序固定，不跳阶段。每个阶段有明确的完成标准，未达标不进入下一阶段。
 
 ---
@@ -395,18 +395,48 @@ Phase 2.4（Neo4j KG，✅）。
 
 ---
 
-## Phase 6 — Vue3 工作台
+## Phase 6 — Vue3 工作台 ✅（2026-10-09）
 
-**目标**：企业员工可用的工作台。
+**目标**：企业员工可用的工作台——非技术用户可独立完成任务提交、过程查看与结果导出。
 
-内容：
-- `src/frontend/Vue3/`：Vue3 + TypeScript + Element Plus；
-- 对话与任务提交、SSE 流式执行过程展示；
-- 证据面板（命中来源、SQL、图谱路径）、验证结论面板；
-- ECharts 图表渲染、报告导出；
-- 与 `src/api/` 完整对接。
+**已交付**：
 
-**完成标准**：非技术用户可独立完成任务提交、过程查看与结果导出。
+- ✅ **前端工程**：`src/frontend/Vue3/`（Vue 3.5 + TypeScript + Vite + Element Plus +
+  Pinia + vue-router + ECharts）；`npm run build`（含 `vue-tsc`）通过；设计令牌与共享
+  页面/卡片骨架集中在 `src/assets/styles.css`，视图只声明自身特有样式；
+- ✅ **8 个页面**：工作台 Dashboard / AI 任务（对话提交 + 执行 Trace + 证据 + 校验 +
+  工具调用）/ 数据分析（DuckDB BI 聚合 + ECharts）/ 企业知识（KB 检索 + 正文预览）/
+  知识图谱（实体、关系 + ECharts 图）/ 报告中心（列表 + 预览 + 下载）/
+  实验评测（Phase 5 基线/消融指标）/ 系统设置（只读运行配置）；
+- ✅ **SSE 流式执行**：`POST /api/chat/stream` 的帧由前端按 SSE 规则重组（跨 chunk
+  边界安全、坏帧跳过），实时渲染 task_started → routing → tool_* → verification →
+  guard → answer → completed 的 Trace；用户取消按“安静停止”处理，不误报为失败；
+- ✅ **证据与验证可视化**：`EvidencePanel.vue` 展示命中来源、SQL、图谱证据与
+  claim 级验证结论（支持 / 不支持 / 冲突）；
+- ✅ **结果导出（两条独立路径）**：
+  - 服务端报告：每次成功运行经 `src/tools/report_tool.py` 装配为 Markdown
+    （任务 / 答案 / 证据来源 / 校验结论），`GET /api/reports` 列表、
+    `GET /api/reports/{id}` 预览、`GET /api/reports/{id}/download` 下载 `.md`。
+    报告只由真实运行产生，披露规则是“不超出该次 API 响应已返回的内容”；
+  - 前端导出：结果面板可直接把当前运行导出为 Markdown / JSON；
+- ✅ **接口面**：`/api/tasks`、`/api/chat`、`/api/chat/stream`、`/api/knowledge/*`、
+  `/api/graph/*`、`/api/reports*`、`/api/analytics/*`、`/api/evaluation/*`、`/health`；
+- ✅ **测试**：后端 `tests/unit/test_phase6_api_routes.py`、`test_phase6_sse.py`、
+  `test_report_tool.py`、`tests/integration/test_phase6_real_flows.py`；
+  前端 `npm run test`（vitest：SSE 帧解析 / 导出构造 / API URL 解析）。
+
+**完成标准**：非技术用户可独立完成任务提交、过程查看与结果导出 —— 已满足：
+提交（AI 任务页）→ 过程（SSE Trace）→ 证据与校验（证据面板）→ 导出（结果面板的
+Markdown/JSON 导出，或报告中心的 `.md` 下载）。
+
+**本阶段明确不做**（如实记录，留给 Phase 7+）：
+
+- 报告与任务存储为进程内内存（沿用 Phase 6.2 的选择，不引入新 DB 依赖）：
+  重启 API 后列表清空，这是已知限制而非缺陷；
+- 不做报告持久化与 PDF/Word 模板化导出、不做多用户与鉴权、不做 i18n；
+- 前端只做逻辑单测（vitest），不做组件级渲染/E2E 测试；不声称视觉与交互
+  达到生产 SaaS 水平，仅按 Phase 6 视觉规格（浅色、克制蓝、小圆角、
+  信息密度优先）收口。
 
 ---
 

@@ -3,6 +3,8 @@
 Status
 ------
 Phase 1: Basic implementation for assembling the final report with evidence and charts.
+Phase 6.7: the report now carries the original task and the Phase 4
+verification summary, so a run can be exported as a self-contained document.
 
 See docs/ROADMAP.md for the phase in which this module is implemented,
 docs/ARCHITECTURE.md for its role in the task pipeline, and ADR.md for the
@@ -29,7 +31,15 @@ class ReportTool:
         """Initialize the report tool."""
         pass
 
-    def run(self, *, answer: str, evidence: list[dict[str, Any]], charts: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    def run(
+        self,
+        *,
+        answer: str,
+        evidence: list[dict[str, Any]],
+        charts: list[dict[str, Any]] | None = None,
+        question: str = "",
+        verification_summary: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """
         Assemble the final report.
 
@@ -37,12 +47,16 @@ class ReportTool:
             answer: The final answer text
             evidence: List of evidence items from tool executions
             charts: Optional list of chart specifications
+            question: Optional original task (shown as the report's subject)
+            verification_summary: Optional Phase 4 claim-verification counts
 
         Returns:
             Dictionary containing the report in markdown format and metadata
         """
+        charts = charts or []
+        summary = verification_summary or {}
         try:
-            report_md = self._assemble_report(answer, evidence, charts or [])
+            report_md = self._assemble_report(answer, evidence, charts, question, summary)
 
             return {
                 "tool": self.name,
@@ -54,8 +68,11 @@ class ReportTool:
                 "evidence_ref": f"report:{len(evidence)}_evidence",
                 "metadata": {
                     "evidence_count": len(evidence),
-                    "chart_count": len(charts or []),
-                    "answer_length": len(answer)
+                    "chart_count": len(charts),
+                    "answer_length": len(answer),
+                    "supported_claims": summary.get("supported_claims", 0),
+                    "unsupported_claims": summary.get("unsupported_claims", 0),
+                    "conflicts": summary.get("conflicts", 0),
                 }
             }
         except Exception as e:
@@ -68,12 +85,24 @@ class ReportTool:
                 "metadata": {}
             }
 
-    def _assemble_report(self, answer: str, evidence: list[dict[str, Any]], charts: list[dict[str, Any]]) -> str:
+    def _assemble_report(
+        self,
+        answer: str,
+        evidence: list[dict[str, Any]],
+        charts: list[dict[str, Any]],
+        question: str = "",
+        verification_summary: dict[str, Any] | None = None,
+    ) -> str:
         """Assemble the report in markdown format."""
         lines = []
 
         # Title
         lines.append("# 企业AI员工报告\n")
+
+        # Subject: the task this report came from
+        if question:
+            lines.append("## 任务\n")
+            lines.append(question + "\n\n")
 
         # Answer section
         lines.append("## 答案\n")
@@ -94,6 +123,13 @@ class ReportTool:
         else:
             lines.append("## 证据来源\n")
             lines.append("未提供证据。\n\n")
+
+        # Verification section (Phase 4 claim-level verdicts)
+        if verification_summary:
+            lines.append("## 校验结论\n")
+            lines.append(f"- 支持的结论：{verification_summary.get('supported_claims', 0)}\n")
+            lines.append(f"- 不支持的结论：{verification_summary.get('unsupported_claims', 0)}\n")
+            lines.append(f"- 存在冲突的结论：{verification_summary.get('conflicts', 0)}\n\n")
 
         # Charts section
         if charts:

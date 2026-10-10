@@ -60,6 +60,25 @@ class TestRoutingLanes:
         out = node.run(state)
         assert out["route"] == "sql"
 
+    def test_rule_lane_clarification_is_decisive(self) -> None:
+        """FH-INTENT-001: a registered ambiguous phrasing never reaches the LLM lane.
+
+        The Phase 1 intent node returns ``clarification`` (confidence 0.95)
+        from its rule fast lane when the ambiguity register matches; the
+        router has to honour that verdict instead of asking the model, which
+        could otherwise "rescue" a question the register says is undefined.
+        """
+        llm = _mock_llm()  # must NOT be called
+        node = _router(llm)
+        state = make_state("我们的大客户有哪些？")
+        state.update({"intent": "clarification", "confidence": 0.95})
+        out = node.run(state)
+        assert out["route"] == "clarification"
+        assert out["tools_selected"] == []
+        assert out["routing_decision"]["requires_clarification"] is True
+        assert out["routing_decision"]["route_type"] == "clarification"
+        llm.generate_structured.assert_not_called()
+
     def test_llm_lane_relationship_to_kg(self) -> None:
         profile = TaskProfileProposal(
             task_type="relationship_query",

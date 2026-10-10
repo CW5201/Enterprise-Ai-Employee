@@ -14,6 +14,7 @@ Node I/O contract (field -> producer/consumer):
     supervisor_router         : route, plan, errors
     sql_execution             : sql, sql_result, tool_calls, evidence, errors
     rag_retrieval            : retrieved_context, tool_calls, evidence, errors
+    multi_tool_execution      : tool_results, tool_calls, evidence, errors, status
     clarification             : answer, errors
     answer_generation        : answer, evidence, sql, tool_calls, latency
 """
@@ -21,7 +22,7 @@ Node I/O contract (field -> producer/consumer):
 from __future__ import annotations
 
 import time
-from typing import Annotated, Any, TypedDict
+from typing import Annotated, Any, TypedDict, get_type_hints
 
 from pydantic import BaseModel, Field
 
@@ -175,6 +176,26 @@ class AgentState(TypedDict, total=False):
     tool_results: Annotated[list[dict[str, Any]], _append]
 
 
+# Channels whose reducer is :func:`_append`, derived from the annotations above
+# so this can never drift from AgentState.
+#
+# A consumer that folds node deltas *itself* (LangGraph's ``stream_mode=
+# "updates"`` hands out the raw per-node return, with no reducer applied — see
+# ``langgraph/pregel/_io.py::map_output_updates``) MUST merge these with
+# ``existing + delta`` instead of assigning.  Assigning keeps only the last
+# writer's items and silently drops every earlier node's (the SSE route did
+# exactly that: the stored report lost the SQL/KG evidence).
+#
+# ``get_type_hints`` (not ``__annotations__``) because this module uses
+# ``from __future__ import annotations``: the raw annotations are strings, so
+# their ``__metadata__`` is unreachable and the set would come out empty.
+APPEND_CHANNELS: frozenset[str] = frozenset(
+    name
+    for name, hint in get_type_hints(AgentState, include_extras=True).items()
+    if _append in getattr(hint, "__metadata__", ())
+)
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -214,6 +235,7 @@ def make_state(user_query: str, *, request_id: str | None = None) -> AgentState:
 
 
 __all__ = [
+    "APPEND_CHANNELS",
     "AgentState",
     "ErrorRecord",
     "EvidenceItem",

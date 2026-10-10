@@ -107,3 +107,20 @@ def test_sse_completed_payload(client_with_fake_employee) -> None:
 def test_sse_rejects_empty_message(client_with_fake_employee) -> None:
     client, _ = client_with_fake_employee
     assert client.post("/api/chat/stream", json={"message": "   "}).status_code == 400
+
+
+def test_sse_completed_run_is_exported_as_report(client_with_fake_employee) -> None:
+    """A streamed run is assembled into a downloadable report, like /api/chat."""
+    from src.api.routes import reports as reports_route
+
+    reports_route._reports.clear()
+    client, _ = client_with_fake_employee
+    client.post("/api/chat/stream", json={"message": "统计销售额"})
+
+    listing = client.get("/api/reports").json()
+    assert len(listing) == 1
+    assert listing[0]["question"] == "统计销售额"
+
+    detail = client.get(f"/api/reports/{listing[0]['id']}").json()
+    assert "1 行结果" in detail["markdown"]
+    assert client.get(f"/api/reports/{listing[0]['id']}/download").status_code == 200

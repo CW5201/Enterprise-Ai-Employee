@@ -28,7 +28,7 @@ import time
 from typing import Any, cast
 
 from src.core.observability import observe
-from src.core.state import AgentState, ErrorRecord, EvidenceItem
+from src.core.state import AgentState, ErrorRecord, EvidenceItem, ToolCallRecord
 from src.tools.analysis_tool import AnalysisTool
 from src.tools.kg_tool import KGTool
 from src.tools.rag_tool import RAGTool
@@ -36,6 +36,30 @@ from src.tools.rag_tool import RAGTool
 # Tools the orchestrator can dispatch.  Any step tool NOT in this set is
 # recorded as skipped_unsupported (no silent fallback).
 _SUPPORTED = {"sql", "rag", "kg", "analysis"}
+
+
+def _evidence_ref(payload: dict[str, Any]) -> str | None:
+    """Inspectable reference for one dispatched step (see state.py contract)."""
+    ids: list[str] = []
+    for item in payload.get("evidence") or []:
+        if isinstance(item, EvidenceItem):
+            ids.append(item.evidence_id)
+        elif isinstance(item, dict) and item.get("evidence_id"):
+            ids.append(str(item["evidence_id"]))
+    if ids:
+        return ",".join(ids[:3])
+    tool = str(payload.get("tool") or "tool")
+    return f"{tool}:step{payload.get('step')}" if payload.get("step") is not None else tool
+
+
+def _call_input(tool: str, step_id: int, depends: list[int], state: AgentState) -> dict[str, Any]:
+    """The parameters that identify one step invocation."""
+    payload: dict[str, Any] = {"step": step_id, "depends_on": list(depends)}
+    if tool == "sql" and state.get("sql"):
+        payload["sql"] = str(state.get("sql"))
+    if tool == "rag":
+        payload["query"] = str(state.get("user_query") or "")
+    return payload
 
 
 class MultiToolExecutionNode:
@@ -63,6 +87,7 @@ class MultiToolExecutionNode:
         plan = list(decision.get("execution_plan") or [])
         errors: list[ErrorRecord] = []
         tool_results: list[dict[str, Any]] = []
+        tool_calls: list[ToolCallRecord] = []
         evidence: list[EvidenceItem] = []
 
         if not plan:
@@ -79,6 +104,7 @@ class MultiToolExecutionNode:
         for step in sorted(plan, key=lambda s: int(s.get("step", 0))):
             tool = str(step.get("tool", ""))
             step_id = int(step.get("step", 0))
+            audit_id = f"{state.get('request_id', 'req')}-step{step_id}"
 
             # dependency gate: all depends_on must have succeeded
             depends = [int(d) for d in (step.get("depends_on") or [])]
@@ -88,6 +114,13 @@ class MultiToolExecutionNode:
                     "tool": tool, "success": False, "error": "skipped_upstream_failed",
                     "step": step_id, "depends_on": depends,
                 })
+                # every invocation is recorded in the tool ledger, including
+                # the ones that never ran (state.py contract / ARCHITECTURE §4)
+                tool_calls.append(ToolCallRecord(
+                    tool=tool, ok=False, input=_call_input(tool, step_id, depends, state),
+                    error="skipped_upstream_failed", evidence_ref=None,
+                    duration_ms=0.0, audit_id=audit_id,
+                ))
                 working_results.append(tool_results[-1])
                 errors.append(ErrorRecord(
                     stage="execution",
@@ -103,7 +136,18 @@ class MultiToolExecutionNode:
             payload["step"] = step_id
             payload.setdefault("latency_ms", round((time.perf_counter() - t0) * 1000.0, 2))
 
-            if payload.get("success"):
+            ok = bool(payload.get("success"))
+            tool_calls.append(ToolCallRecord(
+                tool=tool,
+                ok=ok,
+                input=_call_input(tool, step_id, depends, state),
+                error=None if ok else str(payload.get("error") or "failed"),
+                evidence_ref=_evidence_ref(payload),
+                duration_ms=float(payload.get("latency_ms") or 0.0),
+                audit_id=audit_id,
+            ))
+
+            if ok:
                 succeeded.add(step_id)
                 evidence.extend(payload.get("evidence") or [])
             else:
@@ -122,6 +166,7 @@ class MultiToolExecutionNode:
 
         return {
             "tool_results": tool_results,
+            "tool_calls": tool_calls,
             "errors": errors,
             "evidence": evidence,
             "status": "executed" if succeeded else "execution_all_failed",

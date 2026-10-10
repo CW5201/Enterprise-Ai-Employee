@@ -214,6 +214,35 @@ _（Phase 2 起填充真实案例）_
 - **Regression Test**：rt-041/045/049/050 作为"必须带 analysis"
   锚点。
 
+#### FH-ROUTE-005（Phase 6 修复期引入的回归，真实运行，已修复）
+
+- **Problem**：歧义登记表 `config/ambiguity_register.yaml` 被填入了**有确定
+  口径的度量词**（销售额 / 金额 / 数量 / 平均 / 比例 / 增长率 / 环比 / 同比 /
+  订单量 / 利润 / 营收），而 `classify_by_rules` 把歧义判定放在数据 / 知识
+  关键词判定**之前**，命中即返回 `clarification`（置信度 0.95）并跳过 LLM
+  车道 → 大量正常业务问题被拒绝回答。
+- **Trigger**：问题文本包含上述任一子串。50 个字符以内的高频词（尤其"数量"
+  "金额"）覆盖率极高。
+- **Expected Behavior**：`统计最近三个月的销售额` → `complex_analysis` →
+  走 SQL + analysis；`按订单数量排名，第 1 位的客户是谁？` → `data_query` → 走 SQL。
+- **Failure Behavior**：实测
+  `classify_by_rules("统计最近三个月的销售额")` →
+  `('clarification', 0.95, [], 'rule: ambiguity pattern detected')`；
+  端到端 `DigitalEmployee(phase3=True, phase4=True)` →
+  `route=clarification, status=clarified_out_of_scope`，
+  答案为"该任务意图不明确或不属于…范围"。
+- **Detection**：`data/eval/enterprise_tasks.jsonl` 中 30/487 条、
+  `data/eval/routing_eval.jsonl` 中 26/100 条命中登记表；查
+  `classify_by_rules` 的返回值即可发现（无需跑全量）。
+- **Recovery**：登记表只保留**口径未定义**的问法（大客户 / 重要客户 /
+  大额订单 / 异常订单 …），并在文件头写明登记标准；`task_router._RULE_LANE`
+  新增 `clarification → ambiguous_task(ambiguity=1.0)`，使快车道的澄清裁决
+  在 phase3 链路上也被确定性地执行（不再依赖 LLM 车道"救回"）。
+- **Regression Test**：`tests/unit/test_intent_ambiguity.py`
+  （口径守卫 + 度量词必须留在数据车道 + **487 条 Benchmark 中不得有任何
+  期望真实路由的任务被登记表拒绝**）、
+  `tests/unit/test_task_router.py::test_rule_lane_clarification_is_decisive`。
+
 _（Phase 3 起填充真实案例）_
 
 - **Problem**：多步骤任务的执行顺序或依赖关系错误，导致中间结果不可用或重复计算。
@@ -372,6 +401,127 @@ _（Phase 1 起填充真实案例）_
   模块一定不下降"的证据。要分离这些组件的真实贡献，需 online
   end-to-end 运行（live Milvus + Neo4j + LLM）。
 
+
+## 12. API / SSE Delivery Defect（交付缺陷）
+
+- **Problem**：节点算得对，但接口层把结果丢了、改了或发错形态——前端看到的
+  与后端真实状态不一致（本轮为 SSE 与报告落库）。
+- **Trigger**：状态通道里放的是 **Pydantic 模型**而非 dict；接口自己折叠
+  节点 delta；用固定状态字符串当"成功"判据。
+- **Expected Behavior**：接口只做投影（脱敏 + 序列化），不改变语义；上报的
+  状态与图内真实终态一致；报告只由真实运行产生且内容完整。
+- **Failure Behavior**：见下方四条真实案例。
+- **Detection**：用**真实 graph**（非手写 dict）驱动接口的测试；
+  对比 `/api/chat` 与 `/api/chat/stream` 同一问题的 evidence / 报告条数。
+- **Recovery**：投影统一走 `_to_plain` / `_strip_raw_content`；delta 折叠按
+  `src/core/state.py::APPEND_CHANNELS` 合并；成功判据改为终态状态词表
+  （`reports.should_record_report`）。
+- **Regression Test**：`tests/unit/test_phase6_stream_evidence.py`
+  （真实 EvidenceItem / ToolCallRecord 走完整条链路直到报告存储）。
+
+### 案例记录
+
+#### FH-SSE-001（Phase 6.7 修复期，真实运行，已修复）
+
+- **Problem**：`_sanitize_evidence()` 用 `ev.items()` 展开证据项，但状态里
+  是 `EvidenceItem`（pydantic v2 模型，没有 `items()`）。
+- **Trigger**：任何**产出证据**的任务走 `POST /api/chat/stream`。
+- **Expected Behavior**：输出 `completed` 事件，payload 带脱敏证据。
+- **Failure Behavior**：`AttributeError: 'EvidenceItem' object has no attribute
+  'items'` → 生成器被外层兜底捕获 → 客户端只收到 `error` 事件
+  （"任务执行失败，请稍后重试或联系管理员"），随后**没有任何报告入库**。
+- **Detection**：服务端日志 `stream pipeline failed` + traceback；
+  或对真实 graph 跑一次流式请求（旧的 `test_phase6_sse.py` 全用手写 dict，
+  所以一直是绿的）。
+- **Recovery**：新增 `_to_plain()`（模型 → dict，递归）并在
+  `_sanitize_evidence` / `_safe_payload` / `_sse_event` 统一使用。
+- **Regression Test**：`test_streamed_run_reaches_completed_with_evidence`。
+
+#### FH-SSE-002（Phase 6.7 修复期，真实运行，已修复）
+
+- **Problem**：`json.dumps(payload, default=str)` 把 payload 里的模型
+  （`SQLResultPayload` / `ToolCallRecord` / 验证结果）序列化成**字符串
+  repr**，前端拿到的是 `"tool='sql' ok=True …"` 这类文本而不是对象。
+- **Trigger**：任何 payload 含模型的节点事件。
+- **Expected Behavior**：字段以 JSON 对象/数组下发。
+- **Failure Behavior**：前端类型契约（`ToolCallRecord` / `SQLResultPayload`）
+  与实际不符，字段访问得到 undefined。
+- **Detection**：检查 SSE 帧中 `tool_calls` / `sql_result` 的 JSON 类型。
+- **Recovery**：`_sse_event` 先 `_to_plain()` 再序列化。
+- **Regression Test**：`test_streamed_run_reaches_completed_with_evidence`
+  断言 `evidence[0]` / `tool_calls[0]` 必须是 dict。
+
+#### FH-SSE-003（Phase 6.7 修复期，真实运行，已修复）
+
+- **Problem**：SSE 路由用 `final_state[k] = v` 折叠每节点 delta，而
+  `AgentState` 的 list 通道是 **append reducer**（节点只返回"新增项"）。
+  覆盖赋值只留下**最后一个写该通道的节点**的内容。
+- **Trigger**：任何多节点写同一通道的任务（`evidence` / `tool_calls` /
+  `claims` / `verification_results` / `tool_results` …）。
+- **Expected Behavior**：折叠结果等于图内真实终态。
+- **Failure Behavior**：流式路径落库的报告只剩 answer 节点的 RAG 证据子集；
+  纯 SQL 任务 `evidence_count=0`，报告正文写"未提供证据"。
+- **Detection**：同一问题分别走 `/api/chat` 与 `/api/chat/stream`，
+  比较 `evidence` 条数与报告 `evidence_count`。
+- **Recovery**：`_fold_delta()` 按 `APPEND_CHANNELS`（由 `AgentState`
+  注解推导，防漂移）合并列表通道。
+- **Regression Test**：`test_streamed_run_records_a_report_with_all_its_evidence`。
+
+#### FH-SSE-004（Phase 6.7 修复期，真实运行，已修复）
+
+- **Problem**：报告门禁写成 `status == "completed"`，但 Phase 4 尾链会覆写
+  `status`（answer_generation → claim_extraction → answer_guard），终态是
+  `claims_empty` / `claims_extracted` / `verified` / `guarded` /
+  `guard_blocked`，**永远不会是 `completed`**。
+- **Trigger**：应用默认配置 `phase3=True, phase4=True` 下的每一次运行。
+- **Expected Behavior**：每次产生答案的运行都在「报告中心」出现一条记录。
+- **Failure Behavior**：`GET /api/reports` 恒为空（实测 `status='claims_empty'`
+  且 `assert []` 成立）——整个 Phase 6.7 报告能力在真实配置下等于没有生效。
+- **Detection**：跑一条真实任务后查 `/api/reports`（或 README 的
+  "在「AI 任务」页成功执行一条任务后，报告中心才会出现对应报告"）。
+- **Recovery**：`reports.should_record_report(status, answer)`：只对
+  "产生了答案"的终态登记（含 guarded / guard_blocked），澄清与失败不登记；
+  两个入口（chat / stream）共用同一判据。
+- **Regression Test**：`test_chat_run_records_a_report`、
+  `test_streamed_run_records_a_report_with_all_its_evidence`。
+
+#### FH-TASK-001（Phase 6.7 修复期，真实运行，已修复）
+
+- **Problem**：任务历史只有 `POST /api/tasks` 一个写入口，而工作台的
+  **默认执行模式是流式**（`POST /api/chat/stream`）——流式运行不写任务库。
+- **Trigger**：在「AI 任务」页以默认模式（流式执行）提交任务。
+- **Expected Behavior**：任务出现在「任务历史」列表里（与报告中心一致）。
+- **Failure Behavior**：任务历史恒为空；同一次运行在「报告中心」有记录，
+  两个内存存储口径不一致，用户以为任务没跑。
+- **Detection**：流式跑一条任务后查 `GET /api/tasks`（修复前返回 `[]`）。
+- **Recovery**：`tasks.record_task()` 作为统一写入点，SSE 路由在 `completed`
+  之前调用；状态由 `task_status_for_run()` 映射（有答案 → `completed`，
+  澄清 → `clarification`，其余 → `failed`）；任务库同时补上 `MAX_TASKS`
+  上限与 `seq` 排序键（`created_at` 只有秒级精度，同秒任务排序不稳定）。
+- **Regression Test**：`test_streamed_run_lands_in_task_history`。
+
+#### FH-UI-001（Phase 6.7 修复期，静态审查确认，已修复）
+
+- **Problem**：工作台多个页面把接口失败**静默吞掉**：`load()` 只有
+  `try/finally` 没有 `catch`，异常变成未处理的 Promise rejection，页面显示
+  "暂无数据/未检索到文档"，与"真的没有数据"无法区分；`AnalyticsView`
+  甚至把错误写进 `error` 变量却不渲染；`SettingsView` 的"运行时状态"
+  是写死的字符串（API 实际跑在内存回退后端时仍显示 milvus）。
+- **Trigger**：API 未启动、超时、或返回 5xx。
+- **Expected Behavior**：与 Tasks / Reports 两个页面同一口径——错误必须显示出来。
+- **Failure Behavior**：`GraphView.loadEntities` / `selectEntity`、
+  `KnowledgeView.load`、`EvaluationView.load` 静默失败；
+  `AnalyticsView` 只显示"数据集不可用"；`SettingsView` 展示与运行状态不符的信息。
+- **Detection**：关掉 API 后逐个页面查看（或读代码看有无 `catch`）。
+- **Recovery**：四处补 `catch` + 页面级错误提示；`AnalyticsView` 渲染
+  `error`；`SettingsView` 改为读取 `GET /health`（运行时状态）并把
+  "检索模式 / 动态路由 / 结果验证"明确标注为服务端代码固定的构建配置；
+  `KnowledgeView` 的正文加载从裸 `fetch` 改为共享 `client`（base URL 与
+  错误归一化与其他页面一致）。
+- **Regression Test**：前端只做逻辑单测（Phase 6 边界，不做组件渲染测试），
+  因此这条以人工复核（关闭 API 逐页查看）为准，不虚构自动化测试。
+
+---
 
 ## 记录纪律
 

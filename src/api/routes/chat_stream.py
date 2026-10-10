@@ -15,8 +15,11 @@ Event schema (JSON in the ``data`` field):
         "payload": { ... node-specific data ... }
     }
 
-Security: payload is filtered - no passwords, secrets, or stack traces
-are included (the guard node already sanitises internal fields).
+Security: payload is filtered.  Every value leaves through ``_to_plain``
+(models -> JSON objects) and, for anything that can carry raw business data,
+``_strip_raw_content`` / ``_sanitize_evidence``: raw SQL rows, full RAG hit
+lists, chunk text and evidence payloads are never streamed, and no passwords,
+secrets or stack traces are included (see ADR-014).
 """
 
 from __future__ import annotations
@@ -31,6 +34,9 @@ from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
 from src.api.routes.chat import ChatRequest
+from src.api.routes.reports import record_run_report, should_record_report
+from src.api.routes.tasks import record_task, task_status_for_run
+from src.core.state import APPEND_CHANNELS
 
 router = APIRouter(tags=["chat-stream"])
 logger = logging.getLogger("eae.api.chat_stream")
@@ -58,16 +64,79 @@ def _ts() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()) + f".{int((time.time() % 1) * 1000):03d}Z"
 
 
-def _sanitize_evidence(ev: dict[str, Any]) -> dict[str, Any]:
+def _to_plain(value: Any) -> Any:
+    """Normalise a state value for the wire: models -> dicts, lists -> lists.
+
+    Nodes write Pydantic models into the state channels (``EvidenceItem``,
+    ``ToolCallRecord``, ``SQLResultPayload`` …).  ``stream_mode="updates"``
+    hands them back untouched, so converting here is what keeps the browser
+    payload structured instead of a stringified repr.
+    """
+    if isinstance(value, list):
+        return [_to_plain(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _to_plain(v) for k, v in value.items()}
+    dump = getattr(value, "model_dump", None)
+    if callable(dump):
+        return dump()
+    return value
+
+
+def _sanitize_evidence(ev: Any) -> dict[str, Any]:
     """Strip raw row data / chunk text from an evidence record.
 
     The guard node only sanitises ``answer_sources``; the raw ``evidence``
     records in state still carry full row data and chunk text (PII).  The
     SSE stream exposes only user-safe fields.
     """
-    out = {k: v for k, v in ev.items() if k not in ("payload", "content")}
-    out["row_count"] = ev.get("row_count")
+    data = _to_plain(ev)
+    if not isinstance(data, dict):
+        return {"source_type": "unknown", "source_ref": str(data)}
+    out = {k: v for k, v in data.items() if k not in ("payload", "content")}
+    out["row_count"] = data.get("row_count")
     return out
+
+
+# Keys that carry raw business rows or document text.  They are dropped from
+# everything the stream sends: identifiers, counts and scores are enough for
+# the trace / evidence panel, and the disclosure rule for this endpoint is
+# "user-safe projection only" (see the module docstring and ADR-013).
+_RAW_CONTENT_KEYS: frozenset[str] = frozenset({
+    "content", "payload", "rows", "results", "evidence", "error_details",
+})
+
+
+def _strip_raw_content(value: Any) -> Any:
+    """Recursively drop raw rows / chunk text from a value headed for the wire.
+
+    Applied to ``sql_result`` (drops ``rows``), ``tool_results`` (drops the
+    per-tool ``data.rows`` / full RAG ``results``) and the Phase 4
+    ``evidence_v4`` records (drops ``content``).
+    """
+    if isinstance(value, list):
+        return [_strip_raw_content(v) for v in value]
+    if isinstance(value, dict):
+        return {
+            k: _strip_raw_content(v)
+            for k, v in value.items()
+            if k not in _RAW_CONTENT_KEYS
+        }
+    return value
+
+
+def _fold_delta(state: dict[str, Any], delta: dict[str, Any]) -> None:
+    """Fold one node's ``updates`` delta into the running final state.
+
+    Append channels must be *merged*: a node returns only the items it adds
+    (``src/core/state.py::_append``), so assigning would drop every earlier
+    node's items — the stored report used to keep only the answer node's
+    evidence (FH-SSE-003).
+    """
+    for k, v in delta.items():
+        if k in APPEND_CHANNELS and isinstance(v, list):
+            state[k] = list(state.get(k) or []) + list(v)
+        else:
+            state[k] = v
 
 
 def _safe_payload(node_name: str, delta: dict[str, Any]) -> dict[str, Any]:
@@ -92,32 +161,32 @@ def _safe_payload(node_name: str, delta: dict[str, Any]) -> dict[str, Any]:
     elif node_name in ("sql", "rag", "execute"):
         tool = node_name if node_name != "execute" else "multi_tool"
         p["tool"] = tool
-        p["tool_calls"] = delta.get("tool_calls", [])
+        p["tool_calls"] = _to_plain(delta.get("tool_calls", []))
         p["sql"] = delta.get("sql", "")
-        p["sql_result"] = delta.get("sql_result")
+        p["sql_result"] = _strip_raw_content(_to_plain(delta.get("sql_result")))
         p["evidence"] = [_sanitize_evidence(e) for e in delta.get("evidence", [])]
-        p["tool_results"] = delta.get("tool_results", [])
-        p["errors"] = delta.get("errors", [])
+        p["tool_results"] = [_strip_raw_content(_to_plain(tr)) for tr in delta.get("tool_results", [])]
+        p["errors"] = _to_plain(delta.get("errors", []))
     elif node_name == "answer":
         p["answer"] = delta.get("answer", "")
         p["intent"] = delta.get("intent", "")
         p["sql"] = delta.get("sql", "")
         p["evidence"] = [_sanitize_evidence(e) for e in delta.get("evidence", [])]
-        p["tool_calls"] = delta.get("tool_calls", [])
+        p["tool_calls"] = _to_plain(delta.get("tool_calls", []))
         p["status"] = delta.get("status", "")
         p["latency"] = delta.get("latency", {})
     elif node_name == "claim_extraction":
-        p["claims"] = delta.get("claims", [])
+        p["claims"] = _to_plain(delta.get("claims", []))
         p["status"] = delta.get("status", "")
     elif node_name == "evidence_collection":
-        p["evidence_v4"] = delta.get("evidence_v4", [])
+        p["evidence_v4"] = [_strip_raw_content(_to_plain(e)) for e in delta.get("evidence_v4", [])]
     elif node_name == "verification":
-        p["verification_results"] = delta.get("verification_results", [])
-        p["verification_summary"] = delta.get("verification_summary", {})
+        p["verification_results"] = _to_plain(delta.get("verification_results", []))
+        p["verification_summary"] = _to_plain(delta.get("verification_summary", {}))
     elif node_name == "answer_guard":
-        p["guard_decision"] = delta.get("guard_decision", {})
+        p["guard_decision"] = _to_plain(delta.get("guard_decision", {}))
         p["answer"] = delta.get("answer", "")
-        p["answer_sources"] = delta.get("answer_sources", [])
+        p["answer_sources"] = _to_plain(delta.get("answer_sources", []))
     return p
 
 
@@ -140,13 +209,13 @@ def chat_stream(request: Request, body: ChatRequest) -> StreamingResponse:
             # LangGraph's .stream() accumulates state internally and does NOT
             # write back to the dict passed in, so read the final values by
             # folding the per-node deltas ourselves.
-            final_state: dict[str, Any] = make_state(text, request_id=body.request_id)
+            final_state: dict[str, Any] = dict(make_state(text, request_id=body.request_id))
 
             for update in employee._graph.stream(final_state, stream_mode="updates"):
                 for node_name, delta in update.items():
                     # fold this node's delta into the running final state
-                    for k, v in delta.items():
-                        final_state[k] = v
+                    # (append channels merged, not overwritten)
+                    _fold_delta(final_state, delta)
                     event_type = _NODE_EVENT_MAP.get(node_name, "step")
                     # Tool nodes: emit a started event before the results
                     # event so the frontend trace shows pending->running.
@@ -175,14 +244,56 @@ def chat_stream(request: Request, body: ChatRequest) -> StreamingResponse:
                 "sql": final_state.get("sql", ""),
                 "latency": final_state.get("latency", {}),
             }
-            # Evidence / tool_calls / verification rows are already in the
-            # per-node step events; only expose them in `completed` when the
-            # guard stripped internal fields.  This avoids streaming raw PII
-            # rows a second time.
-            completed_payload["verification"] = final_state.get("verification_results", [])
-            completed_payload["sources"] = final_state.get("answer_sources", [])
-            completed_payload["verification_summary"] = final_state.get("verification_summary", {})
-            completed_payload["guard"] = final_state.get("guard_decision", {})
+            # Evidence / tool_calls are sent sanitised: the same projection the
+            # chat response exposes (source_type / source_ref / score, no raw
+            # rows or chunk text), so the workbench's evidence panel and the
+            # export match the one-shot endpoint instead of staying empty.
+            # The report reuses this exact list - never a wider one.
+            evidence_projection = [
+                _sanitize_evidence(e) for e in final_state.get("evidence", [])
+            ]
+            completed_payload["evidence"] = evidence_projection
+            completed_payload["tool_calls"] = _to_plain(final_state.get("tool_calls", []))
+            completed_payload["verification"] = _to_plain(final_state.get("verification_results", []))
+            completed_payload["sources"] = _to_plain(final_state.get("answer_sources", []))
+            completed_payload["verification_summary"] = _to_plain(final_state.get("verification_summary", {}))
+            completed_payload["guard"] = _to_plain(final_state.get("guard_decision", {}))
+
+            terminal_status = str(final_state.get("status") or "")
+            terminal_answer = str(final_state.get("answer") or "")
+
+            # Phase 6.7: assemble the same run into a downloadable report.
+            # The evidence was already sanitised for the browser, so the
+            # report inherits exactly that projection (never more).  A report
+            # failure is logged, never allowed to fail an otherwise
+            # successful run.
+            if should_record_report(status=terminal_status, answer=terminal_answer):
+                try:
+                    record_run_report(
+                        request_id=final_state.get("request_id") or body.request_id or "",
+                        question=text,
+                        answer=terminal_answer,
+                        evidence=evidence_projection,
+                        verification_summary=final_state.get("verification_summary") or {},
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.exception("report assembly failed for streamed run")
+
+            # Streaming is the workbench's default mode, so a streamed run has
+            # to land in 任务历史 too - it used to be missing there while its
+            # report existed (FH-TASK-001).  History recording is best-effort:
+            # it must never break an already successful run.
+            try:
+                record_task(
+                    question=text,
+                    status=task_status_for_run(status=terminal_status, answer=terminal_answer),
+                    route=str(final_state.get("route") or ""),
+                    answer=terminal_answer,
+                    latency_ms=float((final_state.get("latency") or {}).get("total_ms") or 0.0),
+                    task_id=str(final_state.get("request_id") or body.request_id or "") or None,
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("failed to record streamed run in task history")
 
             yield _sse_event({
                 "type": "completed",
@@ -216,7 +327,9 @@ def chat_stream(request: Request, body: ChatRequest) -> StreamingResponse:
 
 
 def _sse_event(data: dict[str, Any]) -> str:
-    return f"data: {json.dumps(data, ensure_ascii=False, default=str)}\n\n"
+    # _to_plain first: Pydantic models must reach the browser as JSON objects,
+    # not as the stringified repr that json.dumps(default=str) would produce.
+    return f"data: {json.dumps(_to_plain(data), ensure_ascii=False, default=str)}\n\n"
 
 
 def HTTPException_400() -> Any:

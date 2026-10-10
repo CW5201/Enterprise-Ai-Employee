@@ -129,6 +129,13 @@ _RULE_LANE: dict[str, dict[str, Any]] = {
         "requires_statistical_analysis": True,
         "requires_multi_source": True,
     },
+    # The Phase 1 intent node returns ``clarification`` from its rule fast lane
+    # for registered ambiguous phrasings (config/ambiguity_register.yaml).
+    # That verdict is decisive and must reach the router unchanged: without
+    # this entry the intent would fall through to the LLM lane and a live
+    # model could "rescue" a question the ambiguity register says must be
+    # clarified.  ambiguity=1.0 makes the rule engine route to clarification.
+    "clarification": {"task_type": "ambiguous_task", "ambiguity": 1.0},
 }
 
 

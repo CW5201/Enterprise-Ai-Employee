@@ -25,7 +25,8 @@
 | BGE-Reranker-v2-M3 | 模型 | BAAI (Hugging Face: BAAI/bge-reranker-v2-m3) | 模型条款（以官方为准） | Rerank | 注明版本与来源 |
 | Qwen | 模型 | 阿里 Qwen（API 或指定版本） | 依所用渠道条款 | 主 LLM（仅经 `src/core/llm_client.py` 调用） | 依渠道（API / 本地）确认许可；记录模型版本 |
 | Python 依赖（requirements.txt） | 依赖 | 各 PyPI 包 | 各包自身许可证 | 运行时依赖 | 安装时生成依赖清单；不得引入未列入锁定技术栈的框架 |
-| JS 依赖（前端） | 依赖 | npm（Vue3/Element Plus/ECharts 等） | 各包自身许可证 | 前端工作台 | Phase 6 引入时登记 |
+| JS 依赖（前端，Phase 6 已引入） | 依赖 | npm（`src/frontend/Vue3/package.json` + `package-lock.json` 为权威清单） | vue MIT / vue-router MIT / pinia MIT / element-plus MIT / echarts **Apache-2.0** / axios MIT | 前端工作台（HTTP + SSE 界面、图表渲染） | 不引入锁定技术栈以外的框架；升级依赖须回到本表登记 |
+| JS 构建与测试依赖（前端） | 依赖 | npm | vite MIT / typescript Apache-2.0 / vue-tsc MIT / eslint MIT / typescript-eslint MIT / @vitejs/plugin-vue MIT | 前端构建、类型检查、Lint、单测 | 仅开发期依赖，不进入运行时产物 |
 | 公开企业文档（补充） | 文档 | 各公开来源 | 各来源原始许可证 | RAG 语料 | 同上，逐份登记 |
 
 ## 说明与纪律

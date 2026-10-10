@@ -39,6 +39,9 @@ coverage.xml
 *.swo
 .DS_Store
 
+# --- Claude Code (local permissions, never shared) -------------------------
+.claude/settings.local.json
+
 # --- Frontend --------------------------------------------------------------
 node_modules/
 dist/

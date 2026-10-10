@@ -1,15 +1,31 @@
-# List of ambiguous patterns that should trigger clarification
+# 歧义登记表（ambiguity register）
+#
+# 语义（docs/ARCHITECTURE.md §12）：登记在表中的问法**必须先向用户澄清**，
+# 不允许猜测口径后再回答。命中即由规则快车道返回 clarification，
+# 不进入 LLM 车道（src/nodes/intent_understanding.py:classify_by_rules）。
+#
+# 登记标准（重要）：只有当业务口径本身未被定义、且没有任何配置能给出唯一
+# 解释时才登记。
+#
+#   - 属于歧义："大客户" —— 数据库 schema / 数据字典 / 知识库都没有定义
+#     "多大算大"，必须先问用户（ARCHITECTURE §12 的例子）。
+#   - 不属于歧义："订单数量"、"平均提前期"、"增长率"、"金额" —— 这些词在
+#     数据字典与 schema 中有确定口径，规则快车道应正常判定 data_query /
+#     complex_analysis；把它们登记为歧义会让正常业务问题被拒绝回答。
+#
+# 修改本文件必须同步更新 tests/unit/test_intent_ambiguity.py 的
+# 口径守卫测试（禁止把有确定口径的度量词登记为歧义）。
 patterns:
-  - "多表连接"
-  - "时间窗口"
-  - "销售额"  # example of ambiguous metric without scope
-  - "利润"   # another example
-  - "营收"
-  - "订单量"  # maybe ambiguous without time window
-  - "数量"
-  - "金额"
-  - "平均"
-  - "比例"
-  - "增长率"
-  - "环比"
-  - "同比"
+  - "大客户"
+  - "重要客户"
+  - "重点客户"
+  - "核心客户"
+  - "关键客户"
+  - "优质客户"
+  - "高价值客户"
+  - "头部客户"
+  - "VIP客户"
+  - "大额订单"
+  - "异常订单"
+  - "可疑订单"
+  - "优质供应商"

@@ -564,3 +564,195 @@ Phase 5 交付项目**最终核心实验**：统一 Enterprise Task Benchmark
 - 487 条中 structured_lookup 偏多（276 条）且其 KG 子集 offline 全 0，
   拉低该 task_type 均值；
 - 合成业务数据的数值结论不得当作真实经营指标外推。
+
+---
+
+## ADR-013: Phase 6 Vue3 工作台的设计约束
+
+### Context
+
+Phase 6 交付企业员工使用的工作台 `src/frontend/Vue3/`
+（Vue 3.5 + TypeScript + Vite + Element Plus + Pinia + ECharts）与配套接口
+（`/api/tasks`、`/api/chat`、`/api/chat/stream`、`/api/knowledge/*`、
+`/api/graph/*`、`/api/reports*`、`/api/analytics/*`、`/api/evaluation/*`）。
+按本文件开头的纪律（"新增技术 / 框架必须先更新 ADR.md"），这里记录 Phase 6
+引入的选型与边界。
+
+### Decision
+
+1. **前端框架固定**：Vue3 + Vite + Element Plus + Pinia + ECharts，
+   与 README 技术栈表一致；设计令牌与共享页面/卡片骨架集中在
+   `src/assets/styles.css`，视图只声明自身特有样式。
+2. **SSE 用 `fetch` + `ReadableStream` 手写帧解析，不用 `EventSource`**：
+   任务提交必须 POST + JSON body，而 `EventSource` 只支持 GET。
+   解析器要求：跨 chunk 边界安全、坏帧跳过不中断整条流、
+   用户取消（`AbortError`）按"安静停止"处理而不是失败。
+3. **任务与报告用进程内内存存储**（沿用 Phase 6.2 的决策，不新增 DB 依赖）：
+   重启 API 后清空，这是**已知限制**而非缺陷，并已在 README 与 ROADMAP 明示；
+   前端结果导出保证用户仍能保留当次结果。
+4. **报告只由真实运行装配**：成功运行经 `src/tools/report_tool.py` 装配为
+   Markdown（任务 / 答案 / 证据来源 / 校验结论），无运行则报告中心为空列表，
+   绝不用占位数据填充。披露规则：**报告不暴露超过该次 API 响应已返回的内容**
+   —— chat 路径传入响应中已有的 evidence，SSE 路径传入已 sanitize 的 evidence。
+   装配失败只记日志并留空正文，绝不把一次成功任务变成失败响应。
+5. **导出有两条并存路径**：服务端报告下载（`GET /api/reports/{id}/download`
+   返回 `.md` 附件）与前端结果导出（结果面板导出 Markdown / JSON）。
+   两者都不引入新的后端依赖。
+6. **前端测试只覆盖纯逻辑**：用 vitest 测 SSE 帧解析、导出构造与 API URL 解析；
+   Phase 6 不引入 jsdom / `@vue/test-utils` 做组件级渲染测试（见 Consequences）。
+
+### Alternatives
+
+| 方案 | 未采用原因 |
+|---|---|
+| 用 `EventSource` 做流式 | 只支持 GET，任务提交必须 POST + body |
+| 用轮询模拟"流式执行" | 无法呈现逐节点过程，延迟高且与 SSE 语义不符 |
+| 报告落库（DuckDB / SQLite）持久化 | 超出 Phase 6 边界（不新增 DB 依赖），持久化留给 Phase 7+ |
+| 只做前端拼装的"报告导出"，不做服务端报告 | 报告中心会退化为纯前端拼接，服务端没有真实产物 |
+| 引入 markdown-it 等渲染报告 | 新增前端依赖超出 Phase 6 边界；源码形式预览已满足审阅需求 |
+| 引入 jsdom / `@vue/test-utils` 做组件测试 | 组件渲染测试成本高于当前收益；接口契约由后端 API/SSE 测试覆盖 |
+| 用假数据填充报告或任务列表 | 直接违反项目"不编造结果"纪律 |
+
+### Consequences
+
+正面：
+
+- 工作台打通"提交 → 过程（SSE Trace）→ 证据与校验 → 导出"完整链路，
+  Phase 6 的完成标准（非技术用户可独立完成三件事）可验证；
+- 报告可追溯到具体运行（`request_id` + 装配来源），无运行即空，不存在伪造产物；
+- 后端零新增依赖（报告复用既有 `ReportTool`），前端新增的 vitest 仅为
+  开发期依赖，已登记于 `THIRD_PARTY_LICENSES.md`。
+
+负面 / 限制：
+
+- 内存存储意味着重启即失（多实例部署还会出现报告不一致），
+  要持久化必须回到本文件新增 ADR；
+- 无鉴权、无多用户、无 i18n；
+- 前端只有逻辑单测，没有组件级渲染或端到端浏览器测试；
+- 视觉与交互仅按 Phase 6 视觉规格（浅色、克制蓝、小圆角、信息密度优先）收口，
+  不声称达到生产 SaaS 水平；
+- 报告正文在 chat 路径与 SSE 路径披露深度不同（后者继承流中已 sanitize 的投影），
+  这是安全优先的选择，代价是两种入口导出的报告证据细节不完全一致。
+
+
+---
+
+## ADR-014: SSE 载荷投影、delta 折叠与报告门禁（Phase 6.7 修复期）
+
+### Context
+
+Phase 6.7 交付"每次运行 → 可下载报告"时，接口层引入了三个隐含假设，上线后
+在真实运行中被证伪（详见 `FAILURE_HANDBOOK.md` §12）：
+
+1. 假设节点写进状态通道的是 dict —— 实际是 pydantic 模型
+   （`EvidenceItem` / `ToolCallRecord` / `SQLResultPayload`），
+   `stream_mode="updates"` 又是原样返回、不经 reducer，于是
+   `ev.items()` 抛 `AttributeError`，流式请求只拿到 `error` 事件（FH-SSE-001）；
+2. 假设 `final_state[k] = v` 能折叠出终态 —— `AgentState` 的 list 通道是
+   append reducer，覆盖赋值只留下最后一个写者（FH-SSE-003）；
+3. 假设终态 `status == "completed"` —— Phase 4 尾链会覆写 status，
+   真实终态是 `claims_empty` / `verified` / `guarded` / `guard_blocked`，
+   报告门禁从未生效（FH-SSE-004）。
+
+### Decision
+
+1. **接口层只做投影，不改语义**：新增 `_to_plain()`（模型→dict，递归）承担
+   序列化；`_strip_raw_content()` 承担脱敏；`_sse_event()` 先投影再 `json.dumps`，
+   禁止再用 `default=str` 兜底模型（否则前端拿到字符串 repr，FH-SSE-002）。
+2. **脱敏范围不因修复而放松**：`sql_result.data.rows`、
+   `tool_results[*].data.rows / results`、`evidence_v4[*].content`、
+   `evidence[*].content / payload` 一律不下发。SSE 投影的暴露面必须
+   **不宽于**修复前（修复前这些字段以字符串 repr 形式泄漏，属既有缺陷）。
+3. **delta 折叠以 `APPEND_CHANNELS` 为唯一依据**：该常量由 `AgentState`
+   的注解推导（`Annotated[list, _append]`），新增通道自动生效，禁止手写名单。
+4. **成功判据用终态状态词表**：`reports.should_record_report(status, answer)`
+   由 `src/api/routes/reports.py` 持有，chat 与 stream 两个入口共用；
+   `completed_no_evidence`、澄清、执行失败一律不登记报告。
+5. **`completed` 事件补发脱敏 `evidence` / `tool_calls`**：与 `/api/chat`
+   的响应契约对齐（前端本就按此契约编写，且 ADR-013 已允许流式路径携带
+   已 sanitize 的投影）。
+
+### Alternatives
+
+| 方案 | 未采用原因 |
+|---|---|
+| 让前端从逐节点 `tool_completed` 事件自行聚合证据 | 与 `/api/chat` 契约不一致，且前端无法判断折叠语义（reducer 在服务端） |
+| 报告门禁放宽为"answer 非空" | 澄清答复与失败降级也会进报告中心，污染"只由真实运行产生"的口径 |
+| SSE 里再 `graph.invoke` 一次取终态 | 重跑整条图（LLM / SQL 双份成本），且非确定性 |
+| 继续用 `json.dumps(default=str)` | 模型变字符串，前端类型契约失真（FH-SSE-002） |
+| 顺带把原始行数据下发给前端做表格预览 | 超出 Phase 6 边界并违反本端点"只发用户安全字段"的既定规则 |
+
+### Consequences
+
+正面：
+
+- 流式路径与一次性路径对同一问题给出**同一份** evidence / tool_calls /
+  报告，工作台默认模式（流式）第一次真正可用；
+- 报告门禁与状态词表解耦，Phase 4 尾链再增加终态也不会静默关掉报告；
+- 折叠逻辑由 `AgentState` 注解驱动，新增通道不会再"漏合并"。
+
+负面 / 限制：
+
+- SSE 在 `completed` 事件里多发一份脱敏证据（带宽换一致性）；
+- `_REPORTABLE_STATUSES` 是一份需要随节点状态词表维护的清单——新增终态若
+  忘记登记，该终态的运行不会产生报告（已用测试固定当前词表）；
+- 流式报告的证据细节仍少于 chat 路径（原样继承流中投影），ADR-013 的
+  限制不变。
+
+---
+
+## ADR-015: 验证阈值必须与已发布实验口径一致
+
+### Context
+
+Phase 6 修复期有人把 `config/settings.yaml` 的验证阈值整体调严
+（`min_support_score` / `support_threshold` 0.6 → 0.75、`semantic_threshold`
+0.5 → 0.6、`numeric_tolerance` 0.01 → 0.005），理由是"减少假阳性"，但：
+
+- 没有重跑 Phase 4 / Phase 5，因此论文与 `docs/` 引用的每一个验证类指标
+  （hallucinated-claim rate、unsupported-claim leakage、conflict detection、
+  Evidence Support Rate…）都还是旧阈值下的产物；
+- `tests/unit/test_claim_verifier.py` 的 `CFG` 被同步改成 0.75/0.6 ——
+  是**测试向配置看齐**，不是配置被验证；
+- `src/core/claim_verifier.py` 的 `VerificationConfig` 默认值仍是
+  0.6 / 0.5 / 0.01，配置与代码默认值互相矛盾；
+- `docs/phase4/FAILURE_CASES.md` 明确以 "semantic_threshold 0.5" 记录
+  当时那批真实失败案例的配置版本。
+
+### Decision
+
+1. `config/settings.yaml` 回退为**已发布实验所用口径**：
+   `min_support_score=0.6`、`support_threshold=0.6`、
+   `semantic_threshold=0.5`、`numeric_tolerance=0.01`；并在配置注释中写明
+   这些值必须与论文口径一致。
+2. `tests/unit/test_claim_verifier.py` 同步回退 `CFG`，并新增
+   `test_committed_thresholds_match_the_published_experiments`：
+   把配置值、代码默认值与发布口径钉在一起，任何阈值调整都会先让测试失败，
+   迫使调整者同时重跑 Phase 4 / Phase 5 并更新文档。
+3. **调严阈值本身不是禁止的**，但必须作为一个完整动作执行：
+   改配置 → 重跑 `scripts/run_verification_eval.py`（A/B/C/D）与
+   `scripts/run_enterprise_eval.py` → 更新 `docs/phase4`、`docs/phase5`、
+   README 数字 → 同步本 ADR 与上述测试。只改配置不重跑，视为未完成。
+
+### Alternatives
+
+| 方案 | 未采用原因 |
+|---|---|
+| 保留 0.75 并立刻重跑 Phase 4 / Phase 5 | 重跑产生的是一套**新**指标，需要同步改写论文与全部文档数字；在论文定稿阶段引入新口径，收益未经证实，风险大于收益 |
+| 保留 0.75 且不重跑，仅在文档里加一句"阈值已调严" | 违反项目纪律：文档数字必须可由仓库复现，等于让论文数字不可复现 |
+| 只回退配置、不回退测试 | 测试会立刻红（CFG=0.75 与配置 0.6 冲突），且掩盖了"测试跟着配置改"这一行为 |
+| 把阈值写死在 `claim_verifier.py` | 违反 Phase 4 的既定约束"阈值读自 config/settings.yaml，不写死" |
+
+### Consequences
+
+正面：
+
+- 论文中所有验证类指标重新可由仓库复现（配置 = 代码默认值 = 文档口径）；
+- 阈值调整被测试显式拦下，不会再出现"改了配置但没人重跑"的静默失效。
+
+负面 / 限制：
+
+- 放弃了一次未经证实的"更严阈值"尝试；若后续确实要调严，需要按 Decision 3
+  走完重跑流程（代价：Phase 4 + Phase 5 两次完整评测）；
+- 该常量测试与实验口径强耦合：重跑实验后必须同步更新它，否则会挡住合法的
+  口径升级。

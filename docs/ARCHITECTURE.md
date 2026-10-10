@@ -57,12 +57,13 @@
 
 ## 2. 用户交互层（L1）
 
-- 技术：Vue3 + TypeScript + Element Plus + ECharts。
+- 技术：Vue3 + TypeScript + Vite + Element Plus + Pinia + ECharts。
 - 通过 FastAPI 的 HTTP 接口提交任务，通过 **SSE** 接收流式执行过程。
 - 必须展示的不只是最终答案，还包括：命中的工具、检索到的证据、SQL 语句、
   图谱路径、验证结论（哪条 claim 被支持 / 不被支持）。
 - **可见性要求**：证据与验证结果是一等公民，因为系统的核心主张是"结论可追溯"。
-- 目录：`src/frontend/Vue3/`（Phase 6 实现）。
+- 目录：`src/frontend/Vue3/`（Phase 6 已实现：8 个页面 + SSE Trace + 证据/校验面板 +
+  结果导出与报告下载）。
 
 ## 3. AI 数字员工核心层（L2）
 

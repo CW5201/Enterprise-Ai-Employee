@@ -19,7 +19,28 @@ from src.core.claim_verifier import (
 from src.core.evidence_adapter import adapt_analysis, adapt_kg, adapt_rag, adapt_sql
 from src.core.verification_types import Evidence
 
-CFG = VerificationConfig(support_threshold=0.75, semantic_threshold=0.6)
+CFG = VerificationConfig(support_threshold=0.6, semantic_threshold=0.5)
+
+
+def test_committed_thresholds_match_the_published_experiments() -> None:
+    """ADR-015: config/settings.yaml must equal the口径 the papers report.
+
+    The Phase 4 / Phase 5 numbers in docs/ and artifacts/ were produced with
+    these exact thresholds.  Raising them silently (as an earlier repair
+    session did: 0.6 -> 0.75) invalidates every verification metric quoted in
+    the thesis until both evaluations are re-run — so pin them here.
+    """
+    from src.core.config_loader import get_settings
+
+    verification = get_settings().verification
+    assert verification.min_support_score == 0.6
+    assert verification.support_threshold == 0.6
+    assert verification.semantic_threshold == 0.5
+    assert verification.numeric_tolerance == 0.01
+    # ... and the code defaults must not drift from the config either.
+    assert VerificationConfig.support_threshold == 0.6
+    assert VerificationConfig.semantic_threshold == 0.5
+    assert VerificationConfig.numeric_tolerance == 0.01
 
 
 def _sql_ev(value: Any, eid: str = "ev-sql") -> Evidence:
