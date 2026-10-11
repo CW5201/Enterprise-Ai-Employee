@@ -12,8 +12,8 @@
 
 | Resource | Type | Source | License | Usage | Notes |
 |---|---|---|---|---|---|
-| WideWorldImporters | 数据库 | Microsoft (github.com/microsoft/WideWorldImporters) | Microsoft Sample Code / MS-LPL（按其仓库条款） | DuckDB 导入，Text-to-SQL、分析、KG 构建基础（主业务数据源） | 需记录下载版本；不修改原始语义；派生表须在数据字典声明 |
-| AdventureWorks | 数据库 | Microsoft (docs / 官方示例) | Microsoft 示例数据条款 | 补充表结构与任务多样性（辅业务数据源） | 与 WWI 分库，不混合 schema；按原条款使用 |
+| WideWorldImporters | 数据库 | Microsoft (github.com/microsoft/WideWorldImporters) | Microsoft Sample Code / MS-LPL（见上游仓库） | **表结构与维度数据**（Application_* / Purchasing_* / Warehouse_Colors 等）；销售事实表已由 AdventureWorks 真实数据填充 | 保留原始表名/列名以维持工具 Schema；不再作为销售金额数据源 |
+| AdventureWorks OLTP | 数据库 | Microsoft sql-server-samples（github.com/microsoft/sql-server-samples，`AdventureWorks-oltp-install-script.zip`） | Microsoft 示例数据许可 | **销售事实表 / 客户 / 商品 / 人员维度表的真实数据源**，由 `scripts/import_adventureworks.py` 导入 DuckDB | 官方 OLTP 示例库：31,465 订单 / 121,317 订单行 / 19,820 客户 / 504 商品 / 19,972 人员，覆盖 2022-05-30..2025-07-06；表名沿用 WideWorldImporters 拼写以保持向后兼容 |
 | Spider | 数据集 | Yu et al., NAACL 2018 | 原始研究数据集条款 | Text-to-SQL 能力外部对照 | 仅研究用途；不复分发；注明版本 |
 | BIRD | 数据集 | 官方仓库 (bird-benchmark) | 按仓库条款 | 真实场景 Text-to-SQL 对照 | 注意其中部分数据访问限制 |
 | HotpotQA | 数据集 | Yang et al. (HotpotQA) | 按原始授权（研究用途） | 多跳检索与证据支持对照 | 使用原始英文数据，不翻译后重新分发 |

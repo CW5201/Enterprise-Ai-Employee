@@ -36,6 +36,7 @@ from fastapi.responses import StreamingResponse
 from src.api.routes.chat import ChatRequest
 from src.api.routes.reports import record_run_report, should_record_report
 from src.api.routes.tasks import record_task, task_status_for_run
+from src.core.observability import observe, set_task_latencies
 from src.core.state import APPEND_CHANNELS
 
 router = APIRouter(tags=["chat-stream"])
@@ -44,8 +45,10 @@ logger = logging.getLogger("eae.api.chat_stream")
 # Map LangGraph node names to frontend event types.  Tool nodes emit a
 # tool_started event (plan) followed by tool_completed (results), so the
 # trace can show a pending -> running -> success transition per tool.
+# ``intent`` is intentionally unmapped: the generator already yields a
+# "task_started" frame on request receipt, and mapping the node too would
+# send a duplicate "task_started" for the same step.
 _NODE_EVENT_MAP: dict[str, str] = {
-    "intent": "task_started",
     "route": "routing",
     "sql": "tool",
     "rag": "tool",
@@ -167,6 +170,13 @@ def _safe_payload(node_name: str, delta: dict[str, Any]) -> dict[str, Any]:
         p["evidence"] = [_sanitize_evidence(e) for e in delta.get("evidence", [])]
         p["tool_results"] = [_strip_raw_content(_to_plain(tr)) for tr in delta.get("tool_results", [])]
         p["errors"] = _to_plain(delta.get("errors", []))
+    elif node_name == "clarify":
+        # clarification.py writes {answer, status}.  The node is framed as an
+        # "answer" event (see _NODE_EVENT_MAP), so the payload has to carry
+        # the clarifying question itself — without this branch the frontend
+        # got an empty payload and rendered a blank bubble.
+        p["answer"] = delta.get("answer", "")
+        p["status"] = delta.get("status", "")
     elif node_name == "answer":
         p["answer"] = delta.get("answer", "")
         p["intent"] = delta.get("intent", "")
@@ -191,7 +201,7 @@ def _safe_payload(node_name: str, delta: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.post("/chat/stream")
-def chat_stream(request: Request, body: ChatRequest) -> StreamingResponse:
+async def chat_stream(request: Request, body: ChatRequest) -> StreamingResponse:
     """Stream pipeline events as SSE."""
     text = body.message.strip()
     if not text:
@@ -199,41 +209,54 @@ def chat_stream(request: Request, body: ChatRequest) -> StreamingResponse:
 
     employee = request.app.state.employee
 
+    from src.core.state import make_state
+
+    # LangGraph's .stream() accumulates state internally and does NOT write
+    # back to the dict passed in, so read the final values by folding the
+    # per-node deltas ourselves.
+    final_state: dict[str, Any] = dict(make_state(text, request_id=body.request_id))
+
+    # Bind the latency table here, on the request task's contextvars — NOT
+    # inside the generator.  Starlette drives the SSE body with
+    # iterate_in_threadpool(), which copies the task context on every
+    # __next__(); a set performed inside the generator would therefore only
+    # apply to the first node, and the later nodes' @observe decorators (plus
+    # the final total_ms stage) would find no table.  Binding in the async
+    # route body makes the table visible to every __next__() call.
+    set_task_latencies(final_state["latency"])
+
     def _sse_generator() -> Generator[str, None, None]:
         # --- initial event ---
         yield _sse_event({"type": "task_started", "timestamp": _ts(), "step": "intent", "status": "running", "payload": {"message": text}})
 
         try:
-            from src.core.state import make_state
-
-            # LangGraph's .stream() accumulates state internally and does NOT
-            # write back to the dict passed in, so read the final values by
-            # folding the per-node deltas ourselves.
-            final_state: dict[str, Any] = dict(make_state(text, request_id=body.request_id))
-
-            for update in employee._graph.stream(final_state, stream_mode="updates"):
-                for node_name, delta in update.items():
-                    # fold this node's delta into the running final state
-                    # (append channels merged, not overwritten)
-                    _fold_delta(final_state, delta)
-                    event_type = _NODE_EVENT_MAP.get(node_name, "step")
-                    # Tool nodes: emit a started event before the results
-                    # event so the frontend trace shows pending->running.
-                    if event_type == "tool":
+            # Mirror DigitalEmployee.run(): wrap the whole graph run in one
+            # observe stage so the streaming path records the same per-stage
+            # + total_ms entries as the blocking path.
+            with observe("total_ms"):
+                for update in employee._graph.stream(final_state, stream_mode="updates"):
+                    for node_name, delta in update.items():
+                        # fold this node's delta into the running final state
+                        # (append channels merged, not overwritten)
+                        _fold_delta(final_state, delta)
+                        event_type = _NODE_EVENT_MAP.get(node_name, "step")
+                        # Tool nodes: emit a started event before the results
+                        # event so the frontend trace shows pending->running.
+                        if event_type == "tool":
+                            yield _sse_event({
+                                "type": "tool_started",
+                                "timestamp": _ts(),
+                                "step": node_name,
+                                "status": "running",
+                                "payload": {"tool": _safe_payload(node_name, delta).get("tool", node_name)},
+                            })
                         yield _sse_event({
-                            "type": "tool_started",
+                            "type": "tool_completed" if event_type == "tool" else event_type,
                             "timestamp": _ts(),
                             "step": node_name,
-                            "status": "running",
-                            "payload": {"tool": _safe_payload(node_name, delta).get("tool", node_name)},
+                            "status": "ok",
+                            "payload": _safe_payload(node_name, delta),
                         })
-                    yield _sse_event({
-                        "type": "tool_completed" if event_type == "tool" else event_type,
-                        "timestamp": _ts(),
-                        "step": node_name,
-                        "status": "ok",
-                        "payload": _safe_payload(node_name, delta),
-                    })
 
             # --- final completed event (reads the folded final state) ---
             completed_payload: dict[str, Any] = {

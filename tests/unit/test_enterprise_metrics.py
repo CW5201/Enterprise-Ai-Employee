@@ -32,7 +32,7 @@ def _pred(route="sql", tools=("sql",), order=("sql",), answer="共 440 笔",
         "any_error": any_error, "failure_categories": list(failures),
         "llm_calls": llm,
         "latency_ms": lat or {"routing": 5.0, "tool_execution": 10.0,
-                              "verification": 2.0, "total": 17.0},
+                              "verification": 2.0, "total_ms": 17.0},
     }
 
 

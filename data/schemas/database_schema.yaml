@@ -2,7 +2,7 @@ version: v0.2
 dialect: duckdb
 source_database: WideWorldImporters
 status: verified
-generated_at: '2026-09-29 15:31:32'
+generated_at: '2026-10-11 15:14:18'
 tables:
 - name: Application_Cities
   primary_key: []
@@ -240,37 +240,37 @@ tables:
   columns:
   - name: PersonID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: FullName
     type: VARCHAR
-    nullable: false
+    nullable: true
   - name: PreferredName
     type: VARCHAR
-    nullable: false
+    nullable: true
   - name: SearchName
     type: VARCHAR
     nullable: true
   - name: IsPermittedToLogon
     type: BOOLEAN
-    nullable: false
+    nullable: true
   - name: LogonName
     type: VARCHAR
     nullable: true
   - name: IsExternalLogonProvider
     type: BOOLEAN
-    nullable: false
+    nullable: true
   - name: HashedPassword
     type: BLOB
     nullable: true
   - name: IsSystemUser
     type: BOOLEAN
-    nullable: false
+    nullable: true
   - name: IsEmployee
     type: BOOLEAN
-    nullable: false
+    nullable: true
   - name: IsSalesperson
     type: BOOLEAN
-    nullable: false
+    nullable: true
   - name: UserPreferences
     type: VARCHAR
     nullable: true
@@ -294,13 +294,13 @@ tables:
     nullable: true
   - name: LastEditedBy
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: ValidFrom
     type: TIMESTAMP
-    nullable: false
+    nullable: true
   - name: ValidTo
     type: TIMESTAMP
-    nullable: false
+    nullable: true
 - name: Application_People_Archive
   primary_key: []
   columns:
@@ -954,19 +954,19 @@ tables:
   columns:
   - name: CustomerCategoryID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: CustomerCategoryName
     type: VARCHAR
-    nullable: false
+    nullable: true
   - name: LastEditedBy
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: ValidFrom
     type: TIMESTAMP
-    nullable: false
+    nullable: true
   - name: ValidTo
     type: TIMESTAMP
-    nullable: false
+    nullable: true
 - name: Sales_CustomerCategories_Archive
   primary_key: []
   columns:
@@ -990,13 +990,13 @@ tables:
   columns:
   - name: CustomerTransactionID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: CustomerID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: TransactionTypeID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: InvoiceID
     type: INTEGER
     nullable: true
@@ -1005,19 +1005,19 @@ tables:
     nullable: true
   - name: TransactionDate
     type: DATE
-    nullable: false
+    nullable: true
   - name: AmountExcludingTax
     type: DECIMAL(18,2)
-    nullable: false
+    nullable: true
   - name: TaxAmount
     type: DECIMAL(18,2)
-    nullable: false
+    nullable: true
   - name: TransactionAmount
     type: DECIMAL(18,2)
-    nullable: false
+    nullable: true
   - name: OutstandingBalance
     type: DECIMAL(18,2)
-    nullable: false
+    nullable: true
   - name: FinalizationDate
     type: DATE
     nullable: true
@@ -1026,67 +1026,67 @@ tables:
     nullable: true
   - name: LastEditedBy
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: LastEditedWhen
     type: TIMESTAMP
-    nullable: false
+    nullable: true
 - name: Sales_Customers
   primary_key: []
   columns:
   - name: CustomerID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: CustomerName
     type: VARCHAR
-    nullable: false
+    nullable: true
   - name: BillToCustomerID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: CustomerCategoryID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: BuyingGroupID
     type: INTEGER
     nullable: true
   - name: PrimaryContactPersonID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: AlternateContactPersonID
     type: INTEGER
     nullable: true
   - name: DeliveryMethodID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: DeliveryCityID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: PostalCityID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: CreditLimit
     type: DECIMAL(18,2)
     nullable: true
   - name: AccountOpenedDate
     type: DATE
-    nullable: false
+    nullable: true
   - name: StandardDiscountPercentage
     type: DECIMAL(18,3)
-    nullable: false
+    nullable: true
   - name: IsStatementSent
     type: BOOLEAN
-    nullable: false
+    nullable: true
   - name: IsOnCreditHold
     type: BOOLEAN
-    nullable: false
+    nullable: true
   - name: PaymentDays
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: PhoneNumber
     type: VARCHAR
-    nullable: false
+    nullable: true
   - name: FaxNumber
     type: VARCHAR
-    nullable: false
+    nullable: true
   - name: DeliveryRun
     type: VARCHAR
     nullable: true
@@ -1095,37 +1095,37 @@ tables:
     nullable: true
   - name: WebsiteURL
     type: VARCHAR
-    nullable: false
+    nullable: true
   - name: DeliveryAddressLine1
     type: VARCHAR
-    nullable: false
+    nullable: true
   - name: DeliveryAddressLine2
     type: VARCHAR
     nullable: true
   - name: DeliveryPostalCode
     type: VARCHAR
-    nullable: false
+    nullable: true
   - name: DeliveryLocation
     type: VARCHAR
     nullable: true
   - name: PostalAddressLine1
     type: VARCHAR
-    nullable: false
+    nullable: true
   - name: PostalAddressLine2
     type: VARCHAR
     nullable: true
   - name: PostalPostalCode
     type: VARCHAR
-    nullable: false
+    nullable: true
   - name: LastEditedBy
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: ValidFrom
     type: TIMESTAMP
-    nullable: false
+    nullable: true
   - name: ValidTo
     type: TIMESTAMP
-    nullable: false
+    nullable: true
 - name: Sales_Customers_Archive
   primary_key: []
   columns:
@@ -1227,82 +1227,82 @@ tables:
   columns:
   - name: InvoiceLineID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: InvoiceID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: StockItemID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: Description
     type: VARCHAR
-    nullable: false
+    nullable: true
   - name: PackageTypeID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: Quantity
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: UnitPrice
     type: DECIMAL(18,2)
     nullable: true
   - name: TaxRate
     type: DECIMAL(18,3)
-    nullable: false
+    nullable: true
   - name: TaxAmount
     type: DECIMAL(18,2)
-    nullable: false
+    nullable: true
   - name: LineProfit
     type: DECIMAL(18,2)
-    nullable: false
+    nullable: true
   - name: ExtendedPrice
     type: DECIMAL(18,2)
-    nullable: false
+    nullable: true
   - name: LastEditedBy
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: LastEditedWhen
     type: TIMESTAMP
-    nullable: false
+    nullable: true
 - name: Sales_Invoices
   primary_key: []
   columns:
   - name: InvoiceID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: CustomerID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: BillToCustomerID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: OrderID
     type: INTEGER
     nullable: true
   - name: DeliveryMethodID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: ContactPersonID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: AccountsPersonID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: SalespersonPersonID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: PackedByPersonID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: InvoiceDate
     type: DATE
-    nullable: false
+    nullable: true
   - name: CustomerPurchaseOrderNumber
     type: VARCHAR
     nullable: true
   - name: IsCreditNote
     type: BOOLEAN
-    nullable: false
+    nullable: true
   - name: CreditNoteReason
     type: VARCHAR
     nullable: true
@@ -1317,10 +1317,10 @@ tables:
     nullable: true
   - name: TotalDryItems
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: TotalChillerItems
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: DeliveryRun
     type: VARCHAR
     nullable: true
@@ -1338,82 +1338,82 @@ tables:
     nullable: true
   - name: LastEditedBy
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: LastEditedWhen
     type: TIMESTAMP
-    nullable: false
+    nullable: true
 - name: Sales_OrderLines
   primary_key: []
   columns:
   - name: OrderLineID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: OrderID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: StockItemID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: Description
     type: VARCHAR
-    nullable: false
+    nullable: true
   - name: PackageTypeID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: Quantity
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: UnitPrice
     type: DECIMAL(18,2)
     nullable: true
   - name: TaxRate
     type: DECIMAL(18,3)
-    nullable: false
+    nullable: true
   - name: PickedQuantity
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: PickingCompletedWhen
     type: TIMESTAMP
     nullable: true
   - name: LastEditedBy
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: LastEditedWhen
     type: TIMESTAMP
-    nullable: false
+    nullable: true
 - name: Sales_Orders
   primary_key: []
   columns:
   - name: OrderID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: CustomerID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: SalespersonPersonID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: PickedByPersonID
     type: INTEGER
     nullable: true
   - name: ContactPersonID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: BackorderOrderID
     type: INTEGER
     nullable: true
   - name: OrderDate
     type: DATE
-    nullable: false
+    nullable: true
   - name: ExpectedDeliveryDate
     type: DATE
-    nullable: false
+    nullable: true
   - name: CustomerPurchaseOrderNumber
     type: VARCHAR
     nullable: true
   - name: IsUndersupplyBackordered
     type: BOOLEAN
-    nullable: false
+    nullable: true
   - name: Comments
     type: VARCHAR
     nullable: true
@@ -1428,55 +1428,37 @@ tables:
     nullable: true
   - name: LastEditedBy
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: LastEditedWhen
     type: TIMESTAMP
-    nullable: false
+    nullable: true
 - name: Sales_SpecialDeals
   primary_key: []
   columns:
   - name: SpecialDealID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: StockItemID
     type: INTEGER
-    nullable: true
-  - name: CustomerID
-    type: INTEGER
-    nullable: true
-  - name: BuyingGroupID
-    type: INTEGER
-    nullable: true
-  - name: CustomerCategoryID
-    type: INTEGER
-    nullable: true
-  - name: StockGroupID
-    type: INTEGER
-    nullable: true
-  - name: DealDescription
-    type: VARCHAR
-    nullable: false
-  - name: StartDate
-    type: DATE
-    nullable: false
-  - name: EndDate
-    type: DATE
-    nullable: false
-  - name: DiscountAmount
-    type: DECIMAL(18,2)
     nullable: true
   - name: DiscountPercentage
     type: DECIMAL(18,3)
     nullable: true
-  - name: UnitPrice
-    type: DECIMAL(18,2)
+  - name: StartDate
+    type: DATE
+    nullable: true
+  - name: EndDate
+    type: DATE
+    nullable: true
+  - name: Description
+    type: VARCHAR
     nullable: true
   - name: LastEditedBy
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: LastEditedWhen
     type: TIMESTAMP
-    nullable: false
+    nullable: true
 - name: Warehouse_ColdRoomTemperatures
   primary_key: []
   columns:
@@ -1596,19 +1578,16 @@ tables:
   columns:
   - name: StockGroupID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: StockGroupName
     type: VARCHAR
-    nullable: false
+    nullable: true
   - name: LastEditedBy
     type: INTEGER
-    nullable: false
-  - name: ValidFrom
+    nullable: true
+  - name: LastEditedWhen
     type: TIMESTAMP
-    nullable: false
-  - name: ValidTo
-    type: TIMESTAMP
-    nullable: false
+    nullable: true
 - name: Warehouse_StockGroups_Archive
   primary_key: []
   columns:
@@ -1662,19 +1641,19 @@ tables:
   columns:
   - name: StockItemStockGroupID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: StockItemID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: StockGroupID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: LastEditedBy
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: LastEditedWhen
     type: TIMESTAMP
-    nullable: false
+    nullable: true
 - name: Warehouse_StockItemTransactions
   primary_key: []
   columns:
@@ -1716,22 +1695,22 @@ tables:
   columns:
   - name: StockItemID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: StockItemName
     type: VARCHAR
-    nullable: false
+    nullable: true
   - name: SupplierID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: ColorID
     type: INTEGER
     nullable: true
   - name: UnitPackageID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: OuterPackageID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: Brand
     type: VARCHAR
     nullable: true
@@ -1740,28 +1719,28 @@ tables:
     nullable: true
   - name: LeadTimeDays
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: QuantityPerOuter
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: IsChillerStock
     type: BOOLEAN
-    nullable: false
+    nullable: true
   - name: Barcode
     type: VARCHAR
     nullable: true
   - name: TaxRate
     type: DECIMAL(18,3)
-    nullable: false
+    nullable: true
   - name: UnitPrice
     type: DECIMAL(18,2)
-    nullable: false
+    nullable: true
   - name: RecommendedRetailPrice
     type: DECIMAL(18,2)
     nullable: true
   - name: TypicalWeightPerUnit
     type: DECIMAL(18,3)
-    nullable: false
+    nullable: true
   - name: MarketingComments
     type: VARCHAR
     nullable: true
@@ -1772,23 +1751,20 @@ tables:
     type: BLOB
     nullable: true
   - name: CustomFields
-    type: VARCHAR
-    nullable: true
-  - name: Tags
-    type: VARCHAR
+    type: JSON
     nullable: true
   - name: SearchDetails
     type: VARCHAR
     nullable: true
   - name: LastEditedBy
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: ValidFrom
     type: TIMESTAMP
-    nullable: false
+    nullable: true
   - name: ValidTo
     type: TIMESTAMP
-    nullable: false
+    nullable: true
 - name: Warehouse_StockItems_Archive
   primary_key: []
   columns:

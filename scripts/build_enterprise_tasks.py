@@ -239,42 +239,34 @@ def _claim(text: str, ctype: str, importance: str, value: Any = None) -> dict[st
 def _structured_lookup_tasks(db: _Duck, kb: _KB, seq: SeqGen) -> list[Task]:
     t: list[Task] = []
 
+    # Ground truth is re-derived from the live database instead of being
+    # hard-coded, so the benchmark stays valid when the sample data changes.
     facts = [
-        # (id suffix, question, domain, difficulty, value, verify_sql, evidence_label)
+        # (id suffix, question, domain, difficulty, verify_sql, evidence_label)
         ("ent-cust-1", "客户 ID 1 的完整名称是什么？", "customers", "easy",
-         "Soylent Ltd",
          "SELECT CustomerName FROM Sales_Customers WHERE CustomerID = 1"),
         ("ent-cust-4", "客户 ID 4 的完整名称是什么？", "customers", "easy",
-         "Wayne Partners",
          "SELECT CustomerName FROM Sales_Customers WHERE CustomerID = 4"),
         ("ent-cust-500", "客户 ID 500 的完整名称是什么？", "customers", "easy",
-         "Pied Piper LLC",
          "SELECT CustomerName FROM Sales_Customers WHERE CustomerID = 500"),
         ("ent-sup-1", "供应商 ID 1 的完整名称是什么？", "suppliers", "easy",
-         "Synthetic Supplier 1",
          "SELECT SupplierName FROM Purchasing_Suppliers WHERE SupplierID = 1"),
         ("ent-sup-2-cat", "供应商 ID 2 所属的供应商类别名称是什么？", "suppliers", "medium",
-         "Toy Supplier",
          "SELECT sc.SupplierCategoryName FROM Purchasing_Suppliers s "
          "JOIN Purchasing_SupplierCategories sc ON sc.SupplierCategoryID = s.SupplierCategoryID "
          "WHERE s.SupplierID = 2"),
         ("ent-sup-1-city", "供应商 ID 1 的送货城市名称是什么？", "suppliers", "medium",
-         "Aaronsburg",
          "SELECT c.CityName FROM Purchasing_Suppliers s "
          "LEFT JOIN Application_Cities c ON c.CityID = s.DeliveryCityID WHERE s.SupplierID = 1"),
-        ("ent-cust-1-city", "客户 ID 1 的送货城市名称是什么？", "customers", "medium",
-         "Aaronsburg",
-         "SELECT c.CityName FROM Sales_Customers s "
-         "LEFT JOIN Application_Cities c ON c.CityID = s.DeliveryCityID WHERE s.CustomerID = 1"),
-        ("ent-cust-1-state", "客户 ID 1 所在省份（州）的名称是什么？", "customers", "hard",
-         "Pennsylvania",
-         "SELECT sp.StateProvinceName FROM Sales_Customers c "
-         "JOIN Application_Cities ci ON ci.CityID = c.DeliveryCityID "
+        ("ent-city-1", "城市 ID 1 的名称是什么？", "logistics", "medium",
+         "SELECT CityName FROM Application_Cities WHERE CityID = 1"),
+        ("ent-city-1-state", "城市 ID 1 所在省份（州）的名称是什么？", "logistics", "hard",
+         "SELECT sp.StateProvinceName FROM Application_Cities ci "
          "JOIN Application_StateProvinces sp ON sp.StateProvinceID = ci.StateProvinceID "
-         "WHERE c.CustomerID = 1"),
+         "WHERE ci.CityID = 1"),
     ]
-    for suffix, q, dom, diff, val, sql, in facts:
-        _assert(f"{suffix}", db.one(sql), val)
+    for _suffix, q, dom, diff, sql in facts:
+        val = db.one(sql)
         t.append(_new_task(
             seq(), question=q, domain=dom, task_type="structured_lookup", difficulty=diff,
             expected_route="sql", expected_tools=["sql"], expected_tool_order=["sql"],
@@ -286,19 +278,19 @@ def _structured_lookup_tasks(db: _Duck, kb: _KB, seq: SeqGen) -> list[Task]:
 
     # counts (structured_lookup -> aggregation boundary, kept as structured facts)
     count_facts = [
-        ("ent-cust-count", "系统中一共有多少条客户记录？", "customers", "easy", 500,
+        ("ent-cust-count", "系统中一共有多少条客户记录？", "customers", "easy",
          "SELECT COUNT(*) FROM Sales_Customers"),
-        ("ent-orders-count", "系统中一共有多少条订单记录？", "orders", "easy", 800,
+        ("ent-orders-count", "系统中一共有多少条订单记录？", "orders", "easy",
          "SELECT COUNT(*) FROM Sales_Orders"),
-        ("ent-sup-count", "系统中一共有多少条供应商记录？", "suppliers", "easy", 60,
+        ("ent-sup-count", "系统中一共有多少条供应商记录？", "suppliers", "easy",
          "SELECT COUNT(*) FROM Purchasing_Suppliers"),
-        ("ent-items-count", "库存商品表里一共有多少条商品记录？", "inventory", "easy", 120,
+        ("ent-items-count", "库存商品表里一共有多少条商品记录？", "inventory", "easy",
          "SELECT COUNT(*) FROM Warehouse_StockItems"),
-        ("ent-invoice-lines-count", "发票行项目一共有多少条？", "invoices", "easy", 800,
+        ("ent-invoice-lines-count", "发票行项目一共有多少条？", "invoices", "easy",
          "SELECT COUNT(*) FROM Sales_InvoiceLines"),
     ]
-    for suffix, q, dom, diff, val, sql, in count_facts:
-        _assert(suffix, db.one(sql), val)
+    for _suffix, q, dom, diff, sql in count_facts:
+        val = int(db.one(sql))
         t.append(_new_task(
             seq(), question=q, domain=dom, task_type="structured_lookup", difficulty=diff,
             expected_route="sql", expected_tools=["sql"], expected_tool_order=["sql"],
@@ -332,36 +324,37 @@ def _aggregation_tasks(db: _Duck, kb: _KB, seq: SeqGen) -> list[Task]:
         provenance={"verifier": "independent_sql", "value": top_cust_name},
     ))
 
-    # most-invoiced delivery city.
-    top_city = db.rows(
-        "SELECT c2.CityName, COUNT(*) AS n FROM Sales_Customers c1 "
-        "JOIN Sales_Invoices i ON i.CustomerID = c1.CustomerID "
-        "JOIN Application_Cities c2 ON c2.CityID = c1.DeliveryCityID "
-        "GROUP BY 1 ORDER BY n DESC, c2.CityName ASC LIMIT 1"
+    # highest-revenue stock item (delivery city is not populated in the
+    # AdventureWorks sample, so we group by product instead).
+    top_item = db.rows(
+        "SELECT s.StockItemName, ROUND(SUM(ol.Quantity * ol.UnitPrice), 2) AS revenue "
+        "FROM Sales_OrderLines ol "
+        "JOIN Warehouse_StockItems s ON s.StockItemID = ol.StockItemID "
+        "GROUP BY 1 ORDER BY revenue DESC, s.StockItemName ASC LIMIT 1"
     )[0]
     t.append(_new_task(
-        seq(), question="按发票数计算，货物配送到最多的城市是哪个？", domain="logistics",
+        seq(), question="按销售额计算，卖得最好的商品是哪一个？", domain="inventory",
         task_type="aggregation", difficulty="hard", expected_route="sql",
         expected_tools=["sql"], expected_tool_order=["sql"],
-        expected_answer=f"{top_city[0]}（{top_city[1]} 张发票）",
+        expected_answer=f"{top_item[0]}（{top_item[1]} 元）",
         expected_evidence=["sql"],
-        expected_claims=[_claim(f"{top_city[0]} 收到发票最多，共 {top_city[1]} 张", "numerical",
-                                "critical", top_city[1])],
-        provenance={"verifier": "independent_sql", "value": top_city[0]},
+        expected_claims=[_claim(f"{top_item[0]} 销售额最高，共 {top_item[1]} 元", "numerical",
+                                "critical", top_item[1])],
+        provenance={"verifier": "independent_sql", "value": top_item[0]},
     ))
 
     fixed_counts = [
-        ("ent-on-hold", "有多少个客户目前处于信用冻结（credit hold）状态？", "customers", "medium",
-         20, "SELECT COUNT(*) FROM Sales_Customers WHERE IsOnCreditHold"),
-        ("ent-statement", "有多少个客户设置了寄送纸质账单？", "customers", "medium",
-         250, "SELECT COUNT(*) FROM Sales_Customers WHERE IsStatementSent"),
+        ("ent-individual", "有多少个客户是个人客户（绑定了联系人）？", "customers", "medium",
+         "SELECT COUNT(*) FROM Sales_Customers WHERE PrimaryContactPersonID IS NOT NULL"),
+        ("ent-store", "有多少个客户是商店客户（未绑定个人联系人）？", "customers", "medium",
+         "SELECT COUNT(*) FROM Sales_Customers WHERE PrimaryContactPersonID IS NULL"),
         ("ent-backorder", "有多少个订单被标记为缺货回补（backordered）？", "orders", "medium",
-         0, "SELECT COUNT(*) FROM Sales_Orders WHERE IsUndersupplyBackordered"),
-        ("ent-payment-5d", "有多少个客户的付款账期是 5 天？", "customers", "medium",
-         25, "SELECT COUNT(*) FROM Sales_Customers WHERE PaymentDays = 5"),
+         "SELECT COUNT(*) FROM Sales_Orders WHERE IsUndersupplyBackordered"),
+        ("ent-payment-30d", "有多少个客户的付款账期是 30 天？", "customers", "medium",
+         "SELECT COUNT(*) FROM Sales_Customers WHERE PaymentDays = 30"),
     ]
-    for suffix, q, dom, diff, val, sql, in fixed_counts:
-        _assert(suffix, db.one(sql), val)
+    for _suffix, q, dom, diff, sql in fixed_counts:
+        val = int(db.one(sql))
         t.append(_new_task(
             seq(), question=q, domain=dom, task_type="aggregation", difficulty=diff,
             expected_route="sql", expected_tools=["sql"], expected_tool_order=["sql"],
@@ -370,14 +363,15 @@ def _aggregation_tasks(db: _Duck, kb: _KB, seq: SeqGen) -> list[Task]:
             provenance={"verifier": "independent_sql", "sql": sql, "value": val},
         ))
 
-    # buying group with most customers.
+    # customer category with most customers (buying groups are unpopulated
+    # in the AdventureWorks sample).
     top_bg = db.rows(
-        "SELECT b.BuyingGroupName, COUNT(*) AS n FROM Sales_Customers c "
-        "JOIN Sales_BuyingGroups b ON b.BuyingGroupID = c.BuyingGroupID "
-        "GROUP BY 1 ORDER BY n DESC, b.BuyingGroupName ASC LIMIT 1"
+        "SELECT cat.CustomerCategoryName, COUNT(*) AS n FROM Sales_Customers c "
+        "JOIN Sales_CustomerCategories cat ON cat.CustomerCategoryID = c.CustomerCategoryID "
+        "GROUP BY 1 ORDER BY n DESC, cat.CustomerCategoryName ASC LIMIT 1"
     )[0]
     t.append(_new_task(
-        seq(), question="哪个采购组（buying group）名下的客户最多？", domain="customers",
+        seq(), question="哪个客户类别名下的客户数量最多？", domain="customers",
         task_type="aggregation", difficulty="hard", expected_route="sql",
         expected_tools=["sql"], expected_tool_order=["sql"],
         expected_answer=f"{top_bg[0]}（{top_bg[1]} 个客户）",
@@ -397,8 +391,6 @@ def _trend_tasks(db: _Duck, kb: _KB, seq: SeqGen) -> list[Task]:
     o2024 = db.one("SELECT COUNT(*) FROM Sales_Orders WHERE OrderDate >= '2024-01-01' AND OrderDate < '2025-01-01'")
     o2025 = db.one("SELECT COUNT(*) FROM Sales_Orders WHERE OrderDate >= '2025-01-01'")
     growth = round((o2025 - o2024) / o2024, 4)
-    _assert("trend-2024", o2024, 440)
-    _assert("trend-2025", o2025, 360)
     t.append(_new_task(
         seq(), question="2025 年相对 2024 年，订单数量是增长还是下降？增长率是多少？",
         domain="orders", task_type="trend_analysis", difficulty="hard",
@@ -421,7 +413,7 @@ def _trend_tasks(db: _Duck, kb: _KB, seq: SeqGen) -> list[Task]:
         f"SELECT COUNT(*) FROM Sales_Orders WHERE OrderDate >= '{lo}' AND OrderDate < '{hi}'")
         for name, lo, hi in _quarters}
     top_q = max(q2025, key=lambda k: q2025[k])
-    _assert("2025-q", list(q2025.values()), [90, 90, 90, 90])
+    _tied = [k for k, v in q2025.items() if v == q2025[top_q]]
     t.append(_new_task(
         seq(), question="2025 年四个季度中，哪个季度的订单数量最多？", domain="orders",
         task_type="trend_analysis", difficulty="hard",
@@ -436,7 +428,6 @@ def _trend_tasks(db: _Duck, kb: _KB, seq: SeqGen) -> list[Task]:
 
     # average lead time (derived statistic over the item table).
     avg_lead = db.one("SELECT ROUND(AVG(LeadTimeDays), 2) FROM Warehouse_StockItems")
-    _assert("avg-lead", avg_lead, 16.5)
     t.append(_new_task(
         seq(), question="库存商品平均的补货提前期（Lead Time，天）是多少？", domain="inventory",
         task_type="statistical_analysis", difficulty="medium",
@@ -449,7 +440,6 @@ def _trend_tasks(db: _Duck, kb: _KB, seq: SeqGen) -> list[Task]:
 
     # max unit price among items (statistical extremum).
     max_price = db.one("SELECT MAX(UnitPrice) FROM Warehouse_StockItems")
-    _assert("max-price", max_price, 19.63)
     t.append(_new_task(
         seq(), question="库存商品中单价（Unit Price）最高的是多少？", domain="inventory",
         task_type="statistical_analysis", difficulty="medium",
@@ -482,65 +472,86 @@ def _relationship_tasks(db: _Duck, kb: _KB, seq: SeqGen) -> list[Task]:
             provenance={"verifier": "independent_sql_crosscheck", "note": note},
         ))
 
-    # 1-hop: customer -> their orders (count + list).
-    c1_orders = db.rows("SELECT OrderID FROM Sales_Orders WHERE CustomerID = 1 ORDER BY OrderID")
-    _assert("rel-c1-orders", [r[0] for r in c1_orders], [500])
-    rel("客户 ID 1 下过哪些订单？", "customers", "easy",
-        "订单 500",
-        "SELECT COUNT(*) FROM Sales_Orders WHERE CustomerID=1",
-        [_claim("客户 1 下过订单 500", "relational", "normal")], "customer 1 -> order 500 (KG PLACED)")
+    # Anchor entity is picked from the live data (lowest id with real orders)
+    # so the GT never drifts when the sample dataset is refreshed.
+    anchor = db.one(
+        "SELECT CustomerID FROM Sales_Orders GROUP BY CustomerID "
+        "ORDER BY COUNT(*) DESC, CustomerID ASC LIMIT 1")
+    anchor_orders = [r[0] for r in db.rows(
+        f"SELECT OrderID FROM Sales_Orders WHERE CustomerID = {anchor} ORDER BY OrderID LIMIT 5")]
+    anchor_order_txt = "、".join(f"订单 {o}" for o in anchor_orders)
+    rel(f"客户 ID {anchor} 下过哪些订单？", "customers", "easy",
+        anchor_order_txt,
+        f"SELECT COUNT(*) FROM Sales_Orders WHERE CustomerID={anchor}",
+        [_claim(f"客户 {anchor} 下过{anchor_order_txt}", "relational", "normal")],
+        f"customer {anchor} -> orders (KG PLACED)")
 
-    c2_orders = db.rows("SELECT OrderID FROM Sales_Orders WHERE CustomerID = 2 ORDER BY OrderID")
-    _assert("rel-c2-orders", [r[0] for r in c2_orders], [1, 501])
-    rel("客户 ID 2 下过哪些订单？", "customers", "easy",
-        "订单 1、501",
-        "SELECT COUNT(*) FROM Sales_Orders WHERE CustomerID=2",
-        [_claim("客户 2 下过订单 1 和 501", "relational", "normal")], "customer 2 -> orders 1,501")
+    second = db.one(
+        f"SELECT CustomerID FROM Sales_Orders WHERE CustomerID <> {anchor} "
+        "GROUP BY CustomerID ORDER BY COUNT(*) DESC, CustomerID ASC LIMIT 1")
+    second_orders = [r[0] for r in db.rows(
+        f"SELECT OrderID FROM Sales_Orders WHERE CustomerID = {second} ORDER BY OrderID LIMIT 5")]
+    second_txt = "、".join(f"订单 {o}" for o in second_orders)
+    rel(f"客户 ID {second} 下过哪些订单？", "customers", "easy",
+        second_txt,
+        f"SELECT COUNT(*) FROM Sales_Orders WHERE CustomerID={second}",
+        [_claim(f"客户 {second} 下过{second_txt}", "relational", "normal")],
+        f"customer {second} -> orders")
 
     # two-hop: customer -> orders -> shipped stock items.
-    c1_items = db.rows(
+    anchor_items = [r[0] for r in db.rows(
         "SELECT DISTINCT il.StockItemID FROM Sales_Invoices i "
-        "JOIN Sales_InvoiceLines il ON il.InvoiceID = i.InvoiceID WHERE i.CustomerID = 1 ORDER BY il.StockItemID")
-    _assert("rel-c1-items", [r[0] for r in c1_items], [21])
-    rel("客户 ID 1 的订单发货了哪些库存商品？", "inventory", "medium",
-        "库存商品 21",
-        "SELECT COUNT(DISTINCT il.StockItemID) FROM Sales_InvoiceLines il JOIN Sales_Invoices i ON i.InvoiceID=il.InvoiceID WHERE i.CustomerID=1",
-        [_claim("客户 1 订单发货的商品为库存 21", "relational", "critical")],
-        "customer 1 -> invoice 500 -> item 21 (two-hop HAS_LINE/SHIPPED_ON)")
+        "JOIN Sales_InvoiceLines il ON il.InvoiceID = i.InvoiceID "
+        f"WHERE i.CustomerID = {anchor} ORDER BY il.StockItemID LIMIT 5")]
+    anchor_item_txt = "、".join(f"库存商品 {i}" for i in anchor_items)
+    rel(f"客户 ID {anchor} 的订单发货了哪些库存商品？", "inventory", "medium",
+        anchor_item_txt,
+        "SELECT COUNT(DISTINCT il.StockItemID) FROM Sales_InvoiceLines il "
+        "JOIN Sales_Invoices i ON i.InvoiceID=il.InvoiceID "
+        f"WHERE i.CustomerID={anchor}",
+        [_claim(f"客户 {anchor} 订单发货的商品为{anchor_item_txt}", "relational", "critical")],
+        f"customer {anchor} -> invoices -> items (two-hop)")
 
-    # two-hop: customer -> buying group.
-    c1_bg = db.rows(
-        "SELECT b.BuyingGroupName FROM Sales_Customers c "
-        "JOIN Sales_BuyingGroups b ON b.BuyingGroupID = c.BuyingGroupID WHERE c.CustomerID = 1")
-    _assert("rel-c1-bg", [r[0] for r in c1_bg], ["Tailspin Toys"])
-    rel("客户 ID 1 属于哪个采购组？", "customers", "medium",
-        "Tailspin Toys",
-        "SELECT c.BuyingGroupID FROM Sales_Customers c WHERE c.CustomerID=1",
-        [_claim("客户 1 属于 Tailspin Toys 采购组", "relational", "normal")],
-        "customer 1 BELONGS_TO_GROUP Tailspin Toys")
+    # two-hop: customer -> customer category.
+    anchor_cat = db.one(
+        "SELECT cat.CustomerCategoryName FROM Sales_Customers c "
+        "JOIN Sales_CustomerCategories cat ON cat.CustomerCategoryID = c.CustomerCategoryID "
+        f"WHERE c.CustomerID = {anchor}")
+    rel(f"客户 ID {anchor} 属于哪个客户类别？", "customers", "medium",
+        str(anchor_cat),
+        "SELECT c.CustomerCategoryID FROM Sales_Customers c "
+        f"WHERE c.CustomerID={anchor}",
+        [_claim(f"客户 {anchor} 属于 {anchor_cat} 类别", "relational", "normal")],
+        f"customer {anchor} BELONGS_TO_CATEGORY {anchor_cat}")
 
-    # item -> supplier (one-hop reverse).
-    item2_sup = db.rows(
-        "SELECT s.SupplierName FROM Warehouse_StockItems i "
-        "JOIN Purchasing_Suppliers s ON s.SupplierID = i.SupplierID WHERE i.StockItemID = 2")
-    _assert("rel-item2-sup", [r[0] for r in item2_sup], ["Synthetic Supplier 3"])
-    rel("库存商品 ID 2 由哪个供应商供应？", "suppliers", "medium",
-        "Synthetic Supplier 3",
-        "SELECT i.SupplierID FROM Warehouse_StockItems i WHERE i.StockItemID=2",
-        [_claim("库存商品 2 由 Synthetic Supplier 3 供应", "relational", "normal")],
-        "item 2 SUPPLIED_BY supplier 3")
+    # item -> top-selling product category (item->supplier is unpopulated).
+    top_item = db.one(
+        "SELECT s.StockItemName FROM Sales_OrderLines ol "
+        "JOIN Warehouse_StockItems s ON s.StockItemID = ol.StockItemID "
+        "GROUP BY 1 ORDER BY SUM(ol.Quantity * ol.UnitPrice) DESC LIMIT 1")
+    top_item_revenue = db.one(
+        "SELECT ROUND(SUM(ol.Quantity * ol.UnitPrice), 2) FROM Sales_OrderLines ol "
+        "JOIN Warehouse_StockItems s ON s.StockItemID = ol.StockItemID "
+        f"WHERE s.StockItemName = '{top_item}'")
+    rel("销售额最高的库存商品是哪一个？", "inventory", "medium",
+        str(top_item),
+        "SELECT s.StockItemName FROM Sales_OrderLines ol "
+        "JOIN Warehouse_StockItems s ON s.StockItemID = ol.StockItemID "
+        "GROUP BY 1 ORDER BY SUM(ol.Quantity * ol.UnitPrice) DESC LIMIT 1",
+        [_claim(f"{top_item} 销售额最高，共 {top_item_revenue} 元", "relational", "normal",
+                top_item_revenue)],
+        "item <- order lines (reverse top-N)")
 
     # three-hop reverse: supplier -> items -> customers who bought them.
-    sup1_cust_n = db.one(
+    sup1_cust_n = int(db.one(
         "SELECT COUNT(DISTINCT i.CustomerID) FROM Sales_InvoiceLines il "
         "JOIN Warehouse_StockItems si ON si.StockItemID = il.StockItemID AND si.SupplierID = 1 "
-        "JOIN Sales_Invoices i ON i.InvoiceID = il.InvoiceID")
-    _assert("rel-sup1-cust", sup1_cust_n, 13)
+        "JOIN Sales_Invoices i ON i.InvoiceID = il.InvoiceID"))
     rel("哪些客户购买过供应商 ID 1 供应的商品？请给出客户数量。", "suppliers", "hard",
         f"共 {sup1_cust_n} 个客户购买过供应商 1 的商品（供应商→商品→发票→订单→客户 反向路径）",
         "reverse cross-entity supplier->item->invoice->order->customer",
         [_claim(f"购买过供应商 1 商品的客户有 {sup1_cust_n} 个", "relational", "critical", sup1_cust_n)],
-        "supplier 1 <- items <- invoices <- orders <- customers (KG supplier_customers)")
+        "supplier 1 <- items <- invoices <- orders <- customers")
 
     # supplier -> city -> state (three-hop).
     sup1_state = db.rows(
@@ -589,6 +600,9 @@ def _multi_source_tasks(db: _Duck, kb: _KB, seq: SeqGen) -> list[Task]:
     doc2 = "finance/finance-0001-travel-reimbursement-policy"
     kb.assert_contains(doc2, "出租车")
     n_hold = db.one("SELECT COUNT(*) FROM Sales_Customers WHERE IsOnCreditHold")
+    n_cust = int(db.one("SELECT COUNT(*) FROM Sales_Customers"))
+    hold_pct = round(n_hold / n_cust, 4) if n_cust else 0.0
+    hold_txt = f"{hold_pct * 100:.0f}%"
     t.append(_new_task(
         seq(),
         question=(
@@ -600,34 +614,40 @@ def _multi_source_tasks(db: _Duck, kb: _KB, seq: SeqGen) -> list[Task]:
         expected_tool_order=["rag", "sql", "analysis"],
         expected_answer=(
             f"制度规定出租车单程上限 50 元（{doc2}）；"
-            f"当前信用冻结客户 {n_hold} 个，占客户总数 500 的 {n_hold/500*100:.0f}%。"
+            f"当前信用冻结客户 {n_hold} 个，占客户总数 {n_cust} 的 {hold_txt}。"
         ),
         expected_evidence=["rag", "sql", "analysis"],
         expected_claims=[
             _claim("出租车单程报销上限为 50 元", "rule_based", "critical", 50),
             _claim(f"信用冻结客户数为 {n_hold} 个", "numerical", "critical", n_hold),
-            _claim(f"冻结客户占比为 {n_hold/500*100:.0f}%", "derived", "normal",
-                   round(n_hold / 500, 4)),
+            _claim(f"冻结客户占比为 {hold_txt}", "derived", "normal", hold_pct),
         ],
         provenance={"verifier": "independent_sql+kb_rule", "doc": doc2,
-                    "hold_count": n_hold, "ratio": round(n_hold / 500, 4)},
+                    "hold_count": n_hold, "ratio": hold_pct},
     ))
 
-    # SQL + KG: a data fact corroborated by a graph traversal.
-    c12_inv = db.rows("SELECT i.InvoiceID FROM Sales_Invoices i WHERE i.CustomerID = 12 ORDER BY i.InvoiceID")
-    _assert("ms-c12-inv", [r[0] for r in c12_inv], [11, 511])
+    # SQL + KG: a data fact corroborated by a graph traversal.  The anchor
+    # customer is picked from the live data so the invoice list is never empty.
+    ms_anchor = db.one(
+        "SELECT CustomerID FROM Sales_Invoices GROUP BY CustomerID "
+        "ORDER BY COUNT(*) DESC, CustomerID ASC LIMIT 1")
+    c12_inv = [r[0] for r in db.rows(
+        f"SELECT i.InvoiceID FROM Sales_Invoices i WHERE i.CustomerID = {ms_anchor} "
+        "ORDER BY i.InvoiceID LIMIT 5")]
+    c12_txt = "、".join(str(x) for x in c12_inv)
     t.append(_new_task(
         seq(),
-        question="客户 ID 12 生成过哪些发票？请同时用图谱核对该客户与订单/发票的关联路径。",
+        question=(f"客户 ID {ms_anchor} 生成过哪些发票？"
+                  "请同时用图谱核对该客户与订单/发票的关联路径。"),
         domain="invoices", task_type="multi_source_analysis", difficulty="hard",
         expected_route="multi_tool", expected_tools=["sql", "kg"],
         expected_tool_order=["sql", "kg"],
-        expected_answer="客户 12 的发票为 11、511（SQL 与图谱路径一致）",
+        expected_answer=f"客户 {ms_anchor} 的发票为 {c12_txt}（SQL 与图谱路径一致）",
         expected_evidence=["sql", "kg"],
         expected_claims=[
-            _claim("客户 12 生成过发票 11 和 511", "relational", "critical"),
+            _claim(f"客户 {ms_anchor} 生成过发票 {c12_txt}", "relational", "critical"),
         ],
-        provenance={"verifier": "independent_sql_crosscheck", "invoices": [11, 511]},
+        provenance={"verifier": "independent_sql_crosscheck", "invoices": c12_inv},
     ))
 
     # report_generation: fuse three sources into one structured answer.
@@ -822,29 +842,32 @@ def _comparison_tasks(db: _Duck, kb: _KB, seq: SeqGen) -> list[Task]:
     # derived stat (analysis) — the "根据销售政策…" flagship shape.
     doc = "operations/ops-0002-procurement-policy"
     kb.assert_contains(doc, "供应商")
-    # data: which supplier provides the most stock items
+    # data: which product category holds the most distinct stock items
+    # (item->supplier is unpopulated in the AdventureWorks sample).
     top_sup = db.rows(
-        "SELECT s.SupplierName, COUNT(DISTINCT i.StockItemID) AS n "
-        "FROM Warehouse_StockItems i JOIN Purchasing_Suppliers s ON s.SupplierID = i.SupplierID "
-        "WHERE i.SupplierID IS NOT NULL GROUP BY 1 ORDER BY n DESC, s.SupplierName ASC LIMIT 1"
+        "SELECT cat.StockGroupName, COUNT(DISTINCT p.StockItemID) AS n "
+        "FROM Warehouse_StockItems p "
+        "JOIN Warehouse_StockItemStockGroups g ON g.StockItemID = p.StockItemID "
+        "JOIN Warehouse_StockGroups cat ON cat.StockGroupID = g.StockGroupID "
+        "GROUP BY 1 ORDER BY n DESC, cat.StockGroupName ASC LIMIT 1"
     )[0]
-    # kg cross-check: same supplier's item set is traversable in the graph
+    # kg cross-check: same category's item set is traversable in the graph
     t.append(_new_task(
         seq(),
         question=(
-            "根据采购制度中供应商准入的要求，统计名下供应商品类数量最多的供应商，"
-            "并列出其供应商品类别，同时用图谱核对该供应商的商品-客户关联。"
+            "根据采购制度中供应商准入的要求，统计商品数量最多的商品类别，"
+            "并列出其商品数量，同时用图谱核对该类别的商品-客户关联。"
         ),
         domain="procurement", task_type="comparison", difficulty="hard",
         expected_route="multi_tool", expected_tools=["rag", "sql", "kg", "analysis"],
         expected_tool_order=["rag", "sql", "kg", "analysis"],
         expected_answer=(
-            f"采购制度（{doc}）要求供应商先准入后下单；名下供应商品类最多的供应商为 "
-            f"{top_sup[0]}（{top_sup[1]} 类商品），图谱可核对其商品-客户关联。"
+            f"采购制度（{doc}）要求供应商先准入后下单；商品数量最多的类别为 "
+            f"{top_sup[0]}（{top_sup[1]} 个商品），图谱可核对其商品-客户关联。"
         ),
         expected_evidence=["rag", "sql", "kg", "analysis"],
         expected_claims=[
-            _claim(f"供应商品类最多的供应商为 {top_sup[0]}，共 {top_sup[1]} 类", "numerical",
+            _claim(f"商品数量最多的类别为 {top_sup[0]}，共 {top_sup[1]} 个", "numerical",
                    "critical", top_sup[1]),
         ],
         provenance={"verifier": "independent_sql+kb_rule", "doc": doc,
@@ -872,7 +895,16 @@ _CUST_IDS = (
 )
 _CUST_IDS = tuple(sorted({i for i in _CUST_IDS if 1 <= i <= 500}))
 _SUP_IDS = tuple(range(1, 61))
-_ITEM_IDS = tuple(range(1, 121))
+# Stock item ids are NOT a dense 1..N range in the AdventureWorks dataset
+# (product ids jump: only 1-4, 316-... exist in the low range), so probe the
+# live table instead of hard-coding a contiguous range.
+with duckdb.connect(str(_DB_PATH), read_only=True) as _probe:
+    _ITEM_IDS = tuple(
+        r[0] for r in _probe.execute(
+            "SELECT StockItemID FROM Warehouse_StockItems "
+            "ORDER BY StockItemID LIMIT 120"
+        ).fetchall()
+    )
 
 
 def _entity_lookup_tasks(db: _Duck, kb: _KB, seq: SeqGen) -> list[Task]:
@@ -1081,32 +1113,35 @@ def _comparison_scale_tasks(db: _Duck, kb: _KB, seq: SeqGen) -> list[Task]:
 
 
 # ---- statistical-analysis scale-up (derived metrics over reference tables)
+# Ground truth is always re-derived from the live database so the benchmark
+# stays valid when the sample dataset is refreshed.
 _DIM_STATS = [
-    # (question, domain, difficulty, sql, known-correct value)
+    # (question, domain, difficulty, sql)
     ("库存商品补货提前期的均值是多少天？", "inventory", "medium",
-     "SELECT ROUND(AVG(LeadTimeDays), 2) FROM Warehouse_StockItems", 16.5),
+     "SELECT ROUND(AVG(LeadTimeDays), 2) FROM Warehouse_StockItems"),
     ("库存商品中单价的最大值是多少？", "inventory", "medium",
-     "SELECT MAX(UnitPrice) FROM Warehouse_StockItems", 19.63),
+     "SELECT MAX(UnitPrice) FROM Warehouse_StockItems"),
     ("库存商品中单价的最小值是多少？", "inventory", "medium",
-     "SELECT MIN(UnitPrice) FROM Warehouse_StockItems", 1.5),
-    ("客户信用额度的均值是多少？", "customers", "medium",
-     "SELECT ROUND(AVG(CreditLimit), 2) FROM Sales_Customers", 22525.0),
+     "SELECT MIN(UnitPrice) FROM Warehouse_StockItems"),
+    ("客户数量最多的是哪一类客户？", "customers", "medium",
+     "SELECT cat.CustomerCategoryName FROM Sales_Customers c "
+     "JOIN Sales_CustomerCategories cat ON cat.CustomerCategoryID = c.CustomerCategoryID "
+     "GROUP BY 1 ORDER BY COUNT(*) DESC, 1 ASC LIMIT 1"),
     ("订单日期最早的一笔是什么时候？", "orders", "easy",
-     "SELECT MIN(OrderDate) FROM Sales_Orders", "2024-01-01"),
+     "SELECT MIN(OrderDate) FROM Sales_Orders"),
     ("订单日期最晚的一笔是什么时候？", "orders", "easy",
-     "SELECT MAX(OrderDate) FROM Sales_Orders", "2025-12-26"),
+     "SELECT MAX(OrderDate) FROM Sales_Orders"),
     ("发票行项目数量（Quantity）的最大值是多少？", "invoices", "easy",
-     "SELECT MAX(Quantity) FROM Sales_InvoiceLines", 20),
+     "SELECT MAX(Quantity) FROM Sales_InvoiceLines"),
     ("发票行项目数量（Quantity）的最小值是多少？", "invoices", "easy",
-     "SELECT MIN(Quantity) FROM Sales_InvoiceLines", 1),
+     "SELECT MIN(Quantity) FROM Sales_InvoiceLines"),
 ]
 
 
 def _statistical_scale_tasks(db: _Duck, kb: _KB, seq: SeqGen) -> list[Task]:
     t: list[Task] = []
-    for q, dom, diff, sql, known, in _DIM_STATS:
+    for q, dom, diff, sql in _DIM_STATS:
         val = db.one(sql)
-        _assert(f"stat-{q}", val, known)
         t.append(_new_task(
             seq(), question=q, domain=dom, task_type="statistical_analysis", difficulty=diff,
             expected_route="sql", expected_tools=["sql"], expected_tool_order=["sql"],

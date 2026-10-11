@@ -131,7 +131,7 @@ def _fail(category: str, message: str) -> dict[str, Any]:
         "evidence": [], "verification": None, "guard": None,
         "any_error": True, "failure_categories": [category],
         "errors": [message], "llm_calls": 0,
-        "latency_ms": {"total": 0.0},
+        "latency_ms": {"total_ms": 0.0},
     }
 
 
@@ -280,7 +280,7 @@ def _stage_latencies(state: dict[str, Any], t_total: float) -> dict[str, float]:
     lat = state.get("latency") or {}
     out = {k: round(float(v), 2) for k, v in lat.items()}
     out["routing"] = out.get("routing", 0.0)
-    out["total"] = round(t_total * 1000.0, 2)
+    out["total_ms"] = round(t_total * 1000.0, 2)
     # derive a tool phase if the pipeline didn't tag it
     if "tool_execution" not in out and "execute" in out:
         out["tool_execution"] = out.get("execute", 0.0)
@@ -356,7 +356,7 @@ def _run_static_tool(config: SystemConfig, task: dict[str, Any]) -> dict[str, An
         "errors": err_lines[:5],
         "llm_calls": llm_calls,
         "latency_ms": {"routing": 0.0, "tool_execution": round((t_total) * 1000, 2),
-                       "verification": 0.0, "total": round(t_total * 1000, 2)},
+                       "verification": 0.0, "total_ms": round(t_total * 1000, 2)},
     }
     return pred
 
@@ -427,7 +427,7 @@ def _run_llm_only(config: SystemConfig, task: dict[str, Any]) -> dict[str, Any]:
         "errors": [err_msg] if categories else [],
         "llm_calls": 1,
         "latency_ms": {"routing": 0.0, "tool_execution": 0.0,
-                       "verification": 0.0, "total": round(t_total * 1000, 2)},
+                       "verification": 0.0, "total_ms": round(t_total * 1000, 2)},
     }
 
 

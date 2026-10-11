@@ -17,10 +17,9 @@ records the failure in ``state.errors``.
 
 from __future__ import annotations
 
-from src.core.config_loader import get_settings
-from src.core.exceptions import SQLGuardError
+from src.core.exceptions import SQLExecutionError, SQLGuardError
 from src.core.observability import observe
-from src.core.sql_executor import SQLExecutor, SQLResult
+from src.core.sql_executor import SQLExecutor, default_database_path
 from src.tools.base import ToolResult
 
 
@@ -31,18 +30,17 @@ class SQLTool:
 
     def __init__(self, executor: SQLExecutor | None = None) -> None:
         self._executor = executor
-        self._settings = get_settings().duckdb
 
     @observe("sql_exec")
     def run(self, *, sql: str, question: str | None = None) -> ToolResult:
         if not sql or not sql.strip():
             return ToolResult(tool_name=self.name, ok=False, error="empty sql")
         if self._executor is None:
-            self._executor = SQLExecutor(self._settings)
-            self._executor.connect()
-        assert self._executor is not None
+            # Same database the SQL execution node uses (data/runtime/wwi.duckdb).
+            self._executor = SQLExecutor(db_path=default_database_path())
+        executor = self._executor
         try:
-            result: SQLResult = self._executor.execute(sql)
+            payload = executor.execute(sql)
         except SQLGuardError as exc:
             return ToolResult(
                 tool_name=self.name,
@@ -50,17 +48,23 @@ class SQLTool:
                 error=f"guard rejected: {exc.message}",
                 metadata={"sql": sql, "details": exc.details},
             )
-        return self._to_result(result, sql, question)
-
-    @staticmethod
-    def _to_result(result: SQLResult, sql: str, question: str | None) -> ToolResult:
+        except SQLExecutionError as exc:
+            return ToolResult(
+                tool_name=self.name,
+                ok=False,
+                error=exc.message,
+                metadata={"sql": sql, "details": exc.details},
+            )
         return ToolResult(
-            tool_name="sql",
+            tool_name=self.name,
             ok=True,
-            data=result.to_payload(),
+            data=payload,
             evidence_ref=f"sql:{sql.strip()}",
-            metadata={"question": question, "row_count": result.row_count,
-                      "truncated": result.truncated},
+            metadata={
+                "question": question,
+                "row_count": payload.get("row_count", 0),
+                "truncated": payload.get("truncated", False),
+            },
         )
 
     @property

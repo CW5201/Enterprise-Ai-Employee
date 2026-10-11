@@ -22,7 +22,7 @@ from typing import Any
 from src.core.exceptions import LLMError
 from src.core.llm_client import LLMClient
 from src.core.observability import observe
-from src.core.state import AgentState, ErrorRecord, EvidenceItem, RetrievedChunk
+from src.core.state import AgentState, ErrorRecord, RetrievedChunk
 
 
 class AnswerGenerationNode:
@@ -36,17 +36,17 @@ class AnswerGenerationNode:
         route = str(state.get("route", ""))
         sql_result = state.get("sql_result")
         retrieved: list[RetrievedChunk | dict[str, Any]] = list(state.get("retrieved_context") or [])
-        evidence_in: list[EvidenceItem] = list(state.get("evidence") or [])
         errors: list[ErrorRecord] = list(state.get("errors") or [])
 
         has_sql = sql_result is not None
         has_rag = bool(retrieved)
         if not has_sql and not has_rag:
-            # honest empty-evidence answer (no guessing)
+            # honest empty-evidence answer (no guessing).  No new errors are
+            # raised here, and ``errors`` is an append channel: returning the
+            # list read from state would double every earlier error record.
             return {
                 "answer": _no_evidence_answer(question, route, errors),
                 "status": "completed_no_evidence",
-                "errors": errors,
             }
 
         system = _SYSTEM_PROMPT
@@ -60,18 +60,20 @@ class AnswerGenerationNode:
             answer = self._llm.generate(system, user)
             answer = _plain_answer(answer)
             status = "completed"
+            new_errors: list[ErrorRecord] = []
         except LLMError as exc:
             answer = _fallback_answer(question, intent, route, sql_result, retrieved)
             status = "completed_fallback"
-            errors.append(ErrorRecord(stage="answer_generation", message=exc.message))
+            new_errors = [ErrorRecord(stage="answer_generation", message=exc.message)]
 
-        # RAG evidence items carry source / chunk_id / score for citation
-        rag_evidence = [e for e in evidence_in if e.source_type in ("milvus", "fake")]
+        # Do NOT echo back ``evidence`` / the pre-existing ``errors``: both are
+        # append channels, so re-returning the list read from state would
+        # append a second copy of every item (RAG evidence doubled, the error
+        # ledger doubled).  Only new records are handed to the reducer.
         return {
             "answer": answer,
             "status": status,
-            "errors": errors,
-            "evidence": rag_evidence,
+            **({"errors": new_errors} if new_errors else {}),
         }
 
 

@@ -95,7 +95,8 @@ class SQLExecutionNode:
                         source_type="duckdb",
                         source_ref=f"duckdb:{sql}",
                         content=_summarise(sql, payload),
-                        payload={"columns": payload["columns"], "rows": payload["rows"], "row_count": payload["row_count"]},
+                        payload={"sql": sql, "columns": payload["columns"],
+                                 "rows": payload["rows"], "row_count": payload["row_count"]},
                         metadata={"intent": intent, "rationale": ""},
                     )
                 )
@@ -189,6 +190,17 @@ def _render_dictionary(doc: Any) -> str:
     if not doc or "metrics" not in doc:
         return "(dictionary not available)"
     out: list[str] = []
+    coverage = doc.get("coverage") or {}
+    if coverage:
+        parts = [
+            f"{label} {coverage[key]}"
+            for key, label in (("order_date", "orders"), ("invoice_date", "invoices"))
+            if coverage.get(key)
+        ]
+        if parts:
+            out.append(f"data coverage: {', '.join(parts)}")
+        if coverage.get("note"):
+            out.append(f"coverage note: {coverage['note']}")
     for name, spec in (doc.get("metrics") or {}).items():
         out.append(f"- {name} ({spec.get('chinese', '')}): {spec.get('definition', '')} [{spec.get('formula', '')}]")
     for note in doc.get("notes", []) or []:

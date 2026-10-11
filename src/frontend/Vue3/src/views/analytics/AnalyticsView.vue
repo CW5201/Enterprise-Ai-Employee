@@ -196,7 +196,10 @@ onBeforeUnmount(() => {
 <style scoped>
 .kpi-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  /* min(Npx, 100%): on a viewport too narrow for Npx the track collapses to
+     the full row instead of overflowing it (a bare minmax(Npx, 1fr) forces
+     the column past the container and adds a horizontal scrollbar). */
+  grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr));
   gap: var(--eae-space-3);
   margin-bottom: var(--eae-space-4);
 }
@@ -230,7 +233,7 @@ onBeforeUnmount(() => {
 
 .charts-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
   gap: var(--eae-space-4);
 }
 

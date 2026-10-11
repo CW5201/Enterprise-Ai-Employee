@@ -191,7 +191,9 @@ onBeforeUnmount(() => {
 
 .graph-layout {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  /* min(Npx, 100%) keeps a single column on narrow screens instead of
+     forcing a 360px track that overflows the container. */
+  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
   gap: var(--eae-space-4);
 }
 

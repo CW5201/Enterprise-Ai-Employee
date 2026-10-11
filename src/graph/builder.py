@@ -181,7 +181,7 @@ class DigitalEmployee:
         set_task_latencies(state["latency"])
         # Wrap the whole run in one observe stage so ``total_ms`` is
         # written into the latency table alongside the per-stage entries.
-        with observe("total"):
+        with observe("total_ms"):
             result = self._graph.invoke(state)
         return cast(AgentState, result)
 

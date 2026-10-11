@@ -77,8 +77,10 @@ volumes/
 # --- Large raw datasets ----------------------------------------------------
 data/raw/
 data/external/
+data/downloads/
 *.zip
 *.tar.gz
+*.bacpac
 data/*.csv
 
 # --- Local overrides -------------------------------------------------------

@@ -65,4 +65,13 @@ onBeforeUnmount(() => {
   padding: var(--eae-space-5);
   background: var(--eae-bg);
 }
+
+/* Narrow viewports: the 220px aside collapses to 64px, so the main column
+   gains width, but a 20px gutter on both sides is still 40px of dead space
+   on a 360px phone. Tighten it so grid panes (minmax 360px) keep room. */
+@media (max-width: 640px) {
+  .app-main {
+    padding: var(--eae-space-3);
+  }
+}
 </style>

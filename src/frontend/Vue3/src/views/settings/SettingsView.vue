@@ -114,7 +114,9 @@ onMounted(load)
 
 .kv span:first-child {
   color: var(--eae-text-secondary);
-  flex: 0 0 180px;
+  /* min() so the label yields space on narrow viewports instead of
+     squeezing the value (offline / collection names wrap badly at 180px). */
+  flex: 0 0 min(180px, 45%);
 }
 
 .desc-text {

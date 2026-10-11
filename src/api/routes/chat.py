@@ -19,6 +19,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from src.api.routes.reports import record_run_report, should_record_report
+from src.api.routes.tasks import record_task, task_status_for_run
 from src.core.state import AgentState
 from src.graph.builder import DigitalEmployee
 
@@ -109,6 +110,25 @@ def chat(request: Request, body: ChatRequest) -> dict[str, Any]:
             )
         except Exception:  # noqa: BLE001
             logger.exception("report assembly failed for request %s", payload["request_id"])
+
+    # 任务历史 (FH-TASK-001 for the blocking path).  The streaming route
+    # already recorded every run, so a workbench user running the same task
+    # through POST /api/chat saw its report in the report centre while 任务
+    # history stayed empty.  When the caller is POST /api/tasks, that route
+    # has pre-created a "running" record under the same request_id and this
+    # write updates it in place (same id) rather than adding a second row.
+    # Recording is best-effort: it must never fail an already successful run.
+    try:
+        record_task(
+            question=text,
+            status=task_status_for_run(status=str(payload["status"]), answer=str(payload["answer"])),
+            route=str(payload["route"] or ""),
+            answer=str(payload["answer"] or ""),
+            latency_ms=float((payload.get("latency") or {}).get("total_ms") or 0.0),
+            task_id=str(payload["request_id"] or "") or None,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("failed to record run in task history (request %s)", payload["request_id"])
 
     return payload
 

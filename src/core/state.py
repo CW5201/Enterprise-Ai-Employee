@@ -166,6 +166,12 @@ class AgentState(TypedDict, total=False):
     verification_summary: dict[str, Any]
     # answer_guard verdict written last (Phase 4 commit 4)
     guard_decision: dict[str, Any]
+    # User-safe citation list assembled by answer_guard (doc titles / chunk
+    # refs / tables / KG templates).  Exposed by the API as `sources`.  It
+    # MUST be declared here: LangGraph silently drops any key a node returns
+    # that is not part of the state schema, so an undeclared key would make
+    # `sources` come back empty on every run.
+    answer_sources: list[dict[str, Any]]
 
     # --- output -------------------------------------------------------------
     answer: str
@@ -227,6 +233,7 @@ def make_state(user_query: str, *, request_id: str | None = None) -> AgentState:
         "verification_results": [],
         "verification_summary": {},
         "guard_decision": {},
+        "answer_sources": [],
         "answer": "",
         "latency": {},
         "status": "",

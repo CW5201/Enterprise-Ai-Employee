@@ -11,12 +11,15 @@ this, streamed runs were invisible there while their reports existed
 
 from __future__ import annotations
 
+import logging
 import time
 import uuid
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
+
+logger = logging.getLogger("eae.api.tasks")
 
 router = APIRouter(tags=["tasks"])
 
@@ -148,16 +151,29 @@ def create_task(body: dict[str, Any], request: Request) -> TaskOut:
 
     try:
         result = _run_chat(request, ChatRequest(message=question, request_id=task_id))
-        record["status"] = "completed"
-        record["route"] = result.get("route", "")
-        record["answer"] = result.get("answer", "")
-        record["latency_ms"] = result.get("latency", {}).get("total_ms", 0.0)
     except Exception:  # noqa: BLE001
+        # chat() records the finished run itself via record_task(); this
+        # fallback only covers a crash that happened before that point.
+        logger.exception("task %s crashed before it could be recorded", task_id)
         record["status"] = "failed"
-    finally:
         record["completed_at"] = _now_iso()
+    else:
+        # chat() normally records the run under the same task_id, which
+        # REPLACES the pre-created dict above with a new one carrying the real
+        # status / answer / latency.  Writing onto the local `record` after
+        # that would land on an orphaned object, so the store wins whenever it
+        # has been written (a clarification run would otherwise be reported to
+        # the client as "completed" while the history says "clarification").
+        if _tasks.get(task_id) is record:
+            record["status"] = "completed"
+            record["route"] = result.get("route", "")
+            record["answer"] = result.get("answer", "")
+            record["latency_ms"] = result.get("latency", {}).get("total_ms", 0.0)
+            record["completed_at"] = _now_iso()
 
-    return _to_out(record)
+    final = _tasks.get(task_id) or record
+    final["completed_at"] = final.get("completed_at") or _now_iso()
+    return _to_out(final)
 
 
 @router.get("/tasks", response_model=list[TaskOut])

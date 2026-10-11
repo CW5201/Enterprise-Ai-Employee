@@ -115,6 +115,17 @@ class SQLExecutor:
                 f"SQL query timed out after {self.timeout_seconds}s",
                 details={"sql": safe_sql},
             ) from exc
+        except duckdb.Error as exc:
+            # LLM-generated SQL routinely hits catalog / parser errors.  The
+            # contract (see the module docstring) is that every failure is an
+            # SQLExecutionError carrying details, and every caller
+            # (SQLExecutionNode, SQLTool) only catches that type — letting a
+            # raw DuckDB exception escape would propagate out of the graph as
+            # a 500 instead of being recorded in state["errors"].
+            raise SQLExecutionError(
+                f"DuckDB rejected the statement: {exc}",
+                details={"sql": safe_sql, "duckdb_error": str(exc)},
+            ) from exc
         payload["execution_time_ms"] = round((time.perf_counter() - start) * 1000.0, 2)
         return payload
 

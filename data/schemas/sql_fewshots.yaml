@@ -1,36 +1,63 @@
-version: v0.2
+version: v0.3
 dialect: duckdb
-target_database: WideWorldImporters
+target_database: AdventureWorks (WideWorldImporters schema)
 status: verified
-generated_at: '2026-09-29 15:31:32'
+generated_at: '2026-10-11 15:14:18'
 few_shots:
 - id: fs-001
-  question: 订单数量最多的前 10 个客户
-  sql: SELECT c.CustomerName, COUNT(o.OrderID) AS order_count FROM Sales_Orders o JOIN Sales_Customers c ON c.CustomerID =
-    o.CustomerID GROUP BY c.CustomerName ORDER BY order_count DESC LIMIT 10
-  rows_returned: 0
+  question: 最近三个月的销售额是多少（以数据中最新日期为锚点）
+  sql: WITH mx AS (SELECT MAX(OrderDate) AS d FROM Sales_Orders) SELECT SUM(ol.Quantity * ol.UnitPrice) AS total_revenue FROM
+    Sales_Orders o JOIN Sales_OrderLines ol ON ol.OrderID = o.OrderID, mx WHERE o.OrderDate >= mx.d - INTERVAL 3 MONTH
+  rows_returned: 1
   difficulty: medium
   status: verified
 - id: fs-002
-  question: 每个销售区域（州/省）的发票总金额
-  sql: SELECT sp.SalesTerritory, SUM(ol.Quantity * ol.UnitPrice) AS total_revenue FROM Sales_InvoiceLines ol JOIN Sales_Invoices
-    i ON i.InvoiceID = ol.InvoiceID JOIN Sales_Customers c ON c.CustomerID = i.CustomerID JOIN Application_Cities ct ON ct.CityID
-    = c.DeliveryCityID LEFT JOIN Application_StateProvinces sp ON sp.StateProvinceID = ct.StateProvinceID GROUP BY sp.SalesTerritory
-    ORDER BY total_revenue DESC
-  rows_returned: 0
+  question: 订单数量最多的前 10 个客户
+  sql: SELECT c.CustomerName, COUNT(o.OrderID) AS order_count FROM Sales_Orders o JOIN Sales_Customers c ON c.CustomerID =
+    o.CustomerID GROUP BY c.CustomerName ORDER BY order_count DESC LIMIT 10
+  rows_returned: 10
   difficulty: medium
   status: verified
 - id: fs-003
   question: 销售额最高的 5 个商品类别
-  sql: SELECT sg.StockGroupName, SUM(ol.Quantity * ol.UnitPrice) AS revenue FROM Sales_InvoiceLines ol JOIN Warehouse_StockItemStockGroups
+  sql: SELECT sg.StockGroupName, SUM(ol.Quantity * ol.UnitPrice) AS revenue FROM Sales_OrderLines ol JOIN Warehouse_StockItemStockGroups
     sgk ON sgk.StockItemID = ol.StockItemID JOIN Warehouse_StockGroups sg ON sg.StockGroupID = sgk.StockGroupID GROUP BY sg.StockGroupName
     ORDER BY revenue DESC LIMIT 5
-  rows_returned: 0
+  rows_returned: 4
+  difficulty: medium
+  status: verified
+- id: fs-004
+  question: 每个销售员的销售额排名
+  sql: SELECT p.FullName, SUM(ol.Quantity * ol.UnitPrice) AS revenue FROM Sales_OrderLines ol JOIN Sales_Orders o ON o.OrderID
+    = ol.OrderID JOIN Application_People p ON p.PersonID = o.SalespersonPersonID GROUP BY p.FullName ORDER BY revenue DESC
+  rows_returned: 17
+  difficulty: medium
+  status: verified
+- id: fs-005
+  question: 2024 年每月订单金额趋势
+  sql: SELECT strftime(o.OrderDate, '%Y-%m') AS month, SUM(ol.Quantity * ol.UnitPrice) AS revenue FROM Sales_Orders o JOIN
+    Sales_OrderLines ol ON ol.OrderID = o.OrderID WHERE o.OrderDate >= DATE '2024-01-01' AND o.OrderDate < DATE '2025-01-01'
+    GROUP BY 1 ORDER BY 1
+  rows_returned: 12
+  difficulty: medium
+  status: verified
+- id: fs-006
+  question: 客单价最高的 5 个客户
+  sql: SELECT c.CustomerName, SUM(ol.Quantity * ol.UnitPrice) / COUNT(DISTINCT o.OrderID) AS avg_order_value FROM Sales_Orders
+    o JOIN Sales_OrderLines ol ON ol.OrderID = o.OrderID JOIN Sales_Customers c ON c.CustomerID = o.CustomerID GROUP BY c.CustomerName
+    HAVING COUNT(DISTINCT o.OrderID) >= 5 ORDER BY avg_order_value DESC LIMIT 5
+  rows_returned: 5
+  difficulty: medium
+  status: verified
+- id: fs-007
+  question: 毛利润最高的 10 个商品
+  sql: SELECT s.StockItemName, SUM(il.LineProfit) AS gross_profit FROM Sales_InvoiceLines il JOIN Warehouse_StockItems s ON
+    s.StockItemID = il.StockItemID GROUP BY s.StockItemName ORDER BY gross_profit DESC LIMIT 10
+  rows_returned: 10
   difficulty: medium
   status: verified
 constraints:
-- statement_must_be_read_only
-- 'allowed_statements: [SELECT, WITH]'
-- must_alias_aggregates
-- must_qualify_ambiguous_columns
-- prefer_explicit_join
+- Sales_OrderLines.Quantity * Sales_OrderLines.UnitPrice 是订单金额口径。
+- Sales_InvoiceLines.ExtendedPrice 是已开票金额口径，LineProfit 是毛利。
+- 数据覆盖 2022-05-30 至 2025-06-29，相对日期请锚定 MAX(OrderDate)。
+- Sales_Customers 的地理字段为 NULL，不要做跨省/跨区域聚合。

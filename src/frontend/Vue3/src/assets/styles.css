@@ -120,13 +120,24 @@ body {
   margin: 2px 0 0;
 }
 
-/* Page header row: title + subtitle on the left, actions on the right */
+/* Page header row: title + subtitle on the left, actions on the right.
+   flex-wrap lets the actions group drop onto its own line on narrow
+   screens (Knowledge / Graph carry a 220px search input plus a select,
+   which cannot share a 500px row with the title). */
 .page-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: var(--eae-space-3);
   margin-bottom: var(--eae-space-4);
+}
+
+/* Grow so the actions are pushed right on wide screens, but keep a base
+   width so the wrap is decided against a realistic title size. */
+.page-head > :first-child {
+  flex: 1 1 220px;
+  min-width: 0;
 }
 
 .page-sub {

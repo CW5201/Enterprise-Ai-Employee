@@ -50,7 +50,7 @@
             <el-table-column prop="question" label="任务" min-width="160" show-overflow-tooltip />
             <el-table-column label="状态" width="90">
               <template #default="{ row }">
-                <el-tag size="small" :type="statusType(row.status)">{{ row.status }}</el-tag>
+                <el-tag size="small" :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag>
               </template>
             </el-table-column>
             <el-table-column prop="route" label="路由" width="90" show-overflow-tooltip />
@@ -66,7 +66,7 @@
           <div class="panel-head">
             结果
             <el-tag v-if="result" size="small" class="head-tag" :type="statusType(result.status)">
-              {{ result.status }}
+              {{ statusLabel(result.status) }}
             </el-tag>
             <template v-if="result">
               <el-button size="small" text @click="exportResult('md')">导出 Markdown</el-button>
@@ -199,9 +199,9 @@ function loadTask(row: TaskRecord) {
   trace.value = [
     { title: '任务提交', detail: row.question, status: 'ok' },
     {
-      title: row.status === 'completed' ? '执行完成' : '执行失败',
+      title: statusType(row.status) === 'danger' ? '执行失败' : '执行完成',
       detail: row.route,
-      status: row.status === 'completed' ? 'ok' : 'error',
+      status: statusType(row.status) === 'danger' ? 'error' : 'ok',
     },
   ]
 }
@@ -233,7 +233,14 @@ function buildTrace(result: ChatResponse): TraceStep[] {
       status: 'ok',
     })
   }
-  steps.push({ title: '完成', detail: fmtMs(result.latency?.total_ms), status: result.status === 'completed' ? 'ok' : 'error' })
+  steps.push({
+    title: '完成',
+    detail: fmtMs(result.latency?.total_ms),
+    // Only a genuinely failed terminal state is an error. The graph reports
+    // claims_empty / verified / guarded for successful runs, so comparing
+    // against 'completed' alone painted every successful run's last step red.
+    status: statusType(result.status) === 'danger' ? 'error' : 'ok',
+  })
   return steps
 }
 
@@ -500,10 +507,67 @@ function exportResult(kind: 'md' | 'json') {
 
 function statusType(status: string): 'success' | 'danger' | 'warning' | 'info' {
   const s = (status ?? '').toLowerCase()
-  if (['completed', 'ok', 'success'].includes(s)) return 'success'
-  if (['failed', 'error'].includes(s)) return 'danger'
-  if (['running', 'pending'].includes(s)) return 'warning'
+  // Terminal states the graph actually produces (see answer_guard /
+  // claim_extraction / answer_generation). A run that answered is a success
+  // even when it carried no claims — otherwise every successful task shows
+  // up as a gray "info" chip because its status is claims_empty / verified.
+  if (
+    [
+      'completed',
+      'ok',
+      'success',
+      'verified',
+      'guarded',
+      'executed',
+      'claims_extracted',
+      'claims_empty',
+      'completed_no_evidence',
+      'completed_fallback',
+    ].includes(s)
+  )
+    return 'success'
+  if (
+    [
+      'failed',
+      'error',
+      'guard_blocked',
+      'execution_all_failed',
+      'execution_no_plan',
+      'claims_extraction_failed',
+    ].includes(s)
+  )
+    return 'danger'
+  if (s === 'running' || s === 'pending' || s.startsWith('clarif')) return 'warning'
   return 'info'
+}
+
+/** Human label for the pipeline's internal terminal status codes. */
+function statusLabel(status: string): string {
+  const map: Record<string, string> = {
+    completed: '完成',
+    ok: '完成',
+    success: '完成',
+    verified: '完成（已验证）',
+    guarded: '完成（含待核实）',
+    executed: '完成',
+    claims_extracted: '完成',
+    claims_empty: '完成（无 claim）',
+    completed_no_evidence: '完成（无证据）',
+    completed_fallback: '完成（兜底回答）',
+    guard_blocked: '已阻止',
+    execution_all_failed: '执行失败',
+    execution_no_plan: '无法执行',
+    claims_extraction_failed: '验证失败',
+    failed: '失败',
+    error: '错误',
+    running: '执行中',
+    pending: '等待中',
+    clarification: '待澄清',
+  }
+  const s = (status ?? '').toLowerCase()
+  if (map[s]) return map[s]
+  if (s.startsWith('clarif')) return '待澄清'
+  return status || '—'
 }
 
 onMounted(refreshHistory)

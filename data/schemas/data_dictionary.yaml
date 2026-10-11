@@ -1,7 +1,13 @@
-version: v0.2
+version: v0.3
 status: verified
-generated_at: '2026-09-29 15:31:32'
-source_database: WideWorldImporters
+generated_at: '2026-10-11 15:14:18'
+source_database: AdventureWorks OLTP (sales facts) + WideWorldImporters (schema)
+source_note: Sales / customer / product / people tables are populated from Microsoft's official AdventureWorks OLTP sample
+  dataset. The table and column names keep the WideWorldImporters spelling so existing tool schemas stay valid.
+coverage:
+  order_date: 2022-05-30 .. 2025-06-29
+  invoice_date: 2022-06-06 .. 2025-07-06
+  note: 数据截止 2025 年中；遇到“最近三个月/最近一年”等相对时间问题时，请以 MAX(OrderDate) 为锚点向前推算，而不是用今天的日历日期，否则会查出空结果。
 tables:
   Application_Cities:
     primary_key: []
@@ -1000,26 +1006,14 @@ tables:
       type: INTEGER
     - name: StockItemID
       type: INTEGER
-    - name: CustomerID
-      type: INTEGER
-    - name: BuyingGroupID
-      type: INTEGER
-    - name: CustomerCategoryID
-      type: INTEGER
-    - name: StockGroupID
-      type: INTEGER
-    - name: DealDescription
-      type: VARCHAR
+    - name: DiscountPercentage
+      type: DECIMAL(18,3)
     - name: StartDate
       type: DATE
     - name: EndDate
       type: DATE
-    - name: DiscountAmount
-      type: DECIMAL(18,2)
-    - name: DiscountPercentage
-      type: DECIMAL(18,3)
-    - name: UnitPrice
-      type: DECIMAL(18,2)
+    - name: Description
+      type: VARCHAR
     - name: LastEditedBy
       type: INTEGER
     - name: LastEditedWhen
@@ -1115,9 +1109,7 @@ tables:
       type: VARCHAR
     - name: LastEditedBy
       type: INTEGER
-    - name: ValidFrom
-      type: TIMESTAMP
-    - name: ValidTo
+    - name: LastEditedWhen
       type: TIMESTAMP
   Warehouse_StockGroups_Archive:
     primary_key: []
@@ -1233,9 +1225,7 @@ tables:
     - name: Photo
       type: BLOB
     - name: CustomFields
-      type: VARCHAR
-    - name: Tags
-      type: VARCHAR
+      type: JSON
     - name: SearchDetails
       type: VARCHAR
     - name: LastEditedBy
@@ -1330,17 +1320,32 @@ tables:
 metrics:
   total_revenue:
     chinese: 总营收
-    definition: SUM(Orders.TotalProfit)，订单毛利润合计（WWI 无 Amount 列，以 TotalProfit 为营收口径）
-    formula: SUM(TotalProfit) FROM Sales_Orders
+    definition: 订单行金额合计 = Quantity * UnitPrice（发票口径见 ExtendedPrice）
+    formula: SUM(Quantity * UnitPrice) FROM Sales_OrderLines
+  invoiced_revenue:
+    chinese: 已开票营收
+    definition: 发票行的扩展金额合计，已扣折扣
+    formula: SUM(ExtendedPrice) FROM Sales_InvoiceLines
+  gross_profit:
+    chinese: 毛利润
+    definition: 发票行毛利 = ExtendedPrice - 标准成本 * 数量
+    formula: SUM(LineProfit) FROM Sales_InvoiceLines
   order_count:
     chinese: 订单量
-    definition: 订单数量（不含 Backorder 标记）
-    formula: COUNT(OrderID) FROM Sales_Orders WHERE IsUndersupplyBackordered = false
+    definition: 订单头数量
+    formula: COUNT(OrderID) FROM Sales_Orders
   active_customer:
     chinese: 活跃客户
     definition: 统计周期内至少产生 1 笔订单的客户
     formula: COUNT(DISTINCT CustomerID) FROM Sales_Orders
+  average_order_value:
+    chinese: 客单价
+    definition: 订单金额合计 / 订单数
+    formula: SUM(Quantity * UnitPrice) / COUNT(DISTINCT OrderID)
 notes:
-- 本字典由 scripts/import_wwi.py 从 DuckDB 内省结果自动生成（v0.2 起不再手维护）。
-- WideWorldImporters 为微软公开示例库，全部数据均为虚构，不得声称属于任何真实企业。
+- 本字典由 scripts/import_adventureworks.py 从 DuckDB 内省结果自动生成。
+- 销售事实表（Sales_Orders / Sales_OrderLines / Sales_Invoices / Sales_InvoiceLines / Sales_CustomerTransactions）与客户、商品、人员维度表均为
+  Microsoft AdventureWorks 官方示例数据，属公开教学数据集，不得声称属于任何真实企业。
+- Sales_CustomerCategories / Warehouse_StockGroups 由商品类别映射生成；Sales_Customers 的地理字段（DeliveryCityID 等）为 NULL，跨地区分析请改用 Sales_SpecialDeals
+  或商品类别维度。
 - WWI 维度表主键为 varchar dimension id（如 'WWI1'），非自增 int。

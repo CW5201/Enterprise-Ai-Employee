@@ -2,6 +2,28 @@
 
 > 状态：Phase 2.3 已更新（2026-09-30）。
 >
+> **数据来源（2026-10-11 更新）：**
+>
+> - **销售业务数据来自 Microsoft AdventureWorks OLTP 官方示例库**
+>   （`AdventureWorks-oltp-install-script.zip`，tab 分隔 CSV、无表头），
+>   由 `scripts/import_adventureworks.py` 导入 `data/runtime/wwi.duckdb`，
+>   **沿用 WideWorldImporters 的表名/列名**以保持工具 Schema 与 SQL Few-shot 向后兼容。
+>   - `Sales_Orders` 31,465 行（原 800 行合成数据）
+>   - `Sales_OrderLines` **121,317 行（原为 0 行空表）**
+>   - `Sales_Invoices` / `Sales_InvoiceLines` 各 31,465 / 121,317 行
+>   - `Sales_CustomerTransactions` **31,465 行（原为 0 行空表）**
+>   - `Sales_Customers` 19,820 / `Warehouse_StockItems` 504 /
+>     `Application_People` **19,972 行（原为 0 行空表）**
+>   - **数据覆盖 2022-05-30 .. 2025-07-06**；相对时间类问题（"最近三个月"）
+>     请以 `MAX(OrderDate)` 为锚点，该指引已注入 Text-to-SQL 的数据字典上下文。
+>   - 原始 CSV 位于 `data/downloads/aw-oltp/`（已被 gitignore，不入 Git）；
+>     导入前的旧库备份为 `data/runtime/wwi_before_aw.duckdb`。
+>   - 该数据集为微软公开教学数据集，**不得声称属于任何真实企业**。
+>
+> - WideWorldImporters 仍提供 **表结构（DDL）与维度表数据**
+>   （`Application_*` / `Purchasing_*` / `Warehouse_Colors` 等），
+>   不再作为销售金额类指标的数据源。
+>
 > **当前仓库数据资产（已入库）**：
 > - `data/raw/wwi_ddl/` — WideWorldImporters 官方 T-SQL DDL 与种子脚本
 >   （本地下载，已被 `.gitignore` 忽略，**不进 Git**）；

@@ -28,7 +28,13 @@ import time
 from typing import Any, cast
 
 from src.core.observability import observe
-from src.core.state import AgentState, ErrorRecord, EvidenceItem, ToolCallRecord
+from src.core.state import (
+    AgentState,
+    ErrorRecord,
+    EvidenceItem,
+    RetrievedChunk,
+    ToolCallRecord,
+)
 from src.tools.analysis_tool import AnalysisTool
 from src.tools.kg_tool import KGTool
 from src.tools.rag_tool import RAGTool
@@ -36,6 +42,26 @@ from src.tools.rag_tool import RAGTool
 # Tools the orchestrator can dispatch.  Any step tool NOT in this set is
 # recorded as skipped_unsupported (no silent fallback).
 _SUPPORTED = {"sql", "rag", "kg", "analysis"}
+
+
+def _to_chunk(item: dict[str, Any]) -> RetrievedChunk:
+    """Normalise one RAG hit into a ``RetrievedChunk`` (same shape as the
+    standalone RAG node produces, so the answer prompt sees identical data)."""
+    return RetrievedChunk(
+        chunk_id=str(item.get("chunk_id", "")),
+        text=str(item.get("text", "")),
+        source=str(item.get("source", "")),
+        metadata={
+            **(item.get("metadata") or {}),
+            "document_id": item.get("document_id", ""),
+            "title": item.get("title", ""),
+            "category": item.get("category", ""),
+            "dense_score": item.get("dense_score", 0.0),
+            "bm25_score": item.get("bm25_score", 0.0),
+            "fusion_score": item.get("fusion_score", 0.0),
+        },
+        score=float(item.get("fusion_score", item.get("score", 0.0)) or 0.0),
+    )
 
 
 def _evidence_ref(payload: dict[str, Any]) -> str | None:
@@ -101,6 +127,15 @@ class MultiToolExecutionNode:
         # nodes; we mirror it into a private channel so dispatch can read it.
         working_results: list[dict[str, Any]] = []
 
+        # The answer node reads the sql / sql_result / retrieved_context
+        # channels directly and never looks inside tool_results, so the
+        # orchestrator lifts the executed tool output back into those
+        # channels.  Without this every phase-3 run reaches the answer node
+        # with no evidence and answers "the tool produced no data".
+        last_sql = ""
+        last_sql_result: Any | None = None
+        rag_chunks: list[RetrievedChunk] = []
+
         for step in sorted(plan, key=lambda s: int(s.get("step", 0))):
             tool = str(step.get("tool", ""))
             step_id = int(step.get("step", 0))
@@ -150,6 +185,11 @@ class MultiToolExecutionNode:
             if ok:
                 succeeded.add(step_id)
                 evidence.extend(payload.get("evidence") or [])
+                if tool == "sql":
+                    last_sql = str(payload.get("sql") or "")
+                    last_sql_result = payload.get("sql_result")
+                elif tool == "rag":
+                    rag_chunks.extend(payload.get("retrieved_context") or [])
             else:
                 err_details = payload.get("error_details")
                 details: dict[str, Any] = err_details if isinstance(err_details, dict) else (
@@ -170,6 +210,14 @@ class MultiToolExecutionNode:
             "errors": errors,
             "evidence": evidence,
             "status": "executed" if succeeded else "execution_all_failed",
+            # Lifted tool output for AnswerGenerationNode (see the comment at
+            # the tracking variables above).  An empty retrieved_context is a
+            # no-op for the _append reducer; sql / sql_result are
+            # last-write-wins and simply keep their make_state() defaults
+            # when no sql step succeeded.
+            "sql": last_sql,
+            "sql_result": last_sql_result,
+            "retrieved_context": rag_chunks,
         }
 
     # -- dispatch -------------------------------------------------------------
@@ -199,6 +247,11 @@ class MultiToolExecutionNode:
         return {
             "tool": "sql",
             "success": ok,
+            # AnswerGenerationNode reads the ``sql`` / ``sql_result`` channels
+            # directly and never inspects ``tool_results``, so the executor
+            # has to surface them here for run() to lift back into state.
+            "sql": str(out.get("sql") or state.get("sql") or ""),
+            "sql_result": sql_result,
             "data": {"columns": columns, "rows": rows, "row_count": len(rows)},
             "error": None if ok else "sql execution failed or produced no result",
             "error_details": ([e.details for e in out.get("errors", [])] if not ok else {}),
@@ -210,9 +263,13 @@ class MultiToolExecutionNode:
         res = tool.run(query=str(state.get("user_query", "")))
         ok = bool(res.get("ok"))
         hits = res.get("results", [])
+        chunks = [_to_chunk(h) for h in hits]
         return {
             "tool": "rag",
             "success": ok,
+            # Same reason as _run_sql: the answer node reads retrieved_context,
+            # not tool_results, so the chunks have to be lifted into state.
+            "retrieved_context": chunks,
             "data": {"hits": len(hits), "top": [
                 {"chunk_id": h.get("chunk_id"), "source": h.get("source"), "score": h.get("score")}
                 for h in hits[:3]

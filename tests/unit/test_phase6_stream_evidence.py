@@ -172,3 +172,163 @@ def test_chat_run_records_a_report(client: TestClient) -> None:
     listing = client.get("/api/reports").json()
     assert listing, f"a finished run (status={body['status']!r}) must be stored as a report"
     assert listing[0]["evidence_count"] == len(body["evidence"])
+
+
+# --- latency contract (FH-LAT-001) -----------------------------------------
+#
+# The graph writes per-stage latencies into ``state["latency"]`` via the
+# ``@observe`` decorators, and the run's end-to-end time under the key the
+# API, the task history and the frontend all read: ``total_ms``.  Hand-written
+# dict deltas (``test_phase6_sse.py``) fake that table, so they can never
+# catch a route that forgets to bind it — which is exactly what the streaming
+# path used to do: it called ``employee._graph.stream()`` directly, outside
+# ``DigitalEmployee.run()``, so no table was bound and the browser always
+# rendered 耗时 "—".
+#
+# Two defects are pinned here:
+#   1. the key name (``total_ms``, never ``total``) — the eval aggregator reads
+#      the same key off ``record["latency_ms"]``;
+#   2. the binding must survive every SSE ``__next__()``: Starlette drives the
+#      body with ``iterate_in_threadpool()``, which copies the request task's
+#      contextvars on *each* call, so a ``set_task_latencies()`` performed
+#      inside the generator only reached the first node.
+
+
+@pytest.mark.unit
+def test_streamed_run_records_every_stage_and_total_ms(client: TestClient) -> None:
+    """SSE: the completed payload carries the real latency table."""
+    events = _stream(client)
+    payload = next(e for e in events if e["type"] == "completed")["payload"]
+    latency = payload.get("latency")
+    assert isinstance(latency, dict) and latency, "streamed run produced no latency table"
+
+    # the end-to-end key the frontend reads (fmtMs(result.latency.total_ms))
+    assert "total_ms" in latency, f"latency table lacks total_ms: {sorted(latency)}"
+    assert "total" not in latency, (
+        "the run wrote 'total' but the API/frontend read 'total_ms'; "
+        "keep the two in sync (see src/graph/builder.py)"
+    )
+    assert float(latency["total_ms"]) > 0
+
+    # every @observe-decorated node that ran must have left a stage entry,
+    # proving the contextvar binding survived each __next__() of the stream
+    for stage in ("intent", "routing"):
+        assert stage in latency, f"stage {stage!r} not recorded (table={sorted(latency)})"
+    assert len([k for k in latency if k != "total_ms"]) >= 2, (
+        "only the first node's latency was recorded — the table binding is "
+        "lost between SSE __next__() calls"
+    )
+
+
+@pytest.mark.unit
+def test_chat_run_records_total_ms(client: TestClient) -> None:
+    """Blocking path: POST /api/chat exposes the same end-to-end key."""
+    body = client.post("/api/chat", json={"message": _QUESTION}).json()
+    latency = body.get("latency")
+    assert isinstance(latency, dict) and latency
+    assert "total_ms" in latency, f"latency table lacks total_ms: {sorted(latency)}"
+    assert float(latency["total_ms"]) > 0
+
+
+@pytest.mark.unit
+def test_task_history_records_a_real_latency(client: TestClient) -> None:
+    """任务历史 latency_ms must be the run's real end-to-end time, not 0."""
+    client.post("/api/chat", json={"message": _QUESTION})
+
+    history = client.get("/api/tasks").json()
+    assert history
+    recorded = history[0].get("latency_ms")
+    assert recorded, f"task history recorded latency_ms={recorded!r} (expected > 0)"
+
+
+# --- phase-3 evidence plumbing (FH-EXEC-001 / FH-EXEC-002 / FH-SRC-001) ------
+#
+# MultiToolExecutionNode.run() used to return only tool_results / tool_calls /
+# errors / evidence.  AnswerGenerationNode does not look inside tool_results —
+# it reads the ``sql_result`` and ``retrieved_context`` channels directly — so
+# with the production wiring (phase3=True, phase4=True) EVERY run reached the
+# answer node with no evidence and answered 「无法回答…没有产生任何数据或文档证据」
+# even though the tool had succeeded.  The tool's output therefore has to be
+# lifted back into those channels by the executor.
+#
+# A second defect is pinned alongside it: ``evidence`` / ``errors`` are append
+# channels, and answer_generation echoed back the full list it had just read
+# from state, so every RAG hit and every error was stored twice.
+
+_STATE_QUESTION = "统计订单总数"
+
+
+def _employee() -> object:
+    from src.graph.builder import DigitalEmployee
+
+    return DigitalEmployee(backend="fake", retrieval_mode="hybrid", phase3=True, phase4=True)
+
+
+@pytest.mark.unit
+def test_answer_node_receives_the_executed_tool_output() -> None:
+    """The executor must surface tool output via the channels the answer node reads."""
+    emp = _employee()
+
+    sql_run = emp.run(_STATE_QUESTION)
+    assert sql_run.get("sql_result") is not None, (
+        "the sql step succeeded but never reached state['sql_result']; "
+        "AnswerGenerationNode only reads that channel, so the run answers "
+        "'no evidence' despite a successful query"
+    )
+    assert "无法回答" not in str(sql_run.get("answer", ""))
+
+    rag_run = emp.run(_QUESTION)
+    assert rag_run.get("retrieved_context"), (
+        "the rag step returned chunks but they never reached "
+        "state['retrieved_context']"
+    )
+    assert "无法回答" not in str(rag_run.get("answer", ""))
+
+
+@pytest.mark.unit
+def test_evidence_is_not_double_appended() -> None:
+    """Append channels must not be echoed back by a node that just read them."""
+    state = _employee().run(_QUESTION)
+
+    items = list(state.get("evidence") or [])
+    ids = [getattr(e, "evidence_id", None) for e in items]
+    assert len(ids) == len(set(ids)), (
+        f"the evidence channel holds duplicates ({ids}); a node returned the "
+        "append-channel list it had just read from state"
+    )
+
+
+@pytest.mark.unit
+def test_answer_sources_survives_the_graph() -> None:
+    """``answer_sources`` must be declared in AgentState, else LangGraph drops it."""
+    state = _employee().run(_QUESTION)
+
+    sources = state.get("answer_sources")
+    assert isinstance(sources, list) and sources, (
+        "answer_sources came back empty; it is not declared in AgentState, "
+        "so LangGraph silently discards the node's return value and the API "
+        "always reports an empty `sources` field"
+    )
+
+
+# --- POST /api/tasks response fidelity (FH-TASK-002) -------------------------
+#
+# create_task() pre-creates the store entry, then chat() records the finished
+# run via record_task(), which REPLATES that dict with a new one.  create_task
+# kept writing its result onto the old (now orphaned) object and built the
+# response from it, so a clarification run was reported to the client as
+# "completed" while the task history correctly said "clarification".
+
+
+@pytest.mark.unit
+def test_create_task_response_matches_the_stored_history(client: TestClient) -> None:
+    r = client.post("/api/tasks", json={"question": "asdf"})
+    assert r.status_code == 201
+    body = r.json()
+
+    stored = client.get(f"/api/tasks/{body['id']}").json()
+    assert body["status"] == stored["status"], (
+        f"POST /api/tasks reported {body['status']!r} while the task history "
+        f"holds {stored['status']!r}; create_task wrote onto a dict that "
+        "record_task had already replaced"
+    )

@@ -245,7 +245,7 @@ def summarise(records: list[dict[str, Any]]) -> dict[str, Any]:
             vals = [r.get(key, default) for r in subset if r.get(key) is not None]
             return _mean([float(v) for v in vals]) if vals else 0.0
 
-        lats = [r["latency_ms"]["total"] for r in subset if r.get("latency_ms")]
+        lats = [r["latency_ms"]["total_ms"] for r in subset if r.get("latency_ms")]
         fail_cats = Counter()
         for r in subset:
             for c in r.get("failure_categories", []) or []:
