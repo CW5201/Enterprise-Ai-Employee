@@ -626,12 +626,20 @@ def verify_all(
 
 
 def summarize(results: list[VerificationResult]) -> dict[str, int]:
-    """Aggregates used by the API ``verification_summary`` field."""
+    """Aggregates used by the API ``verification_summary`` field.
+
+    The three buckets are mutually exclusive (supported + unsupported +
+    conflicts == total) so the frontend can render them side by side.
+    Previously a conflicting result incremented *both* ``conflicts`` and
+    ``unsupported_claims``, which made the counts sum to more than ``total``
+    and disagreed with the "待核实" list built by ``AnswerGuardNode`` (that
+    one excludes conflicts) and with the eval-side counter.
+    """
     out = {"supported_claims": 0, "unsupported_claims": 0, "conflicts": 0, "total": len(results)}
     for r in results:
         if r.conflict:
             out["conflicts"] += 1
-        if r.supported:
+        elif r.supported:
             out["supported_claims"] += 1
         else:
             out["unsupported_claims"] += 1

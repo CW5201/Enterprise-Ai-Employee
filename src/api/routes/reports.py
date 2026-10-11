@@ -87,6 +87,11 @@ def _summary(record: dict[str, Any]) -> dict[str, Any]:
 _REPORTABLE_STATUSES: frozenset[str] = frozenset({
     "completed",              # answer_generation
     "completed_fallback",     # answer_generation, LLM unavailable
+    # An honest "I have no evidence for this" is still a finished run with an
+    # answer.  Leaving it out made the task history mark it ``failed`` (red)
+    # while the result panel rendered the same run as success, and skipped
+    # the report entirely.
+    "completed_no_evidence",  # answer_generation, nothing to cite
     "executed",               # multi-tool orchestrator (no phase-4 tail)
     "claims_extracted",       # claim_extraction
     "claims_empty",           # claim_extraction: no claims to verify

@@ -198,6 +198,10 @@ def test_evaluation_summary_available_flag(client: TestClient) -> None:
     [
         "completed",           # answer_generation
         "completed_fallback",  # answer_generation, LLM unavailable
+        # An honest "no evidence to cite" still produced an answer.  Leaving
+        # it out made the task history record the run as ``failed`` (red)
+        # while the result panel rendered the same run as success.
+        "completed_no_evidence",
         "executed",            # multi-tool orchestrator (no phase-4 tail)
         "claims_extracted",    # claim_extraction
         "claims_empty",        # claim_extraction, nothing to verify
@@ -223,7 +227,6 @@ def test_answer_producing_statuses_are_reportable(status: str) -> None:
     "status",
     [
         "",
-        "completed_no_evidence",     # nothing was retrieved, nothing to export
         "clarified_out_of_scope",    # clarification reply, no task executed
         "clarify_needed",
         "execution_all_failed",

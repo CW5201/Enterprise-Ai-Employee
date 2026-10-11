@@ -6,7 +6,7 @@
         <div class="page-sub">提交企业任务，查看结果、证据与执行过程</div>
       </div>
       <div class="head-actions">
-        <el-button v-if="result" size="small" :loading="streaming" @click="runStream">
+        <el-button v-if="result" size="small" :loading="streaming" @click="() => runStream()">
           重新以流式执行
         </el-button>
       </div>
@@ -321,7 +321,21 @@ async function run() {
   streaming.value = true
 
   if (mode.value === 'stream') {
-    await runStream(q)
+    try {
+      await runStream(q)
+    } catch (err) {
+      // runStream handles its own SSE errors, but anything it throws before
+      // the stream opens (or a bug in a handler) would otherwise leave the
+      // input box and button disabled forever, because streaming.value = false
+      // lives at the end of runStream.
+      trace.value.push({
+        title: '执行失败',
+        detail: err instanceof Error ? err.message : String(err),
+        status: 'error',
+      })
+    } finally {
+      streaming.value = false
+    }
   } else {
     try {
       const r = await postChat({ message: q })
@@ -339,9 +353,17 @@ async function run() {
 }
 
 async function runStream(q?: string) {
-  const questionText = q ?? question.value.trim()
+  // Vue passes the MouseEvent as the first argument for a bare
+  // @click="runStream" binding, and `??` only falls back on null/undefined.
+  // Without the typeof check the payload becomes JSON.stringify({}) -> 422.
+  const questionText = typeof q === 'string' ? q : question.value.trim()
   if (!questionText) return
   lastQuestion.value = questionText
+  // Reset here as well as in run(): the "重新以流式执行" button calls this
+  // function directly, and without a reset the previous trace keeps appending
+  // and the result panel keeps showing the old run until the new one lands.
+  result.value = null
+  trace.value = [{ title: '任务理解', status: 'running' }]
   streaming.value = true
   abortRef.value?.abort()
   const ac = new AbortController()
@@ -464,7 +486,11 @@ async function runStream(q?: string) {
               ? '执行失败，请查看执行过程面板。'
               : finalState.answer || '（无回答）'
           messages.value.push({ role: 'ai', text: failText })
-          const s = finalState.verification_summary
+          // finalState is only populated by the 'answer' event, which does not
+          // carry verification_summary; if the stream closes before the
+          // 'completed' frame this is undefined and `s.supported_claims`
+          // would throw, leaving streaming.value stuck at true.
+          const s = finalState.verification_summary ?? {}
           const vStep = trace.value.find((t) => t.title === '结果验证')
           if (vStep) {
             vStep.status = 'ok'

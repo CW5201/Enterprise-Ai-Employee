@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import time
 from typing import Annotated, Any, TypedDict, get_type_hints
+from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
@@ -210,7 +211,11 @@ APPEND_CHANNELS: frozenset[str] = frozenset(
 def make_state(user_query: str, *, request_id: str | None = None) -> AgentState:
     """Create a fresh, fully-initialised state (graph entry and tests)."""
     return {
-        "request_id": request_id or f"req-{int(time.time() * 1000)}",
+        # Millisecond timestamps alone collide under concurrent requests (or a
+        # double submit), and the task history is keyed by request_id — the
+        # second run silently overwrote the first.  The random suffix keeps
+        # the readable prefix while making collisions negligible.
+        "request_id": request_id or f"req-{int(time.time() * 1000)}-{uuid4().hex[:8]}",
         "user_query": user_query,
         "conversation": [],
         "intent": "",

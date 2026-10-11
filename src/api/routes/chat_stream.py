@@ -89,14 +89,52 @@ def _sanitize_evidence(ev: Any) -> dict[str, Any]:
     """Strip raw row data / chunk text from an evidence record.
 
     The guard node only sanitises ``answer_sources``; the raw ``evidence``
-    records in state still carry full row data and chunk text (PII).  The
-    SSE stream exposes only user-safe fields.
+    records in state still carry full row data and chunk text (PII).  The SSE
+    stream exposes only user-safe fields.
+
+    The one-shot endpoint returns full ``payload`` / ``content`` and the
+    evidence panel reads them (``ev.payload.columns``, ``ev.content``), so
+    dropping both outright made the streamed evidence details permanently
+    blank.  Replace them with a *safe* projection instead: column names and
+    row counts for SQL (never the rows), and a short preview for RAG.
     """
     data = _to_plain(ev)
     if not isinstance(data, dict):
         return {"source_type": "unknown", "source_ref": str(data)}
     out = {k: v for k, v in data.items() if k not in ("payload", "content")}
-    out["row_count"] = data.get("row_count")
+
+    source_type = str(out.get("source_type") or "")
+    raw_payload = data.get("payload")
+    raw_payload = raw_payload if isinstance(raw_payload, dict) else {}
+
+    safe_payload: dict[str, Any] = {}
+    if source_type in ("duckdb", "sql"):
+        # Column names and counts are metadata; ``rows`` is the raw business
+        # data that must never cross this endpoint.
+        cols = raw_payload.get("columns") or data.get("columns")
+        if cols:
+            safe_payload["columns"] = [str(c) for c in cols]
+        if raw_payload.get("sql"):
+            safe_payload["sql"] = raw_payload["sql"]
+        if raw_payload.get("truncated") is not None:
+            safe_payload["truncated"] = raw_payload["truncated"]
+    elif source_type in ("milvus", "rag"):
+        chunk = data.get("content") or raw_payload.get("content") or ""
+        if chunk:
+            # The panel renders a 120-char preview; send a little more so the
+            # tooltip is useful but the full document stays server-side.
+            safe_payload["preview"] = str(chunk)[:_EVIDENCE_PREVIEW_CHARS]
+    else:
+        # kg / analysis and anything unknown: keep only scalars.
+        safe_payload = {k: v for k, v in raw_payload.items()
+                        if isinstance(v, (str, int, float, bool, type(None)))}
+
+    out["payload"] = safe_payload
+    out["row_count"] = data.get("row_count") if data.get("row_count") is not None \
+        else raw_payload.get("row_count")
+    if source_type in ("milvus", "rag") and "preview" in safe_payload:
+        # evDetail() falls back to ev.content when payload is empty.
+        out["content"] = safe_payload["preview"]
     return out
 
 
@@ -107,6 +145,11 @@ def _sanitize_evidence(ev: Any) -> dict[str, Any]:
 _RAW_CONTENT_KEYS: frozenset[str] = frozenset({
     "content", "payload", "rows", "results", "evidence", "error_details",
 })
+
+# How much of a RAG chunk the evidence panel is allowed to show.  The panel
+# slices 120 chars for its list row; this is the richer preview for the
+# detail view, still far short of a full document.
+_EVIDENCE_PREVIEW_CHARS = 280
 
 
 def _strip_raw_content(value: Any) -> Any:
@@ -260,6 +303,10 @@ async def chat_stream(request: Request, body: ChatRequest) -> StreamingResponse:
 
             # --- final completed event (reads the folded final state) ---
             completed_payload: dict[str, Any] = {
+                # The one-shot endpoint returns request_id; without it the
+                # export panel's "请求 ID" column was always blank and there was
+                # no way to reconcile a streamed run against the task history.
+                "request_id": final_state.get("request_id") or body.request_id or "",
                 "answer": final_state.get("answer", ""),
                 "status": final_state.get("status", ""),
                 "route": final_state.get("route", ""),

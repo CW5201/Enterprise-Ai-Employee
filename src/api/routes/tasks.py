@@ -128,7 +128,14 @@ def create_task(body: dict[str, Any], request: Request) -> TaskOut:
     from src.api.routes.chat import ChatRequest
     from src.api.routes.chat import chat as _run_chat
 
-    question = (body.get("question") or "").strip()
+    # ``body`` is a raw dict (not a Pydantic model), so `question` can arrive
+    # as any JSON type.  `(body.get("question") or "").strip()` raises
+    # AttributeError on an int/dict and FastAPI turns that into a 500 instead
+    # of the 422/400 the caller expects.
+    raw_question = body.get("question")
+    if not isinstance(raw_question, str):
+        raise HTTPException(status_code=422, detail="`question` must be a string")
+    question = raw_question.strip()
     if not question:
         raise HTTPException(status_code=400, detail="`question` must be non-empty")
 

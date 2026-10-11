@@ -10,9 +10,12 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from src.core.claim_verifier import (
     LexicalScorer,
     VerificationConfig,
+    summarize,
     verify,
     verify_semantic,
 )
@@ -224,3 +227,65 @@ class TestLayerAblation:
         ev = _rag_ev("某事实陈述的相关内容")
         r = verify(claim, [ev], tight, layers=("semantic",))
         assert not r.supported or r.support_score < 0.99
+
+
+@pytest.mark.unit
+class TestSummarize:
+    """The three summary buckets must be mutually exclusive.
+
+    ``AnswerGuardNode`` builds the "待核实" list as ``not conflict and not
+    supported``, and the eval script counts the same way.  ``summarize``
+    used to add a conflicting result to *both* ``conflicts`` and
+    ``unsupported_claims``, so the three numbers summed to more than
+    ``total`` and the UI showed a claim as both "证据不足" and "冲突".
+    """
+
+    @staticmethod
+    def _res(cid: str, *, supported: bool, conflict: bool) -> Any:
+        from src.core.verification_types import VerificationResult
+        return VerificationResult(
+            claim_id=cid,
+            supported=supported,
+            conflict=conflict,
+            status="conflict" if conflict else ("supported" if supported else "unsupported"),
+        )
+
+    def test_conflict_is_counted_once(self) -> None:
+        results = [
+            self._res("clm-001", supported=False, conflict=True),
+            self._res("clm-002", supported=True, conflict=False),
+            self._res("clm-003", supported=False, conflict=False),
+        ]
+        out = summarize(results)
+        assert out["total"] == 3
+        assert out["conflicts"] == 1
+        assert out["unsupported_claims"] == 1, "conflict must not also be unsupported"
+        assert out["supported_claims"] == 1
+
+    def test_buckets_sum_to_total(self) -> None:
+        results = [
+            self._res("a", supported=True, conflict=False),
+            self._res("b", supported=False, conflict=False),
+            self._res("c", supported=False, conflict=True),
+            self._res("d", supported=False, conflict=False),
+        ]
+        out = summarize(results)
+        assert (out["supported_claims"] + out["unsupported_claims"]
+                + out["conflicts"]) == out["total"]
+
+    def test_unsupported_matches_the_guard_definition(self) -> None:
+        """The count must equal the length of the guard's 待核实 list."""
+        results = [
+            self._res("a", supported=False, conflict=False),
+            self._res("b", supported=False, conflict=True),
+            self._res("c", supported=True, conflict=False),
+        ]
+        guard_unsupported = [r.claim_id for r in results
+                             if not r.conflict and not r.supported]
+        assert summarize(results)["unsupported_claims"] == len(guard_unsupported)
+
+    def test_all_supported(self) -> None:
+        results = [self._res(f"c{i}", supported=True, conflict=False) for i in range(4)]
+        out = summarize(results)
+        assert out == {"supported_claims": 4, "unsupported_claims": 0,
+                       "conflicts": 0, "total": 4}

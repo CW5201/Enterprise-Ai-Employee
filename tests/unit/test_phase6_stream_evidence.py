@@ -121,8 +121,25 @@ def test_streamed_run_reaches_completed_with_evidence(client: TestClient) -> Non
     assert isinstance(tool_calls, list) and tool_calls
     assert isinstance(tool_calls[0], dict), "tool_calls must be JSON objects"
     assert tool_calls[0].get("tool")
-    # raw row data / chunk text / payload stay out of the browser projection
-    assert "payload" not in evidence[0] and "content" not in evidence[0]
+
+    # Raw business rows must never cross this endpoint.  ``payload`` is
+    # present but is a *safe projection* (column names / row counts / SQL),
+    # and any ``content`` is a bounded preview rather than a full chunk —
+    # dropping both outright used to leave the evidence detail panel blank.
+    for ev in evidence:
+        p = ev.get("payload")
+        if isinstance(p, dict):
+            assert "rows" not in p, "raw rows leaked into the stream projection"
+        if ev.get("source_type") in ("duckdb", "sql") and isinstance(p, dict):
+            # The evidence panel renders these two for SQL evidence.
+            assert p.get("columns") or ev.get("row_count") is not None, (
+                f"SQL evidence lost its safe projection: {sorted(p)}"
+            )
+        c = ev.get("content")
+        if c is not None:
+            assert isinstance(c, str) and len(c) <= 400, (
+                "content must be a bounded preview, not a full document"
+            )
 
 
 @pytest.mark.unit

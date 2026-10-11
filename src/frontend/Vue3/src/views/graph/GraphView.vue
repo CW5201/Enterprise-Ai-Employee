@@ -131,6 +131,18 @@ async function selectEntity(e: GraphEntity) {
 
 function renderGraph() {
   if (!graphRef.value || !relations.value.length) return
+  // The canvas lives under `v-if="relations.length"`, so selecting an entity
+  // with no relations unmounts it while `graphChart` keeps the stale
+  // instance. Re-selecting a connected entity then calls setOption() on a
+  // detached DOM node and the preview stays blank. Re-init when the old
+  // chart is no longer in the document.
+  if (graphChart) {
+    const dom = graphChart.getDom()
+    if (!dom || !dom.isConnected) {
+      graphChart.dispose()
+      graphChart = null
+    }
+  }
   if (!graphChart) {
     graphChart = echarts.init(graphRef.value)
   }
