@@ -382,7 +382,9 @@ def generate_metadata(con: duckdb.DuckDBPyConnection) -> None:
             "note": (
                 "数据截止 2025 年中；遇到“最近三个月/最近一年”等相对时间问题时，"
                 "请以 MAX(OrderDate) 为锚点向前推算，而不是用今天的日历日期，"
-                "否则会查出空结果。"
+                "否则会查出空结果。涉及趋势、环比、同比的问题，"
+                "请用 strftime(OrderDate, '%Y-%m') 按月分组取数，"
+                "不要只返回单个聚合值，否则无法计算环比。"
             ),
         },
         "tables": {
@@ -443,11 +445,13 @@ def generate_metadata(con: duckdb.DuckDBPyConnection) -> None:
 
 
 FEWSHOT_EXAMPLES = [
-    ("最近三个月的销售额是多少（以数据中最新日期为锚点）",
+    ("最近三个月的月度销售额分别是多少（按月拆分，便于计算总额与环比）",
      "WITH mx AS (SELECT MAX(OrderDate) AS d FROM Sales_Orders) "
-     "SELECT SUM(ol.Quantity * ol.UnitPrice) AS total_revenue "
+     "SELECT strftime(o.OrderDate, '%Y-%m') AS month, "
+     "SUM(ol.Quantity * ol.UnitPrice) AS revenue "
      "FROM Sales_Orders o JOIN Sales_OrderLines ol ON ol.OrderID = o.OrderID, mx "
-     "WHERE o.OrderDate >= mx.d - INTERVAL 3 MONTH"),
+     "WHERE o.OrderDate >= mx.d - INTERVAL 3 MONTH "
+     "GROUP BY 1 ORDER BY 1"),
     ("订单数量最多的前 10 个客户",
      "SELECT c.CustomerName, COUNT(o.OrderID) AS order_count "
      "FROM Sales_Orders o JOIN Sales_Customers c ON c.CustomerID = o.CustomerID "

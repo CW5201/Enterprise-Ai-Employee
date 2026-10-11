@@ -1,13 +1,14 @@
 version: v0.3
 status: verified
-generated_at: '2026-10-11 15:14:18'
+generated_at: '2026-10-11 16:47:22'
 source_database: AdventureWorks OLTP (sales facts) + WideWorldImporters (schema)
 source_note: Sales / customer / product / people tables are populated from Microsoft's official AdventureWorks OLTP sample
   dataset. The table and column names keep the WideWorldImporters spelling so existing tool schemas stay valid.
 coverage:
   order_date: 2022-05-30 .. 2025-06-29
   invoice_date: 2022-06-06 .. 2025-07-06
-  note: 数据截止 2025 年中；遇到“最近三个月/最近一年”等相对时间问题时，请以 MAX(OrderDate) 为锚点向前推算，而不是用今天的日历日期，否则会查出空结果。
+  note: 数据截止 2025 年中；遇到“最近三个月/最近一年”等相对时间问题时，请以 MAX(OrderDate) 为锚点向前推算，而不是用今天的日历日期，否则会查出空结果。涉及趋势、环比、同比的问题，请用 strftime(OrderDate,
+    '%Y-%m') 按月分组取数，不要只返回单个聚合值，否则无法计算环比。
 tables:
   Application_Cities:
     primary_key: []

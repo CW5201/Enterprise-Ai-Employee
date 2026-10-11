@@ -2,13 +2,14 @@ version: v0.3
 dialect: duckdb
 target_database: AdventureWorks (WideWorldImporters schema)
 status: verified
-generated_at: '2026-10-11 15:14:18'
+generated_at: '2026-10-11 16:47:22'
 few_shots:
 - id: fs-001
-  question: 最近三个月的销售额是多少（以数据中最新日期为锚点）
-  sql: WITH mx AS (SELECT MAX(OrderDate) AS d FROM Sales_Orders) SELECT SUM(ol.Quantity * ol.UnitPrice) AS total_revenue FROM
-    Sales_Orders o JOIN Sales_OrderLines ol ON ol.OrderID = o.OrderID, mx WHERE o.OrderDate >= mx.d - INTERVAL 3 MONTH
-  rows_returned: 1
+  question: 最近三个月的月度销售额分别是多少（按月拆分，便于计算总额与环比）
+  sql: WITH mx AS (SELECT MAX(OrderDate) AS d FROM Sales_Orders) SELECT strftime(o.OrderDate, '%Y-%m') AS month, SUM(ol.Quantity
+    * ol.UnitPrice) AS revenue FROM Sales_Orders o JOIN Sales_OrderLines ol ON ol.OrderID = o.OrderID, mx WHERE o.OrderDate
+    >= mx.d - INTERVAL 3 MONTH GROUP BY 1 ORDER BY 1
+  rows_returned: 4
   difficulty: medium
   status: verified
 - id: fs-002
