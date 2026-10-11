@@ -1,6 +1,6 @@
 version: v0.3
 status: verified
-generated_at: '2026-10-11 16:47:22'
+generated_at: '2026-10-11 18:18:05'
 source_database: AdventureWorks OLTP (sales facts) + WideWorldImporters (schema)
 source_note: Sales / customer / product / people tables are populated from Microsoft's official AdventureWorks OLTP sample
   dataset. The table and column names keep the WideWorldImporters spelling so existing tool schemas stay valid.

@@ -2,7 +2,7 @@ version: v0.2
 dialect: duckdb
 source_database: WideWorldImporters
 status: verified
-generated_at: '2026-10-11 16:47:21'
+generated_at: '2026-10-11 18:18:05'
 tables:
 - name: Application_Cities
   primary_key: []

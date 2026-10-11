@@ -18,6 +18,7 @@ node still returns so the pipeline can produce an honest answer.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -228,12 +229,43 @@ def _build_context(schemas_dir: Path) -> dict[str, str]:
     }
 
 
+# Analytics questions routinely return one row per month (24-36 rows).  Those
+# must reach the answer generator intact: a head-only preview of an ascending
+# series hands the model the *oldest* months and it then answers "最近三个月"
+# with two-year-old figures.  Only results larger than this get truncated.
+_PREVIEW_ALL = 32
+_PREVIEW_BUDGET = 8
+
+
+def _fmt_row(row: Sequence[Any]) -> str:
+    return " | ".join(str(v) for v in row)
+
+
 def _summarise(sql: str, payload: dict[str, Any]) -> str:
+    """Render an evidence snippet for the answer generator.
+
+    A plain ``rows[:5]`` silently hid the tail of any long result.  For
+    ascending time series that meant the model only ever saw the *oldest*
+    months and then answered "最近三个月" with 2022/2023 figures.  Show both
+    ends instead, and say plainly that the middle was elided so the model
+    never mistakes a head+tail sample for a contiguous block.
+    """
     columns = payload.get("columns", [])
     rows = payload.get("rows", [])
     head = " | ".join(str(c) for c in columns)
-    preview = "\n".join(" | ".join(str(v) for v in row) for row in rows[:5])
-    return f"SQL: {sql}\nColumns: {head}\nRows ({len(rows)} shown):\n{preview}"
+
+    if len(rows) <= _PREVIEW_ALL:
+        body = "\n".join(_fmt_row(r) for r in rows)
+        note = f"Rows ({len(rows)} shown):"
+    else:
+        half = _PREVIEW_BUDGET // 2
+        body = "\n".join(_fmt_row(r) for r in rows[:half])
+        body += f"\n... ({len(rows) - _PREVIEW_BUDGET} middle rows elided) ...\n"
+        body += "\n".join(_fmt_row(r) for r in rows[-half:])
+        note = (f"Rows ({len(rows)} total; first {half} and last {half} shown, "
+                f"middle {len(rows) - _PREVIEW_BUDGET} elided — these two blocks "
+                f"are NOT contiguous):")
+    return f"SQL: {sql}\nColumns: {head}\n{note}\n{body}"
 
 
 __all__ = ["SQLExecutionNode", "TextToSQLResult"]

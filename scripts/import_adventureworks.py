@@ -445,12 +445,15 @@ def generate_metadata(con: duckdb.DuckDBPyConnection) -> None:
 
 
 FEWSHOT_EXAMPLES = [
+    # Subquery anchor rather than a comma cross join: the LLM regularly drops
+    # the ", mx" half and then DuckDB rejects the statement with
+    # `Referenced table "mx" not found`.  A scalar subquery has no alias to
+    # forget, so it survives generation far more often.
     ("最近三个月的月度销售额分别是多少（按月拆分，便于计算总额与环比）",
-     "WITH mx AS (SELECT MAX(OrderDate) AS d FROM Sales_Orders) "
      "SELECT strftime(o.OrderDate, '%Y-%m') AS month, "
      "SUM(ol.Quantity * ol.UnitPrice) AS revenue "
-     "FROM Sales_Orders o JOIN Sales_OrderLines ol ON ol.OrderID = o.OrderID, mx "
-     "WHERE o.OrderDate >= mx.d - INTERVAL 3 MONTH "
+     "FROM Sales_Orders o JOIN Sales_OrderLines ol ON ol.OrderID = o.OrderID "
+     "WHERE o.OrderDate >= (SELECT MAX(OrderDate) - INTERVAL 3 MONTH FROM Sales_Orders) "
      "GROUP BY 1 ORDER BY 1"),
     ("订单数量最多的前 10 个客户",
      "SELECT c.CustomerName, COUNT(o.OrderID) AS order_count "
