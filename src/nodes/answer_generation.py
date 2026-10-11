@@ -82,6 +82,14 @@ class AnswerGenerationNode:
 # ---------------------------------------------------------------------------
 
 
+# Mirrors sql_execution._summarise: a bare ``rows[:10]`` of an ascending time
+# series hands the model only the *oldest* months, and it then reports those
+# as "最近三个月" (or invents the newest ones).  Realistic analytics answers
+# are one row per month, so those must arrive intact.
+_SQL_PREVIEW_ALL = 32
+_SQL_PREVIEW_HALF = 4
+
+
 def _render_sql_block(sql_result: Any) -> str:
     if sql_result is None:
         return "(无 SQL 结果)"
@@ -90,9 +98,18 @@ def _render_sql_block(sql_result: Any) -> str:
     if not rows:
         return "(SQL 执行成功但返回 0 行)"
     head = " | ".join(str(c) for c in columns)
-    preview = "\n".join(" | ".join(str(v) for v in row) for row in rows[:10])
-    extra = f" …(共 {sql_result.row_count} 行)" if sql_result.row_count > 10 else ""
-    return f"{head}\n{preview}{extra}"
+    total = sql_result.row_count if sql_result.row_count else len(rows)
+
+    if total <= _SQL_PREVIEW_ALL:
+        body = "\n".join(" | ".join(str(v) for v in row) for row in rows)
+        return f"{head}\n{body}"
+
+    first = rows[:_SQL_PREVIEW_HALF]
+    last = rows[-_SQL_PREVIEW_HALF:]
+    body = "\n".join(" | ".join(str(v) for v in row) for row in first)
+    body += f"\n... (省略中间 {total - 2 * _SQL_PREVIEW_HALF} 行，以下为最后 {_SQL_PREVIEW_HALF} 行) ...\n"
+    body += "\n".join(" | ".join(str(v) for v in row) for row in last)
+    return f"{head}\n{body}"
 
 
 def _render_rag_block(chunks: list[Any]) -> str:
@@ -157,7 +174,19 @@ _SYSTEM_PROMPT = """你是企业 AI 数字员工的答案生成模块。
    并引用 chunk_id。
 3. 将"数据"与"知识"两类结论分小节展示，清晰区分。
 4. 若证据不足以回答，明确说明缺少什么，不要猜测。
-5. 用简洁中文作答。"""
+5. 用简洁中文作答。
+
+硬性约束（违反即为错误答案）：
+A. 每一个数值、日期、名称都必须逐字来自证据。不要做四舍五入改写、单位换算或
+   重新计算，除非问题明确要求且你能说明算式。
+B. 证据中出现的数值，绝不能写成"未知""缺失""无法确认"。如果某个值在证据里，
+   它就是已知的。
+C. 不得引入证据中不存在的年份、月份、实体或类别。如果证据是 2025-04 至
+   2025-06，就绝不能提到 2024 年或任何其他时间段。
+D. 若【数据查询结果】只展示了部分行（有"省略中间 N 行"字样），最后几行是时间上
+   最新的数据；回答"最近"相关的问题时以后几行为准，并在答案中注明数据范围。
+E. 无法从证据中得出的推论（例如"断崖式下跌"这类定性判断），要么给出支撑它的
+   具体数字，要么明确标注为推测，不要当作事实陈述。"""
 
 
 __all__ = ["AnswerGenerationNode"]

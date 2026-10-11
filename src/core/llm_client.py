@@ -23,7 +23,10 @@ from __future__ import annotations
 import json
 import logging
 import os
+import random
 import time
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -35,6 +38,46 @@ from src.core.exceptions import LLMError
 logger = logging.getLogger("eae.llm")
 
 T = TypeVar("T", bound=BaseModel)
+
+# ---------------------------------------------------------------------------
+# Retry policy
+# ---------------------------------------------------------------------------
+
+# Retrying these wastes quota and can never succeed — the request itself is
+# wrong (bad key, malformed body, unknown model).  Surface the real reason
+# instead of the generic "failed after N attempts".
+_NON_RETRYABLE_STATUS = frozenset({400, 401, 402, 403, 404, 405, 409, 413, 422})
+
+_BACKOFF_BASE_SECONDS = 1.0
+_BACKOFF_CAP_SECONDS = 30.0
+_JITTER_SECONDS = 1.0
+# ``Retry-After`` is the server telling us when the quota window reopens, so
+# it is honored up to a generous ceiling — much higher than the backoff cap,
+# which only bounds *our* guessing.
+_RETRY_AFTER_CAP_SECONDS = 120.0
+# A 429 is a quota *window*, not a network blip.  The old linear
+# ``0.5 * (attempt + 1)`` slept 0.5s + 1.0s in total, which is far shorter
+# than any real rate-limit window, so all three attempts landed inside the
+# same window and every one came back 429 (see docs/phase3/EXPERIMENT_REPORT).
+_RATE_LIMIT_EXTRA_RETRIES = 3
+
+
+def _parse_retry_after(value: str | None) -> float | None:
+    """Seconds from an HTTP ``Retry-After`` header (delta or HTTP-date)."""
+    if not value:
+        return None
+    text = value.strip()
+    try:
+        return max(0.0, float(text))
+    except ValueError:
+        pass
+    try:
+        when = parsedate_to_datetime(text)
+    except (TypeError, ValueError):
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    return max(0.0, (when - datetime.now(UTC)).total_seconds())
 
 # ---------------------------------------------------------------------------
 # .env loading (minimal KEY=VALUE parser, no external dependency)
@@ -210,25 +253,63 @@ class _QwenOpenAIBackend(_BaseBackend):
         if not self.base_url:
             raise LLMError("LLM_BASE_URL is not set; cannot use the Qwen backend", retryable=False)
 
+    def _retry_delay(self, attempt: int, response: httpx.Response | None) -> float:
+        """Exponential backoff with jitter, honoring ``Retry-After``."""
+        delay = min(_BACKOFF_BASE_SECONDS * (2 ** attempt), _BACKOFF_CAP_SECONDS)
+        if response is not None:
+            suggested = _parse_retry_after(response.headers.get("Retry-After"))
+            if suggested is not None:
+                # Never sleep *less* than the server asked for.
+                delay = max(delay, min(suggested, _RETRY_AFTER_CAP_SECONDS))
+        # Jitter: pipeline nodes fire LLM calls back to back, so a fixed
+        # schedule makes every retry land on the limiter at the same instant
+        # and keeps the rate-limit window open.
+        return delay + random.uniform(0.0, _JITTER_SECONDS)
+
     def _post(self, body: dict[str, Any]) -> dict[str, Any]:
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
+
+        base_attempts = self.max_retries + 1
+        max_attempts = base_attempts + _RATE_LIMIT_EXTRA_RETRIES
         last_error: Exception | None = None
-        for attempt in range(self.max_retries + 1):
+        last_response: httpx.Response | None = None
+        attempt = 0
+
+        while attempt < max_attempts:
             try:
+                # One client per call keeps the retry path simple; httpx
+                # handles connection setup inside the per-attempt timeout.
                 with httpx.Client(timeout=self.timeout) as client:
                     response = client.post(
                         f"{self.base_url}/chat/completions", headers=headers, json=body
                     )
                     response.raise_for_status()
                     return response.json()
+            except httpx.HTTPStatusError as exc:
+                last_error, last_response = exc, exc.response
+                if exc.response.status_code in _NON_RETRYABLE_STATUS:
+                    # Fail fast with the real reason: a bad key or a malformed
+                    # body will not improve on retry.
+                    raise LLMError(
+                        f"Qwen rejected the request (HTTP {exc.response.status_code}): {exc}",
+                        retryable=False,
+                    ) from exc
             except (httpx.HTTPError, json.JSONDecodeError) as exc:
                 last_error = exc
-                if attempt < self.max_retries:
-                    time.sleep(0.5 * (attempt + 1))
+
+            attempt += 1
+            status = last_response.status_code if last_response is not None else None
+            # Non-rate-limit failures stop at the configured attempt count;
+            # 429s get the extended budget so they can outlast a quota window.
+            exhausted = attempt >= base_attempts and status != 429
+            if attempt >= max_attempts or exhausted:
+                break
+            time.sleep(self._retry_delay(attempt - 1, last_response))
+
         raise LLMError(
-            f"Qwen request failed after {self.max_retries + 1} attempts: {last_error}",
+            f"Qwen request failed after {attempt} attempts: {last_error}",
             retryable=True,
         ) from last_error
 

@@ -75,6 +75,36 @@ CSV_SPECS: dict[str, tuple[list[str], list[str]]] = {
         ["ProductSubcategoryID", "ProductCategoryID", "Name", "rowguid", "ModifiedDate"],
         ["INTEGER", "INTEGER", "VARCHAR", "VARCHAR", "TIMESTAMP"],
     ),
+    # Purchasing.Vendor / Purchasing.ProductVendor.  Only BusinessEntityID and
+    # ProductID are consumed downstream; the remaining columns are typed loosely
+    # (strict_mode=false turns a mismatch into NULL) so a differing dump order
+    # cannot abort the import.
+    "Vendor": (
+        ["BusinessEntityID", "AccountNumber", "Name", "CreditRating",
+         "PreferredVendorFlag", "ActiveFlag", "PurchasingWebServiceURL", "ModifiedDate"],
+        ["INTEGER", "VARCHAR", "VARCHAR", "SMALLINT", "BOOLEAN", "BOOLEAN",
+         "VARCHAR", "TIMESTAMP"],
+    ),
+    "ProductVendor": (
+        ["ProductID", "BusinessEntityID", "AverageLeadTime", "LastReceiptCost",
+         "UnitPrice", "LastReceiptDate", "OrderQty", "OnOrderQty", "StandardQty",
+         "UnitMeasureCode", "ModifiedDate"],
+        ["INTEGER", "INTEGER", "INTEGER", "DOUBLE", "DOUBLE", "TIMESTAMP",
+         "SMALLINT", "SMALLINT", "SMALLINT", "VARCHAR", "TIMESTAMP"],
+    ),
+    "Address": (
+        ["AddressID", "AddressLine1", "AddressLine2", "City", "StateProvinceID",
+         "PostalCode", "SpatialLocation", "rowguid", "ModifiedDate"],
+        ["INTEGER", "VARCHAR", "VARCHAR", "VARCHAR", "INTEGER", "VARCHAR",
+         "VARCHAR", "VARCHAR", "TIMESTAMP"],
+    ),
+    "StateProvince": (
+        ["StateProvinceID", "StateProvinceCode", "CountryRegionCode",
+         "IsOnlyStateProvinceFlag", "StateProvinceName", "TerritoryID",
+         "rowguid", "ModifiedDate"],
+        ["INTEGER", "VARCHAR", "VARCHAR", "BOOLEAN", "VARCHAR", "SMALLINT",
+         "VARCHAR", "TIMESTAMP"],
+    ),
     "SalesPerson": (
         ["BusinessEntityID", "TerritoryID", "SalesQuota", "Bonus", "CommissionPct",
          "SalesYTD", "SalesLastYear", "rowguid", "ModifiedDate"],
@@ -90,6 +120,14 @@ PERSON_COLUMNS = [
 ]
 
 FAR_FUTURE = "TIMESTAMP '9999-12-31 23:59:59.997'"
+
+# AdventureWorks' address dimension is disjoint from the WideWorldImporters
+# one still sitting in Application_Cities / Application_StateProvinces.  Rather
+# than replace those tables (build_enterprise_tasks anchors on low ids such as
+# ``CityID = 1``), the AW rows are APPENDED above the existing maximum so every
+# pre-existing id keeps its meaning.
+AW_STATE_PROVINCE_ID_BASE = 1000
+AW_CITY_ID_BASE = 40000
 
 
 def _log(message: str) -> None:
@@ -138,6 +176,111 @@ def load_person(con: duckdb.DuckDBPyConnection) -> int:
     )
     con.executemany('INSERT INTO "_aw_person" VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)', rows)
     return len(rows)
+
+
+BEA_COLUMNS = ["BusinessEntityID", "AddressID", "AddressTypeID", "rowguid", "ModifiedDate"]
+
+
+def load_business_entity_address(con: duckdb.DuckDBPyConnection) -> int:
+    """BusinessEntityAddress.csv uses the same '+|' / trailing '&|' shape as Person."""
+    rows: list[tuple] = []
+    with (AW_DIR / "BusinessEntityAddress.csv").open(
+        "r", encoding="utf-8-sig", errors="replace"
+    ) as handle:
+        for line in handle:
+            line = line.rstrip("\r\n")
+            if line.endswith("&|"):
+                line = line[:-2]
+            if not line:
+                continue
+            parts = line.split("+|")
+            if len(parts) != len(BEA_COLUMNS):
+                continue
+            rows.append((
+                int(parts[0]), int(parts[1]), int(parts[2]), parts[3],
+                dt.datetime.fromisoformat(parts[4]),
+            ))
+    con.execute('DROP TABLE IF EXISTS "_aw_BusinessEntityAddress"')
+    con.execute(
+        'CREATE TABLE "_aw_BusinessEntityAddress" ('
+        '"BusinessEntityID" INTEGER, "AddressID" INTEGER, "AddressTypeID" INTEGER, '
+        '"rowguid" VARCHAR, "ModifiedDate" TIMESTAMP)'
+    )
+    con.executemany(
+        'INSERT INTO "_aw_BusinessEntityAddress" VALUES (?,?,?,?,?)', rows
+    )
+    return len(rows)
+
+
+def extend_address_dimension(con: duckdb.DuckDBPyConnection) -> None:
+    """Append AdventureWorks states/cities above the existing id ranges.
+
+    WideWorldImporters' city catalogue stays untouched (its low ids are
+    referenced by several benchmark anchors), and AW rows are added in a
+    disjoint range.  ``_aw_city_map`` then translates an AW ``AddressID`` into
+    the ``CityID`` we just allocated.
+    """
+    con.execute(f"""
+        INSERT INTO Application_StateProvinces (
+            StateProvinceID, StateProvinceCode, CountryID, StateProvinceName,
+            SalesTerritory, LatestRecordedPopulation, LastEditedBy,
+            ValidFrom, ValidTo
+        )
+        SELECT sp.StateProvinceID::INTEGER + {AW_STATE_PROVINCE_ID_BASE},
+            TRIM(sp.StateProvinceCode),
+            239,
+            sp.StateProvinceName,
+            sp.TerritoryID::VARCHAR,
+            NULL,
+            1,
+            sp.ModifiedDate::TIMESTAMP,
+            {FAR_FUTURE}
+        FROM "_aw_StateProvince" sp
+        WHERE sp.StateProvinceID::INTEGER + {AW_STATE_PROVINCE_ID_BASE}
+              NOT IN (SELECT StateProvinceID FROM Application_StateProvinces)
+        ORDER BY sp.StateProvinceID
+    """)
+
+    # One allocated CityID per distinct AW city, carrying the payload needed
+    # for the Application_Cities insert so no second join has to rediscover it.
+    # The ids come from a fixed base rather than MAX()+1 so a re-run reallocates
+    # the same ids and the NOT IN below de-duplicates instead of duplicating.
+    con.execute(f"""
+        CREATE OR REPLACE TABLE "_aw_city_map" AS
+        SELECT
+            {AW_CITY_ID_BASE} + ROW_NUMBER() OVER (ORDER BY d.City, d.StateProvinceID) - 1
+                AS CityID,
+            d.City AS CityName,
+            d.StateProvinceID::INTEGER + {AW_STATE_PROVINCE_ID_BASE} AS StateProvinceID
+        FROM (
+            SELECT DISTINCT City, StateProvinceID
+            FROM "_aw_Address"
+            WHERE City IS NOT NULL AND City <> ''
+        ) d
+    """)
+
+    con.execute(f"""
+        INSERT INTO Application_Cities (
+            CityID, CityName, StateProvinceID, LatestRecordedPopulation,
+            LastEditedBy, ValidFrom, ValidTo
+        )
+        SELECT m.CityID, m.CityName, m.StateProvinceID,
+               NULL, 1, TIMESTAMP '2019-01-01', {FAR_FUTURE}
+        FROM "_aw_city_map" m
+        WHERE m.CityID NOT IN (SELECT CityID FROM Application_Cities)
+        ORDER BY m.CityID
+    """)
+
+    # Translate AW AddressID -> allocated CityID for the supplier edges below.
+    con.execute(f"""
+        CREATE OR REPLACE TABLE "_aw_address_city" AS
+        SELECT a.AddressID::INTEGER AS AddressID, m.CityID
+        FROM "_aw_Address" a
+        JOIN "_aw_city_map" m
+          ON m.CityName = a.City
+         AND m.StateProvinceID = a.StateProvinceID::INTEGER
+                              + {AW_STATE_PROVINCE_ID_BASE}
+    """)
 
 
 def rebuild_tables(con: duckdb.DuckDBPyConnection) -> list[str]:
@@ -254,7 +397,11 @@ def rebuild_tables(con: duckdb.DuckDBPyConnection) -> list[str]:
     con.execute(f"""
         CREATE OR REPLACE TABLE Warehouse_StockItems AS
         SELECT p.ProductID::INTEGER AS StockItemID, p.Name AS StockItemName,
-            NULL::INTEGER AS SupplierID, NULL::INTEGER AS ColorID,
+            -- AdventureWorks carries no supplier FK on Production.Product; the
+            -- link lives in Purchasing.ProductVendor.  A product can have several
+            -- vendors, so take the lowest BusinessEntityID deterministically.
+            v.BusinessEntityID::INTEGER AS SupplierID,
+            NULL::INTEGER AS ColorID,
             1 AS UnitPackageID, 1 AS OuterPackageID, p.Color AS Brand, p.Size AS Size,
             0 AS LeadTimeDays, 1 AS QuantityPerOuter, FALSE AS IsChillerStock,
             NULL::VARCHAR AS Barcode, 0.000::DECIMAL(18,3) AS TaxRate,
@@ -271,6 +418,16 @@ def rebuild_tables(con: duckdb.DuckDBPyConnection) -> list[str]:
             p.SellStartDate::TIMESTAMP AS ValidFrom,
             COALESCE(p.SellEndDate::TIMESTAMP, {FAR_FUTURE}) AS ValidTo
         FROM "_aw_Product" p
+        LEFT JOIN (
+            SELECT pv.ProductID, pv.BusinessEntityID
+            FROM (
+                SELECT ProductID, BusinessEntityID,
+                       ROW_NUMBER() OVER (PARTITION BY ProductID
+                                          ORDER BY BusinessEntityID) AS rn
+                FROM "_aw_ProductVendor"
+            ) pv
+            WHERE pv.rn = 1
+        ) v ON v.ProductID = p.ProductID
     """)
     done.append("Warehouse_StockItems")
 
@@ -293,6 +450,48 @@ def rebuild_tables(con: duckdb.DuckDBPyConnection) -> list[str]:
         WHERE p.ProductSubcategoryID IS NOT NULL
     """)
     done.append("Warehouse_StockItemStockGroups")
+
+    # The stock Supplied_by graph must point at real vendors.  The placeholder
+    # "Synthetic Supplier N" rows inherited from the WideWorldImporters sample
+    # are replaced by AdventureWorks' own Purchasing.Vendor rows, keyed on
+    # BusinessEntityID so they line up with Warehouse_StockItems.SupplierID.
+    con.execute(f"""
+        CREATE OR REPLACE TABLE Purchasing_Suppliers AS
+        SELECT v.BusinessEntityID::INTEGER AS SupplierID,
+            v.Name AS SupplierName,
+            1 AS SupplierCategoryID,
+            NULL::INTEGER AS PrimaryContactPersonID,
+            NULL::INTEGER AS AlternateContactPersonID,
+            1 AS DeliveryMethodID,
+            -- Vendor -> BusinessEntityAddress -> Address -> allocated CityID.
+            -- This keeps SUPPLIER_IN_CITY populated with real geography instead
+            -- of the arbitrary cities the old synthetic suppliers pointed at.
+            ac.CityID::INTEGER AS DeliveryCityID,
+            NULL::INTEGER AS PostalCityID,
+            v.AccountNumber AS SupplierReference,
+            NULL::VARCHAR AS BankAccountName, NULL::VARCHAR AS BankAccountBranch,
+            NULL::VARCHAR AS BankAccountCode, NULL::VARCHAR AS BankAccountNumber,
+            NULL::VARCHAR AS BankInternationalCode,
+            30 AS PaymentDays,
+            NULL::VARCHAR AS InternalComments,
+            NULL::VARCHAR AS PhoneNumber, NULL::VARCHAR AS FaxNumber,
+            v.PurchasingWebServiceURL AS WebsiteURL,
+            NULL::VARCHAR AS DeliveryAddressLine1, NULL::VARCHAR AS DeliveryAddressLine2,
+            NULL::VARCHAR AS DeliveryPostalCode, NULL::VARCHAR AS DeliveryLocation,
+            NULL::VARCHAR AS PostalAddressLine1, NULL::VARCHAR AS PostalAddressLine2,
+            NULL::VARCHAR AS PostalPostalCode,
+            1 AS LastEditedBy, v.ModifiedDate::TIMESTAMP AS ValidFrom,
+            {FAR_FUTURE} AS ValidTo
+        FROM "_aw_Vendor" v
+        LEFT JOIN (
+            SELECT bea.BusinessEntityID, MIN(ac.CityID) AS CityID
+            FROM "_aw_BusinessEntityAddress" bea
+            JOIN "_aw_address_city" ac ON ac.AddressID = bea.AddressID
+            GROUP BY bea.BusinessEntityID
+        ) ac ON ac.BusinessEntityID = v.BusinessEntityID
+        ORDER BY v.BusinessEntityID
+    """)
+    done.append("Purchasing_Suppliers")
 
     con.execute(f"""
         CREATE OR REPLACE TABLE Application_People AS
@@ -554,6 +753,15 @@ def main() -> int:
             _log(f"  _aw_{name:<18} {n:>7} rows")
         n = load_person(con)
         _log(f"  _aw_person            {n:>7} rows")
+        n = load_business_entity_address(con)
+        _log(f"  _aw_BusinessEntityAddress {n:>7} rows")
+
+        _log("extending address dimension with AdventureWorks states/cities ...")
+        extend_address_dimension(con)
+        n = _row_count(con, "Application_Cities")
+        _log(f"  Application_Cities    {n:>7} rows")
+        n = _row_count(con, "Application_StateProvinces")
+        _log(f"  Application_StateProvinces {n:>7} rows")
 
         _log("rebuilding WideWorldImporters-named tables ...")
         for table in rebuild_tables(con):

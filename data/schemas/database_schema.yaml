@@ -2,7 +2,7 @@ version: v0.2
 dialect: duckdb
 source_database: WideWorldImporters
 status: verified
-generated_at: '2026-10-11 18:18:05'
+generated_at: '2026-10-11 20:46:57'
 tables:
 - name: Application_Cities
   primary_key: []
@@ -738,28 +738,28 @@ tables:
   columns:
   - name: SupplierID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: SupplierName
     type: VARCHAR
-    nullable: false
+    nullable: true
   - name: SupplierCategoryID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: PrimaryContactPersonID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: AlternateContactPersonID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: DeliveryMethodID
     type: INTEGER
     nullable: true
   - name: DeliveryCityID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: PostalCityID
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: SupplierReference
     type: VARCHAR
     nullable: true
@@ -780,49 +780,49 @@ tables:
     nullable: true
   - name: PaymentDays
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: InternalComments
     type: VARCHAR
     nullable: true
   - name: PhoneNumber
     type: VARCHAR
-    nullable: false
+    nullable: true
   - name: FaxNumber
     type: VARCHAR
-    nullable: false
+    nullable: true
   - name: WebsiteURL
     type: VARCHAR
-    nullable: false
+    nullable: true
   - name: DeliveryAddressLine1
     type: VARCHAR
-    nullable: false
+    nullable: true
   - name: DeliveryAddressLine2
     type: VARCHAR
     nullable: true
   - name: DeliveryPostalCode
     type: VARCHAR
-    nullable: false
+    nullable: true
   - name: DeliveryLocation
     type: VARCHAR
     nullable: true
   - name: PostalAddressLine1
     type: VARCHAR
-    nullable: false
+    nullable: true
   - name: PostalAddressLine2
     type: VARCHAR
     nullable: true
   - name: PostalPostalCode
     type: VARCHAR
-    nullable: false
+    nullable: true
   - name: LastEditedBy
     type: INTEGER
-    nullable: false
+    nullable: true
   - name: ValidFrom
     type: TIMESTAMP
-    nullable: false
+    nullable: true
   - name: ValidTo
     type: TIMESTAMP
-    nullable: false
+    nullable: true
 - name: Purchasing_Suppliers_Archive
   primary_key: []
   columns:

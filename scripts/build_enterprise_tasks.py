@@ -249,21 +249,28 @@ def _structured_lookup_tasks(db: _Duck, kb: _KB, seq: SeqGen) -> list[Task]:
          "SELECT CustomerName FROM Sales_Customers WHERE CustomerID = 4"),
         ("ent-cust-500", "客户 ID 500 的完整名称是什么？", "customers", "easy",
          "SELECT CustomerName FROM Sales_Customers WHERE CustomerID = 500"),
-        ("ent-sup-1", "供应商 ID 1 的完整名称是什么？", "suppliers", "easy",
-         "SELECT SupplierName FROM Purchasing_Suppliers WHERE SupplierID = 1"),
-        ("ent-sup-2-cat", "供应商 ID 2 所属的供应商类别名称是什么？", "suppliers", "medium",
+        # Supplier and city ids come from the live probed references: the
+        # AdventureWorks import replaced the old synthetic 1..N vendors with
+        # real ones whose ids start much higher.
+        (f"ent-sup-{_SUP_REF}", f"供应商 ID {_SUP_REF} 的完整名称是什么？", "suppliers", "easy",
+         f"SELECT SupplierName FROM Purchasing_Suppliers WHERE SupplierID = {_SUP_REF}"),
+        (f"ent-sup-{_SUP_REF2}-cat", f"供应商 ID {_SUP_REF2} 所属的供应商类别名称是什么？",
+         "suppliers", "medium",
          "SELECT sc.SupplierCategoryName FROM Purchasing_Suppliers s "
          "JOIN Purchasing_SupplierCategories sc ON sc.SupplierCategoryID = s.SupplierCategoryID "
-         "WHERE s.SupplierID = 2"),
-        ("ent-sup-1-city", "供应商 ID 1 的送货城市名称是什么？", "suppliers", "medium",
+         f"WHERE s.SupplierID = {_SUP_REF2}"),
+        (f"ent-sup-{_SUP_REF}-city", f"供应商 ID {_SUP_REF} 的送货城市名称是什么？",
+         "suppliers", "medium",
          "SELECT c.CityName FROM Purchasing_Suppliers s "
-         "LEFT JOIN Application_Cities c ON c.CityID = s.DeliveryCityID WHERE s.SupplierID = 1"),
-        ("ent-city-1", "城市 ID 1 的名称是什么？", "logistics", "medium",
-         "SELECT CityName FROM Application_Cities WHERE CityID = 1"),
-        ("ent-city-1-state", "城市 ID 1 所在省份（州）的名称是什么？", "logistics", "hard",
+         "LEFT JOIN Application_Cities c ON c.CityID = s.DeliveryCityID "
+         f"WHERE s.SupplierID = {_SUP_REF}"),
+        (f"ent-city-{_CITY_REF}", f"城市 ID {_CITY_REF} 的名称是什么？", "logistics", "medium",
+         f"SELECT CityName FROM Application_Cities WHERE CityID = {_CITY_REF}"),
+        (f"ent-city-{_CITY_REF}-state",
+         f"城市 ID {_CITY_REF} 所在省份（州）的名称是什么？", "logistics", "hard",
          "SELECT sp.StateProvinceName FROM Application_Cities ci "
          "JOIN Application_StateProvinces sp ON sp.StateProvinceID = ci.StateProvinceID "
-         "WHERE ci.CityID = 1"),
+         f"WHERE ci.CityID = {_CITY_REF}"),
     ]
     for _suffix, q, dom, diff, sql in facts:
         val = db.one(sql)
@@ -543,28 +550,39 @@ def _relationship_tasks(db: _Duck, kb: _KB, seq: SeqGen) -> list[Task]:
         "item <- order lines (reverse top-N)")
 
     # three-hop reverse: supplier -> items -> customers who bought them.
-    sup1_cust_n = int(db.one(
+    # The reference supplier is probed from the live table, and we pick one
+    # that actually supplied something so the count is never a trivial 0.
+    sup_ref = db.one(
+        "SELECT si.SupplierID FROM Warehouse_StockItems si "
+        "JOIN Sales_InvoiceLines il ON il.StockItemID = si.StockItemID "
+        "WHERE si.SupplierID IS NOT NULL "
+        "GROUP BY si.SupplierID ORDER BY COUNT(*) DESC, si.SupplierID LIMIT 1")
+    sup_cust_n = int(db.one(
         "SELECT COUNT(DISTINCT i.CustomerID) FROM Sales_InvoiceLines il "
-        "JOIN Warehouse_StockItems si ON si.StockItemID = il.StockItemID AND si.SupplierID = 1 "
+        "JOIN Warehouse_StockItems si ON si.StockItemID = il.StockItemID "
+        f"AND si.SupplierID = {sup_ref} "
         "JOIN Sales_Invoices i ON i.InvoiceID = il.InvoiceID"))
-    rel("哪些客户购买过供应商 ID 1 供应的商品？请给出客户数量。", "suppliers", "hard",
-        f"共 {sup1_cust_n} 个客户购买过供应商 1 的商品（供应商→商品→发票→订单→客户 反向路径）",
+    _assert(f"rel-sup{sup_ref}-custn", sup_cust_n > 0, True)
+    rel(f"哪些客户购买过供应商 ID {sup_ref} 供应的商品？请给出客户数量。", "suppliers", "hard",
+        f"共 {sup_cust_n} 个客户购买过供应商 {sup_ref} 的商品（供应商→商品→发票→订单→客户 反向路径）",
         "reverse cross-entity supplier->item->invoice->order->customer",
-        [_claim(f"购买过供应商 1 商品的客户有 {sup1_cust_n} 个", "relational", "critical", sup1_cust_n)],
-        "supplier 1 <- items <- invoices <- orders <- customers")
+        [_claim(f"购买过供应商 {sup_ref} 商品的客户有 {sup_cust_n} 个", "relational", "critical", sup_cust_n)],
+        f"supplier {sup_ref} <- items <- invoices <- orders <- customers")
 
-    # supplier -> city -> state (three-hop).
-    sup1_state = db.rows(
+    # supplier -> city -> state (three-hop).  The expected state is read from
+    # the live dimension rather than hard-coded, since the AdventureWorks
+    # import maps vendors onto real US/CA cities.
+    sup_city_state = db.rows(
         "SELECT sp.StateProvinceName FROM Purchasing_Suppliers s "
         "JOIN Application_Cities c ON c.CityID = s.DeliveryCityID "
         "JOIN Application_StateProvinces sp ON sp.StateProvinceID = c.StateProvinceID "
-        "WHERE s.SupplierID = 1")
-    _assert("rel-sup1-state", [r[0] for r in sup1_state], ["Pennsylvania"])
-    rel("供应商 ID 1 的送货城市位于哪个州（省）？", "suppliers", "hard",
-        "Pennsylvania",
-        "SELECT s.DeliveryCityID FROM Purchasing_Suppliers s WHERE s.SupplierID=1",
-        [_claim("供应商 1 的送货城市位于 Pennsylvania", "relational", "normal")],
-        "supplier 1 -> city Aaronsburg -> state Pennsylvania")
+        f"WHERE s.SupplierID = {_SUP_REF}")
+    _assert(f"rel-sup{_SUP_REF}-state", [r[0] for r in sup_city_state], [_SUP_REF_STATE])
+    rel(f"供应商 ID {_SUP_REF} 的送货城市位于哪个州（省）？", "suppliers", "hard",
+        _SUP_REF_STATE,
+        f"SELECT s.DeliveryCityID FROM Purchasing_Suppliers s WHERE s.SupplierID={_SUP_REF}",
+        [_claim(f"供应商 {_SUP_REF} 的送货城市位于 {_SUP_REF_STATE}", "relational", "normal")],
+        f"supplier {_SUP_REF} -> city -> state {_SUP_REF_STATE}")
     return t
 
 
@@ -884,9 +902,13 @@ def _comparison_tasks(db: _Duck, kb: _KB, seq: SeqGen) -> list[Task]:
 
 
 # ---- entity lookup pools (single-source: customer / supplier / item) -----
-# All ids verified present in the live WWI sample (500 customers / 60
-# suppliers / 120 stock items).  The pools are deliberately large so the
-# benchmark has a real single-source denominator.
+# All ids verified present in the live database.  The pools are deliberately
+# large so the benchmark has a real single-source denominator.
+#
+# Supplier ids used to be the contiguous 1..60 range of the old synthetic
+# vendors.  The AdventureWorks import replaced those with real Purchasing.Vendor
+# rows whose ids start at 1492, so the pool is probed from the live table the
+# same way stock items already were.
 _CUST_IDS = (
     list(range(1, 11)) + list(range(11, 121, 10)) + list(range(102, 501, 25))
     + [12, 22, 32, 42, 52, 62, 72, 82, 92, 112, 122, 132, 142, 152, 162, 172,
@@ -894,7 +916,6 @@ _CUST_IDS = (
        342, 352, 362, 372, 382, 392, 412, 422, 432, 442, 452, 462, 472, 482, 492]
 )
 _CUST_IDS = tuple(sorted({i for i in _CUST_IDS if 1 <= i <= 500}))
-_SUP_IDS = tuple(range(1, 61))
 # Stock item ids are NOT a dense 1..N range in the AdventureWorks dataset
 # (product ids jump: only 1-4, 316-... exist in the low range), so probe the
 # live table instead of hard-coding a contiguous range.
@@ -905,6 +926,28 @@ with duckdb.connect(str(_DB_PATH), read_only=True) as _probe:
             "ORDER BY StockItemID LIMIT 120"
         ).fetchall()
     )
+    _SUP_IDS = tuple(
+        r[0] for r in _probe.execute(
+            "SELECT SupplierID FROM Purchasing_Suppliers "
+            "ORDER BY SupplierID LIMIT 60"
+        ).fetchall()
+    )
+    # Reference ids for the hand-written fact / relationship templates below.
+    _SUP_REF, _SUP_REF2 = (
+        r[0] for r in _probe.execute(
+            "SELECT SupplierID FROM Purchasing_Suppliers "
+            "ORDER BY SupplierID LIMIT 2"
+        ).fetchall()
+    )
+    _CITY_REF = _probe.execute(
+        "SELECT CityID FROM Application_Cities ORDER BY CityID LIMIT 1"
+    ).fetchone()[0]
+    _SUP_REF_STATE = _probe.execute(
+        "SELECT sp.StateProvinceName FROM Purchasing_Suppliers s "
+        "JOIN Application_Cities c ON c.CityID = s.DeliveryCityID "
+        "JOIN Application_StateProvinces sp ON sp.StateProvinceID = c.StateProvinceID "
+        f"WHERE s.SupplierID = {_SUP_REF}"
+    ).fetchone()[0]
 
 
 def _entity_lookup_tasks(db: _Duck, kb: _KB, seq: SeqGen) -> list[Task]:
@@ -1019,24 +1062,29 @@ def _aggregation_scale_tasks(db: _Duck, kb: _KB, seq: SeqGen) -> list[Task]:
 
 
 # ---- dimension-lookup tasks (small reference tables) --------------------
+# Ground truth is read from the live database rather than pinned to a number:
+# the AdventureWorks import grew Application_StateProvinces (and would have
+# broken a hard-coded count), and a stale literal is exactly the GT drift the
+# surrounding assertions exist to catch.
 _DIM_LOOKUP = [
-    ("系统中一共有多少个省份（州）？", "logistics", "easy", 53,
+    ("系统中一共有多少个省份（州）？", "logistics", "easy",
      "SELECT COUNT(*) FROM Application_StateProvinces"),
-    ("系统里一共记录了多少个国家？", "logistics", "easy", 190,
+    ("系统里一共记录了多少个国家？", "logistics", "easy",
      "SELECT COUNT(*) FROM Application_Countries"),
-    ("一共有多少种配送方式？", "logistics", "easy", 10,
+    ("一共有多少种配送方式？", "logistics", "easy",
      "SELECT COUNT(*) FROM Application_DeliveryMethods"),
-    ("一共有多少种包装类型？", "inventory", "easy", 15,
+    ("一共有多少种包装类型？", "inventory", "easy",
      "SELECT COUNT(*) FROM Warehouse_PackageTypes"),
-    ("一共有多少种颜色？", "inventory", "easy", 36,
+    ("一共有多少种颜色？", "inventory", "easy",
      "SELECT COUNT(*) FROM Warehouse_Colors"),
 ]
 
 
 def _dimension_tasks(db: _Duck, kb: _KB, seq: SeqGen) -> list[Task]:
     t: list[Task] = []
-    for q, dom, diff, val, sql, in _DIM_LOOKUP:
-        _assert(q, db.one(sql), val)
+    for q, dom, diff, sql in _DIM_LOOKUP:
+        val = int(db.one(sql))
+        _assert(q, val > 0, True)
         t.append(_new_task(
             seq(), question=q, domain=dom, task_type="structured_lookup", difficulty=diff,
             expected_route="sql", expected_tools=["sql"], expected_tool_order=["sql"],

@@ -75,6 +75,62 @@ _FILE_FUNCTION_RE = re.compile(
 # statements were submitted.
 _STATEMENT_SPLIT_RE = re.compile(r";")
 
+# Replaces a quoted literal / comment body so structural checks only ever look
+# at SQL skeleton.  Without this the keyword blacklist fires on legitimate
+# business text: `WHERE note = 'please update this row'` was rejected.
+_MASK = "''"
+
+
+def _mask_literals(sql: str) -> str:
+    """Blank out string literals, dollar-quoted bodies and comments.
+
+    The result keeps every identifier, keyword, paren and ``;`` in place, so
+    statement counting and keyword scanning stay exact while user text inside
+    quotes can no longer trip the guard.  Escaped quotes (``''``) and nested
+    ``/* ... */`` comments are handled.
+    """
+    out: list[str] = []
+    i, n = 0, len(sql)
+    while i < n:
+        ch = sql[i]
+        if ch == "-" and sql.startswith("--", i):          # line comment
+            j = sql.find("\n", i)
+            i = n if j == -1 else j
+            out.append(" ")
+        elif ch == "/" and sql.startswith("/*", i):        # block comment
+            j = sql.find("*/", i + 2)
+            i = n if j == -1 else j + 2
+            out.append(" ")
+        elif ch == "$":                                     # $tag$ ... $tag$
+            m = re.match(r"\$[A-Za-z_0-9]*\$", sql[i:])
+            if m:
+                tag = m.group(0)
+                j = sql.find(tag, i + len(tag))
+                i = n if j == -1 else j + len(tag)
+                out.append(_MASK)
+            else:
+                out.append(ch)
+                i += 1
+        elif ch == "'":                                     # 'literal', '' escape
+            j = i + 1
+            while j < n:
+                if sql[j] == "'":
+                    if j + 1 < n and sql[j + 1] == "'":
+                        j += 2
+                        continue
+                    break
+                j += 1
+            i = min(j + 1, n)
+            out.append(_MASK)
+        elif ch == '"':                                     # "quoted identifier"
+            j = sql.find('"', i + 1)
+            i = n if j == -1 else j + 1
+            out.append(_MASK)
+        else:
+            out.append(ch)
+            i += 1
+    return "".join(out)
+
 
 def default_database_path() -> Path:
     """The runtime database produced by scripts/import_wwi.py."""
@@ -83,33 +139,37 @@ def default_database_path() -> Path:
 
 def guard_sql(sql: str) -> str:
     """Reject anything that is not a single plain read-only SELECT/WITH."""
-    stripped = sql.strip()
-    if not stripped:
+    raw = sql.strip()
+    if not raw:
         raise SQLGuardError("Empty SQL statement")
 
     # DuckDB executes every statement in the string and returns the result of
     # the last one, so "one SELECT plus one SET" is a config-tampering vector
-    # that a leading-keyword check alone cannot catch.
-    statements = [s.strip() for s in _STATEMENT_SPLIT_RE.split(stripped) if s.strip()]
+    # that a leading-keyword check alone cannot catch.  Count on the masked
+    # text so a ";" inside a string literal is not mistaken for a separator.
+    masked = _mask_literals(raw)
+    statements = [s for s in _STATEMENT_SPLIT_RE.split(masked) if s.strip()]
     if len(statements) != 1:
         raise SQLGuardError(
             f"Exactly one statement is allowed (got {len(statements)})",
             details={"statement_count": len(statements)},
         )
-    stripped = statements[0]
+    stripped = raw.rstrip(";").strip()
 
-    if not _ALLOWED_LEADING.match(stripped):
-        first_word = stripped.split(None, 1)[0].lower()
+    if not _ALLOWED_LEADING.match(masked):
+        first_word = masked.split(None, 1)[0].lower()
         raise SQLGuardError(
             f"Statement must start with SELECT or WITH (got {first_word!r})",
         )
-    forbidden = sorted({k.upper() for k in _FORBIDDEN_KEYWORDS.findall(stripped)})
+    # Scan the masked text: a keyword or function name that only appears inside
+    # a quoted literal is user data, not SQL structure.
+    forbidden = sorted({k.upper() for k in _FORBIDDEN_KEYWORDS.findall(masked)})
     if forbidden:
         raise SQLGuardError(
             "Statement contains forbidden keyword(s)",
             details={"keywords": forbidden},
         )
-    file_funcs = sorted({m.group(1) for m in _FILE_FUNCTION_RE.finditer(stripped)})
+    file_funcs = sorted({m.group(1) for m in _FILE_FUNCTION_RE.finditer(masked)})
     if file_funcs:
         raise SQLGuardError(
             "Statement contains forbidden table function(s)",

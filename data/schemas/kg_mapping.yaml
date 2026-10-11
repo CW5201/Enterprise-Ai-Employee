@@ -11,14 +11,20 @@
 # node and relationship additionally carries ``__source`` so any record can
 # be traced back to its origin table.
 #
-# Notes on this dataset (WideWorldImporters sample):
-# - Sales_OrderLines is EMPTY in this sample; the Order->StockItem link is
-#   therefore derived through Sales_Invoices + Sales_InvoiceLines (the only
-#   tables that carry order-line detail).  The derivation is explicit and the
-#   edge carries a __source note so it is not mistaken for a native
-#   Sales_OrderLines link.
-# - Several FK columns are nullable in WWI (BuyingGroupID, SupplierID,
-#   OrderID on Invoices); relationships are only created when the FK is set.
+# Notes on this dataset (Microsoft AdventureWorks OLTP):
+# - Sales_OrderLines is POPULATED (121317 real rows), so the Order->StockItem
+#   link uses that native table directly.  The earlier WideWorldImporters
+#   sample left it empty, which is why older revisions derived HAS_LINE
+#   through Sales_Invoices + Sales_InvoiceLines; that derivation is gone.
+# - AdventureWorks has no "buying group" concept at all (that is a WWI one).
+#   Sales_Customers.BuyingGroupID is therefore legitimately NULL for every
+#   row, so BELONGS_TO_GROUP produces zero edges by design -- not a defect.
+#   Sales_BuyingGroups keeps its 15 placeholder rows only so the schema and
+#   eval fixtures stay stable; no Customer points at them.
+# - Warehouse_StockItems has no supplier FK either.  It is derived from
+#   Purchasing.ProductVendor (lowest BusinessEntityID per product), so
+#   SUPPLIED_BY now resolves, and Purchasing_Suppliers is rebuilt from real
+#   Purchasing.Vendor rows instead of the old synthetic placeholders.
 # ---------------------------------------------------------------------------
 
 version: v1.0
@@ -154,15 +160,15 @@ relationships:
   - relationship: HAS_LINE
     from_label: Order
     to_label: StockItem
-    source_table: Sales_InvoiceLines
-    from_key: InvoiceID
+    source_table: Sales_OrderLines
+    from_key: OrderID
     to_key: StockItemID
-    via:
-      - Sales_Invoices        # OrderID -> InvoiceID
-      - Sales_InvoiceLines    # InvoiceID + StockItemID
-    notes: "Derived link: Sales_OrderLines is empty in this sample, so the
-            order->item link is materialised through invoices + invoice lines.
-            Edge carries __source='derived:Sales_InvoiceLines'."
+    edge_properties:
+      quantity: Quantity
+      unit_price: UnitPrice
+    notes: "Native order line (Sales_OrderLines: OrderID -> StockItemID).
+            Uses the real AdventureWorks rows; no longer derived through
+            invoices as it had to be when this table was empty."
 
   - relationship: SUPPLIED_BY
     from_label: StockItem
@@ -171,8 +177,11 @@ relationships:
     from_key: StockItemID
     to_key: SupplierID
     nullable_fk: true
-    notes: "StockItem is supplied by a supplier (Warehouse_StockItems:
-            StockItemID -> SupplierID); SupplierID nullable — edge only when set."
+    notes: "StockItem is supplied by a vendor.  AdventureWorks stores this in
+            Purchasing.ProductVendor, which the import folds into
+            Warehouse_StockItems.SupplierID (one vendor per product, the
+            lowest BusinessEntityID).  Targets are real Purchasing.Vendor
+            rows."
 
   - relationship: BELONGS_TO_GROUP
     from_label: Customer
