@@ -185,5 +185,47 @@ class TestUnsupported:
         assert len(out["tool_results"]) == 1
 
 
+@pytest.mark.unit
+class TestSqlFailureReason:
+    """A failed SQL step must report *why* it failed, not a fixed placeholder."""
+
+    def test_surfaces_stage_and_message_from_error_records(self) -> None:
+        from src.core.state import ErrorRecord
+        from src.nodes.multi_tool_execution import _sql_failure_reason
+
+        out = {"errors": [ErrorRecord(stage="sql_execution",
+                                      message="Binder Error: column not found")]}
+        reason = _sql_failure_reason(out)
+        assert "sql_execution" in reason
+        assert "Binder Error" in reason
+
+    def test_multiple_errors_are_joined(self) -> None:
+        from src.core.state import ErrorRecord
+        from src.nodes.multi_tool_execution import _sql_failure_reason
+
+        out = {"errors": [
+            ErrorRecord(stage="text_to_sql", message="LLM timeout"),
+            ErrorRecord(stage="sql_guard", message="statement rejected"),
+        ]}
+        reason = _sql_failure_reason(out)
+        assert "text_to_sql" in reason and "sql_guard" in reason
+
+    def test_falls_back_to_generic_when_no_errors(self) -> None:
+        from src.nodes.multi_tool_execution import _sql_failure_reason
+
+        assert _sql_failure_reason({"errors": []}) == \
+            "sql execution failed or produced no result"
+
+    def test_empty_result_is_still_reported_as_failure(self) -> None:
+        """ok is driven purely by sql_result presence, so an empty/absent
+        payload must still fail even when nothing raised."""
+        node, _ = _node(sql_ok=False)
+        state = {**make_state("x"), "routing_decision": _decision(["sql"])}
+        out = node.run(state)
+        tr = out["tool_results"][0]
+        assert tr["success"] is False
+        assert tr["error"]
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))

@@ -88,6 +88,25 @@ def _call_input(tool: str, step_id: int, depends: list[int], state: AgentState) 
     return payload
 
 
+def _sql_failure_reason(out: dict[str, Any]) -> str:
+    """A diagnosable failure string instead of a generic placeholder.
+
+    The SQL node already records the LLM/executor failure in ``errors``
+    together with the statement it tried to run.  Dropping both made an
+    intermittent bad generation indistinguishable from an empty result set,
+    which is impossible to debug from the API payload alone.
+    """
+    records = out.get("errors") or []
+    if not records:
+        return "sql execution failed or produced no result"
+    parts = []
+    for rec in records:
+        stage = getattr(rec, "stage", None) or "?"
+        msg = getattr(rec, "message", None) or str(rec)
+        parts.append(f"{stage}: {msg}")
+    return "; ".join(parts)
+
+
 class MultiToolExecutionNode:
     """Run a RoutingDecision execution_plan and fuse the results."""
 
@@ -253,7 +272,7 @@ class MultiToolExecutionNode:
             "sql": str(out.get("sql") or state.get("sql") or ""),
             "sql_result": sql_result,
             "data": {"columns": columns, "rows": rows, "row_count": len(rows)},
-            "error": None if ok else "sql execution failed or produced no result",
+            "error": None if ok else _sql_failure_reason(out),
             "error_details": ([e.details for e in out.get("errors", [])] if not ok else {}),
             "evidence": out.get("evidence") or [],
         }
