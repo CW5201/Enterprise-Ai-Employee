@@ -18,6 +18,7 @@ node still returns so the pipeline can produce an honest answer.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -40,6 +41,58 @@ class TextToSQLResult(BaseModel):
 
     sql: str = Field(min_length=8)
     rationale: str = ""
+
+
+_TSQL_TOP_RE = re.compile(
+    r"\bTOP\s+(\d+)(?:\s+PERCENT)?(?:\s+WITH\s+TIES)?\b", re.IGNORECASE
+)
+# ``head`` is right-stripped before this is applied, so the space after SELECT
+# must be optional.
+_SELECT_HEADER_RE = re.compile(r"\bSELECT\s*(?:DISTINCT\s*)?$", re.IGNORECASE)
+
+
+def rewrite_tsql(sql: str) -> tuple[str, bool]:
+    """Translate ``SELECT TOP n`` into a DuckDB ``LIMIT n`` when needed.
+
+    The schema is AdventureWorks, a SQL Server sample, so the model regularly
+    emits T-SQL's ``TOP``.  DuckDB rejects it with ``syntax error at or near
+    "TOP"``, and because the node generates once and never retries, that single
+    slip cost the whole task its only data source.
+
+    Deliberately narrow — the row cap is only moved from the SELECT header to
+    a trailing ``LIMIT`` when that is provably equivalent:
+
+    * the statement must *start* with ``SELECT``.  In a CTE
+      (``WITH x AS (SELECT TOP 3 ...) SELECT ...``) appending ``LIMIT`` at the
+      end would cap the outer query instead of the CTE, changing semantics;
+    * an existing ``LIMIT`` is left alone;
+    * ``TOP`` must sit immediately after the SELECT header, so a ``TOP`` that
+      is really an identifier (``count(TOP)``) is never touched.
+    """
+    m = _TSQL_TOP_RE.search(sql)
+    if not m:
+        return sql, False
+    if re.search(r"\bLIMIT\b", sql, re.IGNORECASE):
+        return sql, False
+    if not re.match(r"\s*SELECT\b", sql, re.IGNORECASE):
+        # CTE / subquery — a trailing LIMIT would apply to the wrong level.
+        return sql, False
+
+    head = sql[: m.start()].rstrip()
+    if not _SELECT_HEADER_RE.search(head):
+        # e.g. a function argument or a column named TOP — not the row cap.
+        return sql, False
+
+    before = sql[: m.start()].rstrip()
+    after = sql[m.end():].lstrip()
+    if not before or not after:
+        return sql, False
+    limit = m.group(1)
+    without = f"{before} {after}".rstrip()
+
+    if without.endswith(";"):
+        return f"{without[:-1].rstrip()} LIMIT {limit};", True
+    return f"{without} LIMIT {limit}", True
 
 
 class SQLExecutionNode:
@@ -75,17 +128,26 @@ class SQLExecutionNode:
             errors.append(ErrorRecord(stage="text_to_sql", message=exc.message))
             sql = ""
 
+        # 2b. Deterministic dialect repair.  The node has no retry loop, so a
+        # single T-SQL slip would otherwise cost the task its only data source.
+        original_sql = sql
+        sql, dialect_rewritten = rewrite_tsql(sql) if sql else (sql, False)
+
         # 3. Guard + execute (only when we actually have SQL)
         sql_result: SQLResultPayload | None = None
         if sql:
             try:
                 payload: dict[str, Any] = self._executor.execute(sql)
                 sql_result = SQLResultPayload(**payload)
+                call_input: dict[str, Any] = {"sql": sql}
+                if dialect_rewritten:
+                    # keep the model's original so the rewrite is auditable
+                    call_input["original_sql"] = original_sql
                 tool_calls.append(
                     ToolCallRecord(
                         tool="sql_tool",
                         ok=True,
-                        input={"sql": sql},
+                        input=call_input,
                         evidence_ref=f"duckdb:{sql}",
                         duration_ms=payload.get("execution_time_ms", 0.0),
                     )
@@ -132,6 +194,13 @@ _SYSTEM_PROMPT = """你是企业数据的 Text-to-SQL 生成器，目标数据�
 - 只生成一条只读 SELECT 或 WITH...SELECT 语句;
 - 禁止 INSERT/UPDATE/DELETE/DROP/CREATE/ALTER 等任何写操作;
 - 数值口径必须参考数据字典; 表名/列名必须与上面的结构一致;
+- 方言必须是 DuckDB，不要写 SQL Server / T-SQL 语法（本库表结构源自
+  AdventureWorks，容易诱导出 T-SQL 写法）：
+  * 取前 N 行用 ``LIMIT n``，禁止 ``SELECT TOP n``、``TOP n WITH TIES``;
+  * 缺失值处理用 ``COALESCE``，不要用 ``ISNULL``;
+  * 字符串拼接用 ``||``，不要用 ``+``;
+  * 当前时间用 ``now()``，不要用 ``GETDATE()``;
+  * 日期格式化用 ``strftime(col, '%Y-%m')``，不要用 ``CONVERT`` / ``FORMAT``;
 - 特别注意：对于诸如"销售额"、"利润"、"营收"、"订单量"等业务指标，必须严格参照数据字典中的定义和公式，不能自行假设或简化；
 - 对 "订单数量最多的客户" 这类问题, 用 COUNT + GROUP BY + ORDER BY 实现, 不要硬编码;
 - 如果问题中的业务口径存在歧义（如未指明时间范围、客户范围或产品范围），应倾向于生成更保守的查询或在rationale中说明假设；

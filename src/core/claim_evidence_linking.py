@@ -140,15 +140,20 @@ def candidate_evidence(
         if matched:
             return matched[:max_candidates], "explicit_source_refs"
         # refs present but none matched: the claim cites evidence that
-        # does not exist in this run.  A numeric/derived claim still
-        # falls back to the structured pool so a real conflict (if any)
-        # is surfaced rather than silently unsupported.
+        # does not exist in this run (the model often writes a ref the
+        # pool never had).  That is NOT a verdict on the claim — handing
+        # the verifier an empty candidate set short-circuits it to "no
+        # candidate evidence available" *before* any content is read, so
+        # a perfectly correct claim would be reported unsupported and
+        # answer_guard would block the answer.  Numeric/derived claims
+        # fall back to the structured pool so a real conflict is still
+        # surfaced; everything else falls through to rules 2-4.
         if claim_type in ("numerical", "derived"):
             out = [e.evidence_id for e in pool if e.source_type in ("sql", "analysis")]
             if out:
                 return out[:max_candidates], "type_compat_all"
             return [e.evidence_id for e in pool][:max_candidates], "no_strict_match"
-        return [], "no_explicit_refs_matched"
+        # else: continue with rules 2-4 below — never return an empty set.
 
     # 2. entity / value overlap on compatible sources.  For numeric /
     #    derived claims a single overlapping candidate is not enough to

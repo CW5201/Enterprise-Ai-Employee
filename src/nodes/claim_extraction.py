@@ -114,16 +114,39 @@ _CLAIM_SYSTEM = """你是企业 AI 数字员工的结论抽取模块。
 
 _NUM_RE = re.compile(r"-?\d[\d,]*(?:\.\d+)?(?:\s*(?:%|元|件|个|条|天|人|笔|家|名))?", re.UNICODE)
 _GROWTH_MARKERS = ("增长", "上涨", "下降", "下跌", "环比", "同比", "提升", "减少")
+# Characters that mark a numeric token as a *date part* rather than a value.
+_DATE_CHARS = "年月日"
+# Magnitude words that follow the number itself (100 万元, 3 亿元).
+_SCALE_CHARS = {"万": 10_000, "亿": 100_000_000}
 
 
-def _parse_scalar(text: str) -> float | int | None:
-    """Best-effort scalar extraction from a numeric claim text."""
-    m = _NUM_RE.search(text)
-    if not m:
-        return None
+def _is_date_part(text: str, m: re.Match[str]) -> bool:
+    """True when ``m`` is a component of a date, not the claim's value.
+
+    ``2025-06`` / ``2025年6月`` / ``6月`` all qualify: the year is adjacent to
+    ``-`` or ``年``, and a month number sits next to ``月`` or to a date
+    separator.  Without this, ``2025年4月的销售额为5235672.00`` picked ``2025``
+    and the claim's ``value`` field contradicted its own text.
+    """
+    before = text[m.start() - 1] if m.start() > 0 else ""
+    after = text[m.end()] if m.end() < len(text) else ""
+    # NB: guard on truthiness first — ``"" in "年月日"`` is True in Python, so
+    # an unconditional membership test would treat a boundary-adjacent number
+    # (i.e. one with no neighbour at all) as a date part.
+    if (after and after in _DATE_CHARS) or (before and before in _DATE_CHARS):
+        return True
+    if (after and after in "-/") or (before and before in "-/"):
+        return True
+    # ``_NUM_RE`` allows a leading ``-``, so in ``2025-06`` the ``-06`` half
+    # matches as a *negative number*.  A minus that directly follows a digit
+    # is a date separator here, not arithmetic sign ("下降 -5" has a space).
+    return m.group(0).startswith("-") and before.isdigit()
+
+
+def _to_value(text: str, m: re.Match[str]) -> float | int | None:
+    """Convert a chosen numeric match into the claim's scalar ``value``."""
     raw = m.group(0).strip()
     is_pct = raw.endswith("%")
-    # keep only the leading numeric token (drop unit suffix like 元/件/人)
     num_match = re.match(r"-?\d[\d,]*(?:\.\d+)?", raw)
     if not num_match:
         return None
@@ -134,7 +157,42 @@ def _parse_scalar(text: str) -> float | int | None:
         return None
     if is_pct:
         return round(val / 100.0, 6)
+    # ``100 万元`` / ``3 亿元``: the scale word sits *after* the unit pattern
+    # the regex matched, so read it off the remaining text.
+    tail = text[m.end():m.end() + 2].lstrip()
+    for ch, factor in _SCALE_CHARS.items():
+        if tail.startswith(ch):
+            val *= factor
+            break
     return int(val) if val == int(val) and abs(val) < 1e15 else val
+
+
+def _parse_scalar(text: str) -> float | int | None:
+    """Best-effort scalar extraction from a numeric claim text.
+
+    Preference order:
+    1. a number carrying an explicit unit (``元``/``%``/``件``...) — that is
+       the payload the sentence is about;
+    2. the first number that is not part of a date;
+    3. any number, as a last resort.
+    """
+    matches = list(_NUM_RE.finditer(text))
+    if not matches:
+        return None
+
+    for m in matches:
+        if m.group(0).strip().endswith(("%", "元", "件", "个", "条", "天", "人", "笔", "家", "名")):
+            return _to_value(text, m)
+
+    for m in matches:
+        if not _is_date_part(text, m):
+            return _to_value(text, m)
+
+    # Every numeric token belongs to a date.  Returning the first one anyway
+    # would hand the verifier ``2025`` for the text ``2025年4月``, letting a
+    # year match some unrelated row; ``None`` keeps the claim unvalued and the
+    # lower verification layers still judge it on its text.
+    return None
 
 
 def _normalise_claim(out: _ClaimOut, claim_id: str) -> dict[str, Any]:

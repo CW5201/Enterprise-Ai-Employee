@@ -238,6 +238,54 @@ def _structured_values(candidates: list[Evidence]) -> set[float]:
     return out
 
 
+_CELL_NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
+
+
+def _cell_number(cell: Any) -> float | None:
+    """Numeric value of one table cell, or ``None``.
+
+    Strings must be numeric *in full*.  A partial parse of ``"2025-04"`` would
+    yield ``2025`` and let a year masquerade as a measurement, which is exactly
+    the class of mistake that made correct answers verify as unsupported.
+    """
+    if isinstance(cell, bool):
+        return None
+    if isinstance(cell, (int, float)):
+        return float(cell)
+    if isinstance(cell, str):
+        s = cell.strip().replace(",", "")
+        if _CELL_NUM_RE.fullmatch(s):
+            return float(s)
+    return None
+
+
+def _tabular_numbers(structured_value: Any) -> list[float]:
+    """Numeric cells inside a multi-row SQL / analysis result.
+
+    ``adapt_sql`` stores ``{"columns": [...], "rows": [[...], ...]}`` as soon as
+    the result has more than one row, so :func:`_to_float` returns ``None`` for
+    it.  Without this, *every* numerical claim against a realistic multi-row
+    answer fell through to the semantic layer, which scores Chinese claim text
+    against English column names near 0.05 (threshold 0.6) and therefore marked
+    correct answers unsupported.
+    """
+    rows: Any
+    if isinstance(structured_value, dict) and "rows" in structured_value:
+        rows = structured_value.get("rows")
+    elif isinstance(structured_value, (list, tuple)):
+        rows = structured_value
+    else:
+        return []
+    out: list[float] = []
+    for row in rows or []:
+        cells = row if isinstance(row, (list, tuple)) else [row]
+        for cell in cells:
+            n = _cell_number(cell)
+            if n is not None:
+                out.append(n)
+    return out
+
+
 def verify_exact(
     claim: dict[str, Any],
     candidates: list[Evidence],
@@ -276,15 +324,48 @@ def verify_exact(
 
     values: list[float] = []
     value_evidence: dict[float, list[str]] = {}
+    tabular: dict[str, list[float]] = {}
     for ev in compat:
         f = _to_float(ev.structured_value)
-        if f is None:
+        if f is not None:
+            values.append(f)
+            value_evidence.setdefault(round(f, 6), []).append(ev.evidence_id)
             continue
-        values.append(f)
-        value_evidence.setdefault(round(f, 6), []).append(ev.evidence_id)
+        nums = _tabular_numbers(ev.structured_value)
+        if nums:
+            tabular[ev.evidence_id] = nums
+
+    if not values and not tabular:
+        # compatible evidence exists but no parseable value -> inconclusive
+        return None
+
+    # Multi-row results carry their numbers inside ``rows`` rather than as one
+    # scalar.  Match the claim against those rows directly: waiting for the
+    # semantic layer would sink correct answers (Chinese prose vs. English
+    # columns scores ~0.05 against a 0.6 threshold).
+    if tabular:
+        tol = cfg.numeric_tolerance * max(1.0, abs(claimed))
+        for eid, nums in tabular.items():
+            hit = next((n for n in nums if abs(n - claimed) <= tol), None)
+            if hit is not None:
+                return VerificationResult(
+                    claim_id=str(claim.get("claim_id", "")),
+                    claim_type=str(claim.get("claim_type", "numerical")),  # type: ignore[arg-type]
+                    supported=True,
+                    status="supported",
+                    conflict=False,
+                    support_score=1.0,
+                    evidence_ids=[eid],
+                    verifier_type="exact",
+                    reason=f"{claimed} matches row value {hit} in evidence {eid}",
+                    computed_value=hit,
+                    claimed_value=claimed,
+                )
 
     if not values:
-        # compatible evidence exists but no parseable value -> inconclusive
+        # Tabular evidence exists but does not contain the claimed number.
+        # That is absence, not contradiction: a multi-row result legitimately
+        # holds many unrelated numbers, so do not report a conflict here.
         return None
 
     matches = [v for v in values if abs(v - claimed) <= cfg.numeric_tolerance * max(1.0, abs(claimed))]
@@ -302,7 +383,9 @@ def verify_exact(
             status="conflict",
             conflict=True,
             support_score=0.0,
-            evidence_ids=[eid for v in values for eid in value_evidence.get(round(v, 6), [])],
+            evidence_ids=list(dict.fromkeys(
+                eid for v in values for eid in value_evidence.get(round(v, 6), [])
+            )),
             verifier_type="exact",
             reason=f"evidence sources disagree: {sorted(distinct)}; not auto-picking",
             computed_value=None,
@@ -310,7 +393,9 @@ def verify_exact(
         )
 
     if matches:
-        evidence_ids = value_evidence.get(round(matches[0], 6), [])
+        evidence_ids = list(dict.fromkeys(
+            value_evidence.get(round(matches[0], 6), [])
+        ))
         return VerificationResult(
             claim_id=str(claim.get("claim_id", "")),
             claim_type=str(claim.get("claim_type", "numerical")),  # type: ignore[arg-type]
@@ -334,7 +419,9 @@ def verify_exact(
             status="conflict",
             conflict=True,
             support_score=0.0,
-            evidence_ids=[eid for v in non_matching for eid in value_evidence.get(round(v, 6), [])],
+            evidence_ids=list(dict.fromkeys(
+                eid for v in non_matching for eid in value_evidence.get(round(v, 6), [])
+            )),
             verifier_type="exact",
             reason=f"claimed {claimed} but evidence says {non_matching[0]}",
             computed_value=non_matching[0],

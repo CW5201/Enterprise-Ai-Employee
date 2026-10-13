@@ -20,7 +20,11 @@ from src.core.evidence_adapter import (
 )
 from src.core.state import EvidenceItem, make_state
 from src.core.verification_types import Evidence
-from src.nodes.claim_extraction import ClaimExtractionError, ClaimExtractionNode
+from src.nodes.claim_extraction import (
+    ClaimExtractionError,
+    ClaimExtractionNode,
+    _parse_scalar,
+)
 from src.nodes.evidence_collection import EvidenceCollectionNode, collect_evidence
 
 # ---------------------------------------------------------------------------
@@ -248,3 +252,55 @@ class TestLinking:
             [],
         )
         assert ids == [] and reason == "no_evidence"
+
+
+# ---------------------------------------------------------------------------
+# _parse_scalar — the claim's ``value`` must be the measurement, not a date
+# ---------------------------------------------------------------------------
+
+
+class TestParseScalar:
+    """Regression: the value field feeds verify_exact.
+
+    The original implementation took the *first* number in the text, so
+    ``2025年4月的销售额为5235672.00`` stored ``2025``.  The claim then failed
+    exact and rule matching against the real evidence, fell through to the
+    semantic layer (Chinese prose vs. English columns scores ~0.05 against a
+    0.6 threshold) and the correct answer was reported unsupported, blocking
+    the whole reply with ``guard_blocked``.
+    """
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            pytest.param("2025年4月的销售额为5235672.00 元", 5235672.0, id="year_before_amount"),
+            pytest.param("2025年5月销售额为1908059.49 元", 1908059.49, id="year_before_decimal"),
+            pytest.param("2025-06 月的销售额是 47491.55", 47491.55, id="iso_date_prefix"),
+            pytest.param("2025-04 至 2025-06 期间收入为 12345.5", 12345.5, id="date_range"),
+            pytest.param("2024/03 的订单量是 88 单", 88, id="slash_date"),
+            pytest.param("订单量为 31465 笔", 31465, id="plain_amount_with_unit"),
+            pytest.param("共 3 个客户购买过供应商 1492 的商品", 3, id="count_prefers_first_unit"),
+            pytest.param("销售额为 100 万元", 1000000, id="ten_thousand_scale"),
+            pytest.param("该季度增长 12.5% 至 100 万元", 0.125, id="percent_is_normalised"),
+            pytest.param("平均单价 2024.99", 2024.99, id="decimal_without_unit"),
+            pytest.param("同比下降 -5", -5, id="genuine_negative_kept"),
+        ],
+    )
+    def test_value_is_the_measurement_not_the_date(
+        self, text: str, expected: float | int
+    ) -> None:
+        assert _parse_scalar(text) == expected
+
+    def test_no_number_returns_none(self) -> None:
+        assert _parse_scalar("本月销售额与上月持平") is None
+
+    def test_pure_date_yields_no_value(self) -> None:
+        """A bare date carries no measurement, so the claim must stay unvalued.
+
+        Falling back to the first token would store ``2025`` and let a year
+        match an unrelated row during verification (false ``supported``).
+        """
+        assert _parse_scalar("2025年4月") is None
+        assert _parse_scalar("2025-06") is None
+
+

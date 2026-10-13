@@ -124,10 +124,15 @@ FAR_FUTURE = "TIMESTAMP '9999-12-31 23:59:59.997'"
 # AdventureWorks' address dimension is disjoint from the WideWorldImporters
 # one still sitting in Application_Cities / Application_StateProvinces.  Rather
 # than replace those tables (build_enterprise_tasks anchors on low ids such as
-# ``CityID = 1``), the AW rows are APPENDED above the existing maximum so every
-# pre-existing id keeps its meaning.
+# ``CityID = 1``), genuinely new AW rows are APPENDED above the existing maximum
+# so every pre-existing id keeps its meaning.  Rows that already exist *by
+# natural key* (same state code, same city name in the same state) are REUSED
+# instead of appended — appending them produced a second ``California`` row, so
+# ``WHERE StateProvinceCode='CA'`` returned two answers and the state's cities
+# were split across both rows (119 + 96).
 AW_STATE_PROVINCE_ID_BASE = 1000
 AW_CITY_ID_BASE = 40000
+AW_COUNTRY_ID = 239
 
 
 def _log(message: str) -> None:
@@ -216,49 +221,102 @@ def extend_address_dimension(con: duckdb.DuckDBPyConnection) -> None:
     """Append AdventureWorks states/cities above the existing id ranges.
 
     WideWorldImporters' city catalogue stays untouched (its low ids are
-    referenced by several benchmark anchors), and AW rows are added in a
-    disjoint range.  ``_aw_city_map`` then translates an AW ``AddressID`` into
-    the ``CityID`` we just allocated.
+    referenced by several benchmark anchors), and *new* AW rows are added in a
+    disjoint range.  Anything that already exists by natural key is REUSED, and
+    ``_aw_sp_map`` / ``_aw_city_map`` translate an AW id into the
+    ``Application_*`` id we resolved to — for a reused row that is the id that
+    was already there, for a new row the one we just allocated.
+
+    Appending without this reuse is what produced a second ``California`` row:
+    ``WHERE StateProvinceCode='CA'`` then returned two answers and the state's
+    cities were split across both rows (119 + 96 of them).
     """
+    # 1) StateProvince: reuse a row with the same code when one exists.
+    #    Prefer the population-bearing row, then the lowest id, so a rerun over
+    #    a table that still holds old duplicates resolves to the same row.
+    con.execute(f"""
+        CREATE OR REPLACE TABLE "_aw_sp_map" AS
+        SELECT sp.StateProvinceID::INTEGER AS aw_id,
+               COALESCE(
+                   (
+                       SELECT ex.StateProvinceID
+                       FROM Application_StateProvinces ex
+                       WHERE ex.StateProvinceCode = TRIM(sp.StateProvinceCode)
+                         AND ex.CountryID = {AW_COUNTRY_ID}
+                       ORDER BY (ex.LatestRecordedPopulation IS NULL),
+                                ex.StateProvinceID
+                       LIMIT 1
+                   ),
+                   sp.StateProvinceID::INTEGER + {AW_STATE_PROVINCE_ID_BASE}
+               ) AS app_id
+        FROM "_aw_StateProvince" sp
+    """)
     con.execute(f"""
         INSERT INTO Application_StateProvinces (
             StateProvinceID, StateProvinceCode, CountryID, StateProvinceName,
             SalesTerritory, LatestRecordedPopulation, LastEditedBy,
             ValidFrom, ValidTo
         )
-        SELECT sp.StateProvinceID::INTEGER + {AW_STATE_PROVINCE_ID_BASE},
+        SELECT m.app_id,
             TRIM(sp.StateProvinceCode),
-            239,
+            {AW_COUNTRY_ID},
             sp.StateProvinceName,
             sp.TerritoryID::VARCHAR,
             NULL,
             1,
             sp.ModifiedDate::TIMESTAMP,
             {FAR_FUTURE}
-        FROM "_aw_StateProvince" sp
-        WHERE sp.StateProvinceID::INTEGER + {AW_STATE_PROVINCE_ID_BASE}
-              NOT IN (SELECT StateProvinceID FROM Application_StateProvinces)
-        ORDER BY sp.StateProvinceID
+        FROM "_aw_sp_map" m
+        JOIN "_aw_StateProvince" sp ON sp.StateProvinceID::INTEGER = m.aw_id
+        WHERE m.app_id NOT IN (SELECT StateProvinceID FROM Application_StateProvinces)
+        ORDER BY m.app_id
     """)
 
-    # One allocated CityID per distinct AW city, carrying the payload needed
-    # for the Application_Cities insert so no second join has to rediscover it.
-    # The ids come from a fixed base rather than MAX()+1 so a re-run reallocates
-    # the same ids and the NOT IN below de-duplicates instead of duplicating.
-    con.execute(f"""
-        CREATE OR REPLACE TABLE "_aw_city_map" AS
-        SELECT
-            {AW_CITY_ID_BASE} + ROW_NUMBER() OVER (ORDER BY d.City, d.StateProvinceID) - 1
-                AS CityID,
-            d.City AS CityName,
-            d.StateProvinceID::INTEGER + {AW_STATE_PROVINCE_ID_BASE} AS StateProvinceID
+    # 2) Cities: one entry per distinct AW city, resolved to the state we just
+    #    reused or allocated.  A city that already exists in that state keeps
+    #    its existing CityID; only genuinely new cities get an allocated id.
+    #    The fixed base rather than MAX()+1 keeps ids stable, and the NOT IN
+    #    guard makes a rerun a no-op instead of a duplicate.
+    con.execute("""
+        CREATE OR REPLACE TABLE "_aw_city_resolved" AS
+        SELECT DISTINCT
+            TRIM(d.City) AS CityName,
+            m.app_id AS StateProvinceID
         FROM (
             SELECT DISTINCT City, StateProvinceID
             FROM "_aw_Address"
-            WHERE City IS NOT NULL AND City <> ''
+            WHERE City IS NOT NULL AND TRIM(City) <> ''
         ) d
+        JOIN "_aw_sp_map" m ON m.aw_id = d.StateProvinceID::INTEGER
     """)
-
+    con.execute("""
+        CREATE OR REPLACE TABLE "_aw_city_new" AS
+        SELECT CityName, StateProvinceID
+        FROM "_aw_city_resolved" r
+        WHERE NOT EXISTS (
+            SELECT 1 FROM Application_Cities c
+            WHERE c.CityName = r.CityName AND c.StateProvinceID = r.StateProvinceID
+        )
+    """)
+    con.execute(f"""
+        CREATE OR REPLACE TABLE "_aw_city_map" AS
+        SELECT CityName, StateProvinceID, CityID
+        FROM (
+            -- already present in this state: keep the id it already has
+            SELECT c.CityName, c.StateProvinceID, c.CityID
+            FROM Application_Cities c
+            JOIN "_aw_city_resolved" r
+              ON r.CityName = c.CityName AND r.StateProvinceID = c.StateProvinceID
+            UNION ALL
+            -- genuinely new: allocate above the existing maximum
+            SELECT n.CityName, n.StateProvinceID,
+                   (SELECT GREATEST({AW_CITY_ID_BASE}, COALESCE(MAX(CityID), 0) + 1)
+                    FROM Application_Cities)
+                   + ROW_NUMBER() OVER (ORDER BY n.CityName, n.StateProvinceID) - 1
+                       AS CityID
+            FROM "_aw_city_new" n
+        ) u
+    """)
     con.execute(f"""
         INSERT INTO Application_Cities (
             CityID, CityName, StateProvinceID, LatestRecordedPopulation,
@@ -267,20 +325,26 @@ def extend_address_dimension(con: duckdb.DuckDBPyConnection) -> None:
         SELECT m.CityID, m.CityName, m.StateProvinceID,
                NULL, 1, TIMESTAMP '2019-01-01', {FAR_FUTURE}
         FROM "_aw_city_map" m
+        JOIN "_aw_city_new" n
+          ON n.CityName = m.CityName AND n.StateProvinceID = m.StateProvinceID
         WHERE m.CityID NOT IN (SELECT CityID FROM Application_Cities)
         ORDER BY m.CityID
     """)
 
-    # Translate AW AddressID -> allocated CityID for the supplier edges below.
-    con.execute(f"""
+    # 3) Translate AW AddressID -> the CityID we resolved to, for the supplier
+    #    edges below.
+    con.execute("""
         CREATE OR REPLACE TABLE "_aw_address_city" AS
         SELECT a.AddressID::INTEGER AS AddressID, m.CityID
         FROM "_aw_Address" a
         JOIN "_aw_city_map" m
-          ON m.CityName = a.City
-         AND m.StateProvinceID = a.StateProvinceID::INTEGER
-                              + {AW_STATE_PROVINCE_ID_BASE}
+          ON m.CityName = TRIM(a.City)
+         AND m.StateProvinceID = (
+                SELECT app_id FROM "_aw_sp_map"
+                WHERE aw_id = a.StateProvinceID::INTEGER
+            )
     """)
+
 
 
 def rebuild_tables(con: duckdb.DuckDBPyConnection) -> list[str]:

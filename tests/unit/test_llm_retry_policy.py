@@ -45,7 +45,7 @@ class _ScriptedClient:
         self.script = list(script)
         self.calls = 0
 
-    def __enter__(self) -> "_ScriptedClient":
+    def __enter__(self) -> _ScriptedClient:
         return self
 
     def __exit__(self, *exc: object) -> None:
@@ -198,8 +198,9 @@ class TestParseRetryAfter:
         assert lc._parse_retry_after(value) == expected
 
     def test_http_date_in_the_future(self) -> None:
-        from datetime import datetime, timedelta, timezone
-        future = (datetime.now(timezone.utc) + timedelta(seconds=30))
+        from datetime import UTC, datetime, timedelta
+
+        future = (datetime.now(UTC) + timedelta(seconds=30))
         header = future.strftime("%a, %d %b %Y %H:%M:%S GMT")
         parsed = lc._parse_retry_after(header)
         assert parsed is not None

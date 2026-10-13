@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.nodes.sql_execution import _PREVIEW_ALL, _summarise
+from src.nodes.sql_execution import _PREVIEW_ALL, _summarise, rewrite_tsql
 
 
 @pytest.mark.unit
@@ -61,6 +61,76 @@ class TestSummarise:
         assert out.startswith("SQL: SELECT a FROM t")
         assert "Columns: a" in out
 
+
+
+@pytest.mark.unit
+class TestRewriteTsql:
+    """``SELECT TOP n`` -> ``LIMIT n``.
+
+    The schema is AdventureWorks (a SQL Server sample) while the engine is
+    DuckDB, so the model emits T-SQL's ``TOP``.  DuckDB answers ``syntax error
+    at or near "TOP"`` and, since SQLExecutionNode generates once and never
+    retries, that single slip cost the task its only data source — the task
+    finished with ``completed_no_evidence``.
+    """
+
+    @pytest.mark.parametrize(
+        ("sql", "expected"),
+        [
+            pytest.param(
+                "SELECT TOP 5 CustomerName FROM Sales_Customers WHERE CustomerName LIKE '%Robert%'",
+                "SELECT CustomerName FROM Sales_Customers WHERE CustomerName LIKE '%Robert%' LIMIT 5",
+                id="basic_top",
+            ),
+            pytest.param(
+                "SELECT TOP 10 * FROM Sales_Orders ORDER BY OrderDate DESC",
+                "SELECT * FROM Sales_Orders ORDER BY OrderDate DESC LIMIT 10",
+                id="top_with_order_by",
+            ),
+            pytest.param(
+                "SELECT TOP 5 CustomerName FROM Sales_Customers;",
+                "SELECT CustomerName FROM Sales_Customers LIMIT 5;",
+                id="trailing_semicolon",
+            ),
+            pytest.param(
+                "SELECT DISTINCT TOP 3 a FROM t",
+                "SELECT DISTINCT a FROM t LIMIT 3",
+                id="distinct",
+            ),
+        ],
+    )
+    def test_rewrites(self, sql: str, expected: str) -> None:
+        out, rewritten = rewrite_tsql(sql)
+        assert rewritten is True
+        assert out == expected
+        assert "TOP" not in out.split("(")[0]
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            pytest.param("SELECT a FROM t", id="no_top"),
+            pytest.param("SELECT a FROM t LIMIT 5", id="already_limited"),
+            pytest.param("SELECT count(TOP) FROM t", id="top_is_an_identifier"),
+            pytest.param(
+                "WITH x AS (SELECT TOP 3 a FROM t) SELECT * FROM x",
+                id="cta_would_move_the_limit_to_the_wrong_level",
+            ),
+            pytest.param("SELECT a FROM t WHERE b > 3", id="ordinary_select"),
+        ],
+    )
+    def test_leaves_safe_sql_alone(self, sql: str) -> None:
+        out, rewritten = rewrite_tsql(sql)
+        assert rewritten is False
+        assert out == sql
+
+    def test_no_double_space_left_behind(self) -> None:
+        out, _ = rewrite_tsql("SELECT TOP 5 a FROM t")
+        assert "  " not in out
+
+    def test_leading_whitespace_is_preserved(self) -> None:
+        out, _ = rewrite_tsql("  SELECT TOP 2 a FROM t  ")
+        assert out.startswith("  SELECT")
+        assert out.endswith("LIMIT 2")
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))

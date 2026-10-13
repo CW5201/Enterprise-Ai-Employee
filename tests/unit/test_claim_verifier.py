@@ -289,3 +289,114 @@ class TestSummarize:
         out = summarize(results)
         assert out == {"supported_claims": 4, "unsupported_claims": 0,
                        "conflicts": 0, "total": 4}
+
+
+# ---------------------------------------------------------------------------
+# Multi-row SQL evidence — the numbers live inside ``rows``
+# ---------------------------------------------------------------------------
+
+
+class TestMultiRowEvidence:
+    """Regression: ``adapt_sql`` wraps >1 row as a dict.
+
+    ``_to_float`` returns ``None`` for a dict, so the exact layer used to find
+    no value at all, the rule layer skipped ``numerical`` claims, and every
+    correct multi-row answer fell through to the semantic layer and came back
+    unsupported — which the guard then surfaced as ``guard_blocked``.
+    """
+
+    @staticmethod
+    def _tabular_evidence() -> Any:
+        return adapt_sql({
+            "sql": "SELECT strftime(OrderDate, '%Y-%m') AS month, "
+                   "SUM(Quantity*UnitPrice) AS revenue FROM t GROUP BY 1",
+            "columns": ["month", "revenue"],
+            "rows": [["2025-04", 5235672.00], ["2025-05", 1908059.49],
+                     ["2025-06", 47491.55]],
+            "row_count": 3,
+        })
+
+    @staticmethod
+    def _numerical_claim(value: Any) -> dict[str, Any]:
+        return {"claim_id": "c1", "text": "该月销售额为 5235672.00",
+                "claim_type": "numerical", "importance": "critical",
+                "source_refs": [], "entities": [], "value": value}
+
+    def test_structured_value_is_a_dict_for_multi_row(self) -> None:
+        ev = self._tabular_evidence()
+        assert isinstance(ev.structured_value, dict)
+        assert len(ev.structured_value["rows"]) == 3
+
+    def test_claim_value_present_in_a_row_is_supported(self) -> None:
+        ev = self._tabular_evidence()
+        r = verify(self._numerical_claim(5235672.0), [ev], CFG)
+        assert r.supported is True
+        assert r.verifier_type == "exact"
+        assert r.conflict is False
+
+    @pytest.mark.parametrize("value", [1908059.49, 47491.55])
+    def test_every_row_value_is_reachable(self, value: float) -> None:
+        r = verify(self._numerical_claim(value), [self._tabular_evidence()], CFG)
+        assert r.supported is True, r.reason
+
+    def test_absent_number_is_inconclusive_not_conflict(self) -> None:
+        """A multi-row result legitimately holds many unrelated numbers.
+
+        The claimed value simply not being present must not be reported as
+        sources disagreeing with each other.
+        """
+        r = verify(self._numerical_claim(999999.0), [self._tabular_evidence()], CFG)
+        assert r.conflict is False
+
+    def test_year_must_not_match_a_date_cell(self) -> None:
+        """``2025-04`` must not be readable as the measurement ``2025``."""
+        r = verify(self._numerical_claim(2025), [self._tabular_evidence()], CFG)
+        assert r.supported is False
+
+    def test_scalar_evidence_still_reports_conflict(self) -> None:
+        """The existing single-value conflict contract must not regress."""
+        a = adapt_sql({"sql": "SELECT 1", "columns": ["x"], "rows": [[10]],
+                       "row_count": 1})
+        b = adapt_sql({"sql": "SELECT 2", "columns": ["x"], "rows": [[20]],
+                       "row_count": 1})
+        r = verify(self._numerical_claim(10), [a, b], CFG)
+        assert r.conflict is True
+        assert r.supported is False
+
+
+@pytest.mark.unit
+class TestEvidenceIdsAreUnique:
+    """A value repeated across rows used to append the same evidence id once
+    per occurrence (``evidence_ids: ["ev-tool-sql-1", "ev-tool-sql-1"]``) —
+    visible in the API payload and misleading in the audit trail."""
+
+    @pytest.fixture
+    def ev(self):
+        from src.core.verification_types import Evidence
+        return Evidence(
+            evidence_id="ev-tool-sql-1",
+            source_type="sql",
+            source_ref="sql:SELECT name, n",
+            content=("SQL: SELECT name, n Columns: name, n\n"
+                     "Dalton Perez\t28\nMason D Roberts\t28\nNancy\t27"),
+            structured_value={"columns": ["name", "n"],
+                              "rows": [["Dalton Perez", 28], ["Mason D Roberts", 28],
+                                       ["Nancy", 27]],
+                              "row_count": 3},
+        )
+
+    @staticmethod
+    def _claim(value):
+        return {"claim_id": "c1", "claim_type": "numerical",
+                "text": f"订单数量 {value}", "value": value,
+                "source_refs": [], "entities": []}
+
+    def test_repeated_value_yields_one_id(self, ev) -> None:
+        r = verify(self._claim(28), [ev], CFG)
+        assert r.supported is True, r.reason
+        assert r.evidence_ids == ["ev-tool-sql-1"], r.evidence_ids
+
+    def test_conflict_path_is_also_unique(self, ev) -> None:
+        r = verify(self._claim(99), [ev], CFG)
+        assert len(r.evidence_ids) == len(set(r.evidence_ids)), r.evidence_ids
+        assert r.evidence_ids, "conflict must still cite its evidence"

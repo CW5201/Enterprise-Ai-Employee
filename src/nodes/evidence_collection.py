@@ -39,6 +39,22 @@ from src.core.verification_types import Evidence
 __all__ = ["EvidenceCollectionNode", "collect_evidence"]
 
 
+def _dedupe_key(ev: Evidence) -> str:
+    """Collapse the aliases two channels use for the same artifact.
+
+    ``sql_execution`` records its result as ``duckdb:{sql}`` while
+    ``adapt_sql`` (the tool / sql_result channels) records the very same query
+    as ``sql:{sql}``.  Matching on the raw ``source_ref`` therefore let the same
+    query result enter the pool twice under two ids — observed in a live run
+    where one claim linked to both ``ev-tool-sql-1`` and ``ev-req-…-sql``,
+    inflating the candidate set and the claim total.
+    """
+    ref = ev.source_ref or ev.evidence_id
+    if ref.startswith("duckdb:"):
+        return "sql:" + ref[len("duckdb:"):]
+    return ref
+
+
 def collect_evidence(state: AgentState) -> list[Evidence]:
     """Collect + dedupe Phase 4 evidence from every source channel."""
     evidence: list[Evidence] = []
@@ -46,7 +62,7 @@ def collect_evidence(state: AgentState) -> list[Evidence]:
 
     def add(items: list[Evidence]) -> None:
         for ev in items:
-            key = ev.source_ref or ev.evidence_id
+            key = _dedupe_key(ev)
             if key in seen:
                 continue
             seen.add(key)
